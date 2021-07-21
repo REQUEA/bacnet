@@ -5,10 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 
-	"github.com/alexbeltran/gobacnet/encoding"
 	"github.com/alexbeltran/gobacnet/types"
 )
 
@@ -16,7 +14,7 @@ type Client struct {
 	ipAdress         net.IP
 	broadcastAddress net.IP
 	udpPort          int
-	listener         *net.UDPConn
+	udp              *net.UDPConn
 }
 
 const DefaultUDPPort = 47808
@@ -70,7 +68,7 @@ func NewClient(inter string, port int) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.listener = conn
+	c.udp = conn
 	go c.listen()
 	return c, nil
 }
@@ -78,7 +76,6 @@ func NewClient(inter string, port int) (*Client, error) {
 // listen for incoming bacnet packets.
 func (c *Client) listen() error {
 	var err error = nil
-	r := rand.Int()
 	// While connection is opened
 	for err == nil {
 		var (
@@ -87,26 +84,26 @@ func (c *Client) listen() error {
 		)
 
 		b := make([]byte, 2048)
-		i, adr, err = c.listener.ReadFrom(b)
+		i, adr, err = c.udp.ReadFrom(b)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("Received packet %s from addr %v  %d\n", hex.EncodeToString(b[:i]), adr, r)
+		fmt.Printf("Received packet %s from addr %v \n", hex.EncodeToString(b[:i]), adr)
 	}
 	return nil
 }
 
 func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
-	dest := types.UDPToAddress(&net.UDPAddr{
-		IP:   c.broadcastAddress,
-		Port: DefaultUDPPort,
-	})
-	// src := types.UDPToAddress(&net.UDPAddr{
-	// 	IP:   c.ipAdress,
-	// 	Port: c.udpPort,
+	// dest := types.UDPToAddress(&net.UDPAddr{
+	// 	IP:   c.broadcastAddress,
+	// 	Port: DefaultUDPPort,
 	// })
+	// // src := types.UDPToAddress(&net.UDPAddr{
+	// // 	IP:   c.ipAdress,
+	// // 	Port: c.udpPort,
+	// // })
 
-	dest.SetBroadcast(true)
+	// dest.SetBroadcast(true)
 
 	// enc := encoding.NewEncoder()
 	// npdu := types.NPDU{
@@ -145,7 +142,7 @@ func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = c.send(dest, bytes)
+	_, err = c.broadcast(bytes)
 	if err != nil {
 		return nil, err
 	}
@@ -153,33 +150,50 @@ func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
 }
 
 func (c *Client) send(dest types.Address, data []byte) (int, error) {
-	var header types.BVLC
+	return 0, nil
+	// var header types.BVLC
 
-	// Set packet type
-	header.Type = types.BVLCTypeBacnetIP
+	// // Set packet type
+	// header.Type = types.BVLCTypeBacnetIP
 
-	if dest.IsBroadcast() || dest.IsSubBroadcast() {
-		// SET BROADCAST FLAG
-		header.Function = types.BacFuncBroadcast
-	} else {
-		// SET UNICAST FLAG
-		header.Function = types.BacFuncUnicast
-	}
-	mtuHeaderLength := 4
-	header.Length = uint16(mtuHeaderLength + len(data))
-	header.Data = data
-	e := encoding.NewEncoder()
-	err := e.BVLC(header)
+	// if dest.IsBroadcast() || dest.IsSubBroadcast() {
+	// 	// SET BROADCAST FLAG
+	// 	header.Function = types.BacFuncBroadcast
+	// } else {
+	// 	// SET UNICAST FLAG
+	// 	header.Function = types.BacFuncUnicast
+	// }
+	// mtuHeaderLength := 4
+	// header.Length = uint16(mtuHeaderLength + len(data))
+	// header.Data = data
+	// e := encoding.NewEncoder()
+	// err := e.BVLC(header)
+	// if err != nil {
+	// 	return 0, err
+	// }
+
+	// // Get IP Address
+	// d, err := dest.UDPAddr()
+	// if err != nil {
+	// 	return 0, err
+	// }
+
+	// // use default udp type, src = local address (nil)
+	// return c.listener.WriteTo(e.Bytes(), &d)
+}
+
+func (c *Client) broadcast(data []byte) (int, error) {
+	bytes, err := BVLC{
+		Type:     BVLCTypeBacnetIP,
+		Function: BacFuncBroadcast,
+		Data:     data,
+	}.MarshalBinary()
 	if err != nil {
 		return 0, err
 	}
-
-	// Get IP Address
-	d, err := dest.UDPAddr()
-	if err != nil {
-		return 0, err
-	}
-
-	// use default udp type, src = local address (nil)
-	return c.listener.WriteTo(e.Bytes(), &d)
+	fmt.Println("Broadcast")
+	return c.udp.WriteToUDP(bytes, &net.UDPAddr{
+		IP:   c.broadcastAddress,
+		Port: DefaultUDPPort,
+	})
 }

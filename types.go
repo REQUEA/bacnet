@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"net"
 )
 
 type BacnetVersion byte
@@ -33,6 +34,16 @@ type Address struct {
 	// LEN > 0 specifies length of ADR field
 	Len byte   // length of MAC address
 	Adr []byte // hwaddr (MAC) address
+}
+
+func AddressFromUDP(udp *net.UDPAddr) Address {
+	b := bytes.NewBuffer(udp.IP)
+	port := uint16(udp.Port)
+	_ = binary.Write(b, binary.BigEndian, port)
+	return Address{
+		MacLen: byte(len(b.Bytes())),
+		Mac:    b.Bytes(),
+	}
 }
 
 type NPDU struct {
@@ -221,4 +232,39 @@ func (p *DataPayload) UnmarshalBinary(data []byte) error {
 	p.Bytes = make([]byte, len(data))
 	copy(p.Bytes, data)
 	return nil
+}
+
+type BVLCType byte
+
+const BVLCTypeBacnetIP BVLCType = 0x81
+
+// Bacnet Fuction
+type BacFunc byte
+
+// List of possible BACnet functions
+const (
+	BacFuncResult                          BacFunc = 0
+	BacFuncWriteBroadcastDistributionTable BacFunc = 1
+	BacFuncBroadcastDistributionTable      BacFunc = 2
+	BacFuncBroadcastDistributionTableAck   BacFunc = 3
+	BacFuncForwardedNPDU                   BacFunc = 4
+	BacFuncUnicast                         BacFunc = 10
+	BacFuncBroadcast                       BacFunc = 11
+)
+
+type BVLC struct {
+	Type     BVLCType
+	Function BacFunc
+	//maybe Payload here ?
+	Data []byte
+}
+
+func (bvlc BVLC) MarshalBinary() ([]byte, error) {
+	b := &bytes.Buffer{}
+	b.WriteByte(byte(bvlc.Type))
+	b.WriteByte(byte(bvlc.Function))
+	len := uint16(4 + len(bvlc.Data)) //len includes Type,Function and itself
+	_ = binary.Write(b, binary.BigEndian, len)
+	b.Write(bvlc.Data)
+	return b.Bytes(), nil
 }
