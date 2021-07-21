@@ -52,7 +52,7 @@ type NPDU struct {
 	ADPU *APDU
 }
 
-func (npdu NPDU) MarshallBinary() ([]byte, error) {
+func (npdu NPDU) MarshalBinary() ([]byte, error) {
 	b := &bytes.Buffer{}
 	b.WriteByte(byte(npdu.Version))
 	var control byte
@@ -98,7 +98,7 @@ func (npdu NPDU) MarshallBinary() ([]byte, error) {
 	}
 	bytes := b.Bytes()
 	if npdu.ADPU != nil {
-		bytesapdu, err := npdu.ADPU.MarshallBinary()
+		bytesapdu, err := npdu.ADPU.MarshalBinary()
 		if err != nil {
 			return nil, err
 		}
@@ -187,17 +187,38 @@ const (
 	maxBACnetConfirmedService ServiceType = 30
 )
 
-func (apdu APDU) MarshallBinary() ([]byte, error) {
+func (apdu APDU) MarshalBinary() ([]byte, error) {
 	b := &bytes.Buffer{}
 	b.WriteByte(byte(apdu.DataType))
 	b.WriteByte(byte(apdu.ServiceType))
-	b.Write(apdu.Data)
+	bytes, err := apdu.Payload.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	b.Write(bytes)
 	return b.Bytes(), nil
 }
 
+type Payload interface {
+	MarshalBinary() ([]byte, error)
+	UnmarshalBinary([]byte) error
+}
 type APDU struct {
 	DataType    PDUType
 	ServiceType ServiceType
-	//Use payload interface like lora ?
-	Data []byte
+	Payload     Payload
+}
+
+type DataPayload struct {
+	Bytes []byte
+}
+
+func (p DataPayload) MarshalBinary() ([]byte, error) {
+	return p.Bytes, nil
+}
+
+func (p *DataPayload) UnmarshalBinary(data []byte) error {
+	p.Bytes = make([]byte, len(data))
+	copy(p.Bytes, data)
+	return nil
 }

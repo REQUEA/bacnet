@@ -138,10 +138,10 @@ func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
 		ADPU: &APDU{
 			DataType:    UnconfirmedServiceRequest,
 			ServiceType: ServiceUnconfirmedWhoIs,
-			Data:        []byte{0x09, 0x00, 0x1a, 0xff, 0xff},
+			Payload:     &DataPayload{[]byte{0x09, 0x00, 0x1a, 0xff, 0xff}},
 		},
 	}
-	bytes, err := npdu.MarshallBinary()
+	bytes, err := npdu.MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
