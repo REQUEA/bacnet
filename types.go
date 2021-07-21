@@ -79,13 +79,13 @@ func (npdu NPDU) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("Invalid Priority %d", npdu.Priority)
 	}
 	control += byte(npdu.Priority)
-	if npdu.Source != nil && npdu.Source.Net != 0 {
-		control += 1 << 3
-		hasSrc = true
-	}
 	if npdu.Destination != nil && npdu.Destination.Net != 0 {
 		control += 1 << 5
 		hasDest = true
+	}
+	if npdu.Source != nil && npdu.Source.Net != 0 {
+		control += 1 << 3
+		hasSrc = true
 	}
 	b.WriteByte(control)
 	if hasDest {
@@ -116,6 +116,86 @@ func (npdu NPDU) MarshalBinary() ([]byte, error) {
 		bytes = append(bytes, bytesapdu...)
 	}
 	return bytes, nil
+}
+
+func (npdu *NPDU) UnmarshallBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	err := binary.Read(buf, binary.BigEndian, &npdu.Version)
+	if err != nil {
+		return fmt.Errorf("Failed to read NPDU version: %w", err)
+	}
+	if npdu.Version != BacnetVersion1 {
+		return fmt.Errorf("Invalid NPDU version %d", npdu.Version)
+	}
+	control, err := buf.ReadByte()
+	if err != nil {
+		return fmt.Errorf("Failed to read NPDU control byte:  %w", err)
+	}
+	if control&(1<<7) > 0 {
+		npdu.IsNetworkLayerMessage = true
+	}
+	if control&(1<<2) > 0 {
+		npdu.ExpectingReply = true
+	}
+	npdu.Priority = NPDUPriority(control & 0x3)
+
+	if control&(1<<5) > 0 {
+		npdu.Destination = &Address{}
+		err := binary.Read(buf, binary.BigEndian, &npdu.Destination.Net)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU dest Address.Net: %w", err)
+		}
+		err = binary.Read(buf, binary.BigEndian, &npdu.Destination.Len)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU dest Address.Len: %w", err)
+		}
+		npdu.Destination.Adr = make([]byte, int(npdu.Destination.Len))
+		err = binary.Read(buf, binary.BigEndian, &npdu.Destination.Adr)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU dest Address.Net: %w", err)
+		}
+	}
+
+	if control&(1<<3) > 0 {
+		npdu.Source = &Address{}
+		err := binary.Read(buf, binary.BigEndian, &npdu.Source.Net)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU src Address.Net: %w", err)
+		}
+		err = binary.Read(buf, binary.BigEndian, &npdu.Source.Len)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU src Address.Len: %w", err)
+		}
+		npdu.Source.Adr = make([]byte, int(npdu.Source.Len))
+		err = binary.Read(buf, binary.BigEndian, &npdu.Source.Adr)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU src Address.Net: %w", err)
+		}
+	}
+
+	if npdu.Destination != nil {
+		err := binary.Read(buf, binary.BigEndian, &npdu.HopCount)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU HopCount: %w", err)
+		}
+	}
+
+	if npdu.IsNetworkLayerMessage {
+		err := binary.Read(buf, binary.BigEndian, &npdu.NetworkMessageType)
+		if err != nil {
+			return fmt.Errorf("Failed to read NPDU NetworkMessageType: %w", err)
+		}
+		if npdu.NetworkMessageType > 0x80 {
+			err := binary.Read(buf, binary.BigEndian, &npdu.VendorID)
+			if err != nil {
+				return fmt.Errorf("Failed to read NPDU VendorId: %w", err)
+			}
+		}
+	} else {
+		npdu.ADPU = &APDU{}
+
+	}
+	return nil
 }
 
 type PDUType byte
@@ -256,15 +336,44 @@ type BVLC struct {
 	Type     BVLCType
 	Function BacFunc
 	//maybe Payload here ?
-	Data []byte
+	NPDU NPDU
 }
 
 func (bvlc BVLC) MarshalBinary() ([]byte, error) {
 	b := &bytes.Buffer{}
 	b.WriteByte(byte(bvlc.Type))
 	b.WriteByte(byte(bvlc.Function))
-	len := uint16(4 + len(bvlc.Data)) //len includes Type,Function and itself
+	data, err := bvlc.NPDU.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	len := uint16(4 + len(data)) //len includes Type,Function and itself
 	_ = binary.Write(b, binary.BigEndian, len)
-	b.Write(bvlc.Data)
+	b.Write(data)
 	return b.Bytes(), nil
+}
+
+func (bvlc *BVLC) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	bvlcType, err := buf.ReadByte()
+	if err != nil {
+		return fmt.Errorf("Failed to read bvlc type: %w", err)
+	}
+	bvlcFunc, err := buf.ReadByte()
+	if err != nil {
+		return fmt.Errorf("Failed to read bvlc func: %w", err)
+	}
+	var length uint16
+	err = binary.Read(buf, binary.BigEndian, &length)
+	if err != nil {
+		return fmt.Errorf("Failed to read bvlc length: %w", err)
+	}
+	remaining := buf.Bytes()
+
+	bvlc.Type = BVLCType(bvlcType)
+	bvlc.Function = BacFunc(bvlcFunc)
+	if len(remaining) != int(length)-4 {
+		return fmt.Errorf("Incoherent Length field in BVCL. Advertized payload size is %d, real size  %d", length-4, len(remaining))
+	}
+	return bvlc.NPDU.UnmarshallBinary(remaining)
 }

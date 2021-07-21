@@ -74,21 +74,34 @@ func NewClient(inter string, port int) (*Client, error) {
 }
 
 // listen for incoming bacnet packets.
-func (c *Client) listen() error {
-	var err error = nil
-	// While connection is opened
-	for err == nil {
-		var (
-			adr net.Addr
-			i   int
-		)
-
+func (c *Client) listen() {
+	//Todo: allow close client
+	for {
 		b := make([]byte, 2048)
-		i, adr, err = c.udp.ReadFrom(b)
+		i, addr, err := c.udp.ReadFromUDP(b)
 		if err != nil {
+			//Todo; do better, use logger
 			panic(err)
 		}
-		fmt.Printf("Received packet %s from addr %v \n", hex.EncodeToString(b[:i]), adr)
+		go func() {
+			err := c.handleMessage(addr, b[:i])
+			if err != nil {
+				panic(err)
+			}
+		}()
+	}
+}
+
+func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
+	fmt.Printf("Received packet %s from addr %v \n", hex.EncodeToString(b), src)
+	var bvlc BVLC
+	err := bvlc.UnmarshalBinary(b)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%+v\n", bvlc)
+	if bvlc.NPDU.Destination != nil {
+		fmt.Printf("dest: %+v\n", *bvlc.NPDU.Destination)
 	}
 	return nil
 }
@@ -107,11 +120,8 @@ func (c *Client) WhoIs(data WhoIs) ([]types.Device, error) {
 			Payload:     &data,
 		},
 	}
-	bytes, err := npdu.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-	_, err = c.broadcast(bytes)
+
+	_, err := c.broadcast(npdu)
 	if err != nil {
 		return nil, err
 	}
@@ -151,11 +161,11 @@ func (c *Client) send(dest types.Address, data []byte) (int, error) {
 	// return c.listener.WriteTo(e.Bytes(), &d)
 }
 
-func (c *Client) broadcast(data []byte) (int, error) {
+func (c *Client) broadcast(npdu NPDU) (int, error) {
 	bytes, err := BVLC{
 		Type:     BVLCTypeBacnetIP,
 		Function: BacFuncBroadcast,
-		Data:     data,
+		NPDU:     npdu,
 	}.MarshalBinary()
 	if err != nil {
 		return 0, err

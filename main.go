@@ -4,22 +4,20 @@ import (
 	"fmt"
 	"log"
 	"time"
-
-	"github.com/alexbeltran/gobacnet"
 )
 
 func main() {
-	c, err := gobacnet.NewClient("en0", 47808)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("%+v\n", c)
-	d, err := c.WhoIs(0, 65535)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("%+v\n", d)
-	c.Close()
+	// c, err := gobacnet.NewClient("en0", 47808)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// }
+	// fmt.Printf("%+v\n", c)
+	// d, err := c.WhoIs(0, 65535)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// }
+	// fmt.Printf("%+v\n", d)
+	// c.Close()
 	c2, err := NewClient("en0", 47808)
 	if err != nil {
 		log.Fatal("newclient: ", err)
