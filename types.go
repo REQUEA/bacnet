@@ -78,14 +78,14 @@ func (npdu NPDU) MarshalBinary() ([]byte, error) {
 	}
 	b.WriteByte(control)
 	if hasDest {
-		binary.Write(b, binary.BigEndian, npdu.Destination.Net)
-		binary.Write(b, binary.BigEndian, npdu.Destination.Len)
-		binary.Write(b, binary.BigEndian, npdu.Destination.Adr)
+		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Net)
+		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Len)
+		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Adr)
 	}
 	if hasSrc {
-		binary.Write(b, binary.BigEndian, npdu.Source.Net)
-		binary.Write(b, binary.BigEndian, npdu.Source.Len)
-		binary.Write(b, binary.BigEndian, npdu.Source.Adr)
+		_ = binary.Write(b, binary.BigEndian, npdu.Source.Net)
+		_ = binary.Write(b, binary.BigEndian, npdu.Source.Len)
+		_ = binary.Write(b, binary.BigEndian, npdu.Source.Adr)
 	}
 	if hasDest {
 		b.WriteByte(npdu.HopCount)
@@ -93,7 +93,7 @@ func (npdu NPDU) MarshalBinary() ([]byte, error) {
 	if isNetworkMessage {
 		b.WriteByte(npdu.NetworkMessageType)
 		if npdu.NetworkMessageType >= 0x80 {
-			binary.Write(b, binary.BigEndian, npdu.VendorID)
+			_ = binary.Write(b, binary.BigEndian, npdu.VendorID)
 		}
 	}
 	bytes := b.Bytes()
