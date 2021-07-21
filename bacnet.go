@@ -93,7 +93,7 @@ func (c *Client) listen() error {
 	return nil
 }
 
-func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
+func (c *Client) WhoIs(data WhoIs) ([]types.Device, error) {
 	npdu := NPDU{
 		Version:               BacnetVersion1,
 		IsNetworkLayerMessage: false,
@@ -104,7 +104,7 @@ func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
 		ADPU: &APDU{
 			DataType:    UnconfirmedServiceRequest,
 			ServiceType: ServiceUnconfirmedWhoIs,
-			Payload:     &DataPayload{[]byte{0x09, 0x00, 0x1a, 0xff, 0xff}},
+			Payload:     &data,
 		},
 	}
 	bytes, err := npdu.MarshalBinary()

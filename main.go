@@ -14,7 +14,7 @@ func main() {
 		fmt.Println(err)
 	}
 	fmt.Printf("%+v\n", c)
-	d, err := c.WhoIs(0, -1)
+	d, err := c.WhoIs(0, 65535)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -25,7 +25,13 @@ func main() {
 		log.Fatal("newclient: ", err)
 	}
 	fmt.Printf("%+v\n", c2)
-	d2, err := c2.WhoIs(0, 65535)
+	data := WhoIs{
+		low:  new(uint),
+		high: new(uint),
+	}
+	*data.low = 0
+	*data.high = 65535
+	d2, err := c2.WhoIs(data)
 	if err != nil {
 		log.Fatal("whois: ", err)
 	}
