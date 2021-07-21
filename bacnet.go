@@ -94,35 +94,6 @@ func (c *Client) listen() error {
 }
 
 func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
-	// dest := types.UDPToAddress(&net.UDPAddr{
-	// 	IP:   c.broadcastAddress,
-	// 	Port: DefaultUDPPort,
-	// })
-	// // src := types.UDPToAddress(&net.UDPAddr{
-	// // 	IP:   c.ipAdress,
-	// // 	Port: c.udpPort,
-	// // })
-
-	// dest.SetBroadcast(true)
-
-	// enc := encoding.NewEncoder()
-	// npdu := types.NPDU{
-	// 	Version:               types.ProtocolVersion,
-	// 	Destination:           &dest,
-	// 	Source:                &src,
-	// 	IsNetworkLayerMessage: false,
-
-	// 	// We are not expecting a direct reply from a single destination
-	// 	ExpectingReply: false,
-	// 	Priority:       types.Normal,
-	// 	HopCount:       types.DefaultHopCount,
-	// }
-	// enc.NPDU(npdu)
-
-	// err := enc.WhoIs(int32(low), int32(high))
-	// if err != nil {
-	// 	return nil, err
-	// }
 	npdu := NPDU{
 		Version:               BacnetVersion1,
 		IsNetworkLayerMessage: false,
@@ -130,8 +101,6 @@ func (c *Client) WhoIs(low, high int) ([]types.Device, error) {
 		Priority:              Normal,
 		Destination:           nil,
 		Source:                nil,
-		HopCount:              255,
-		VendorID:              0,
 		ADPU: &APDU{
 			DataType:    UnconfirmedServiceRequest,
 			ServiceType: ServiceUnconfirmedWhoIs,
