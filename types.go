@@ -193,6 +193,7 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 		}
 	} else {
 		npdu.ADPU = &APDU{}
+		return npdu.ADPU.UnmarshalBinary(buf.Bytes())
 
 	}
 	return nil
@@ -278,6 +279,12 @@ const (
 	maxBACnetConfirmedService ServiceType = 30
 )
 
+type APDU struct {
+	DataType    PDUType
+	ServiceType ServiceType
+	Payload     Payload
+}
+
 func (apdu APDU) MarshalBinary() ([]byte, error) {
 	b := &bytes.Buffer{}
 	b.WriteByte(byte(apdu.DataType))
@@ -289,15 +296,31 @@ func (apdu APDU) MarshalBinary() ([]byte, error) {
 	b.Write(bytes)
 	return b.Bytes(), nil
 }
+func (apdu *APDU) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	err := binary.Read(buf, binary.BigEndian, &apdu.DataType)
+	if err != nil {
+		return fmt.Errorf("Failed to read APDU DataType: %w", err)
+	}
+	err = binary.Read(buf, binary.BigEndian, &apdu.ServiceType)
+	if err != nil {
+		return fmt.Errorf("Failed to read APDU ServiceType: %w", err)
+	}
+	if apdu.DataType == UnconfirmedServiceRequest && apdu.ServiceType == ServiceUnconfirmedWhoIs {
+		apdu.Payload = &WhoIs{}
+		fmt.Printf("Test, %+v", apdu.Payload)
+		return apdu.Payload.UnmarshalBinary(buf.Bytes())
+	} else {
+		// Just pass raw data, decoding is not yet ready
+		apdu.Payload = &DataPayload{buf.Bytes()}
+	}
+
+	return nil
+}
 
 type Payload interface {
 	MarshalBinary() ([]byte, error)
 	UnmarshalBinary([]byte) error
-}
-type APDU struct {
-	DataType    PDUType
-	ServiceType ServiceType
-	Payload     Payload
 }
 
 type DataPayload struct {
