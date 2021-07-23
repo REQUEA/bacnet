@@ -216,6 +216,7 @@ const (
 )
 
 func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
+	fmt.Printf("%+v\n", length)
 	switch length {
 	case size8:
 		val, err := buf.ReadByte()
@@ -270,9 +271,31 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 	if err != nil {
 		return fmt.Errorf("decodeAppData: read tag: %w", err)
 	}
+	//TODO: return err if tag is context
 	//Take the pointer value
 	rv = rv.Elem()
+	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
 	switch tag.ID {
+	case ApplicationTagUnsignedInt:
+		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
+			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
+		}
+		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
+		if err != nil {
+			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+		}
+
+		rv.SetUint(uint64(val))
+	case ApplicationTagEnumerated:
+		var seg SegmentationSupport
+		if rv.Type() != reflect.TypeOf(seg) {
+			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
+		}
+		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
+		if err != nil {
+			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+		}
+		rv.SetUint(uint64(val))
 	case ApplicationTagObjectId:
 		var obj ObjectID
 		if rv.Type() != reflect.TypeOf(obj) {

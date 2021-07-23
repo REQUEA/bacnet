@@ -105,6 +105,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	}
 	if bvlc.NPDU.ADPU != nil {
 		fmt.Printf("apdu %+v\n", *bvlc.NPDU.ADPU)
+		fmt.Printf("%+v\n", bvlc.NPDU.ADPU.Payload)
 	}
 	return nil
 }

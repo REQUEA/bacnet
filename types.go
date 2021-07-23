@@ -308,8 +308,12 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 	}
 	if apdu.DataType == UnconfirmedServiceRequest && apdu.ServiceType == ServiceUnconfirmedWhoIs {
 		apdu.Payload = &WhoIs{}
-		fmt.Printf("Test, %+v", apdu.Payload)
 		return apdu.Payload.UnmarshalBinary(buf.Bytes())
+
+	} else if apdu.DataType == UnconfirmedServiceRequest && apdu.ServiceType == ServiceUnconfirmedIAm {
+		apdu.Payload = &Iam{}
+		return apdu.Payload.UnmarshalBinary(buf.Bytes())
+
 	} else {
 		// Just pass raw data, decoding is not yet ready
 		apdu.Payload = &DataPayload{buf.Bytes()}

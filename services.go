@@ -80,16 +80,33 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 
 type Iam struct {
 	ObjectID            ObjectID
-	MaxApdu             uint32
+	MaxApduLength       uint32
 	SegmentationSupport SegmentationSupport
 	VendorID            uint32
+}
+
+func (iam Iam) MarshalBinary() ([]byte, error) {
+	panic("not implemented")
 }
 
 func (iam *Iam) UnmarshalBinary(data []byte) error {
 	buf := bytes.NewBuffer(data)
 	err := decodeAppData(buf, &iam.ObjectID)
 	if err != nil {
-		return fmt.Errorf("read iam objectID: %w", err)
+		return fmt.Errorf("decode iam objectID: %w", err)
 	}
+	err = decodeAppData(buf, &iam.MaxApduLength)
+	if err != nil {
+		return fmt.Errorf("decode iam MaxAPDU: %w", err)
+	}
+	err = decodeAppData(buf, &iam.SegmentationSupport)
+	if err != nil {
+		return fmt.Errorf("decode iam SegmentationSupport: %w", err)
+	}
+	err = decodeAppData(buf, &iam.VendorID)
+	if err != nil {
+		return fmt.Errorf("decode iam VendorID: %w", err)
+	}
+
 	return nil
 }
