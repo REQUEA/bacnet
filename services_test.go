@@ -40,3 +40,35 @@ func TestWhoIsDec(t *testing.T) {
 		t.Error("Non nil range value")
 	}
 }
+
+func TestWhoIsCoherency(t *testing.T) {
+	is := is.New(t)
+	ttc := []struct {
+		data string //hex string
+		name string
+	}{
+		{
+			data: "09001affff",
+			name: "Range 1-2",
+		},
+		{
+			data: "",
+			name: "Empty",
+		},
+		{
+			data: "09121b012345",
+			name: "Range 1-3",
+		},
+	}
+	for _, tc := range ttc {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := hex.DecodeString(tc.data)
+			is.NoErr(err)
+			w := &WhoIs{}
+			is.NoErr(w.UnmarshalBinary(b))
+			b2, err := w.MarshalBinary()
+			is.NoErr(err)
+			is.Equal(hex.EncodeToString(b2), tc.data)
+		})
+	}
+}
