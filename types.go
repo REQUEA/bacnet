@@ -400,3 +400,20 @@ func (bvlc *BVLC) UnmarshalBinary(data []byte) error {
 	}
 	return bvlc.NPDU.UnmarshallBinary(remaining)
 }
+
+type ObjectType uint16
+type ObjectInstance uint32
+
+type ObjectID struct {
+	Type     ObjectType
+	Instance ObjectInstance
+}
+
+type SegmentationSupport byte
+
+const (
+	SegmentationSupportBoth     SegmentationSupport = 0x00
+	SegmentationSupportTransmit SegmentationSupport = 0x01
+	SegmentationSupportReceive  SegmentationSupport = 0x02
+	SegmentationSupportNone     SegmentationSupport = 0x03
+)

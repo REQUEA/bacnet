@@ -59,6 +59,7 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("read 1st WhoIs value: %w", err)
 	}
 	*w.Low = uint(val)
+
 	// Tag 1 - High Value
 	expectedTagID = 1
 	_, tag, err = decodeTag(buf)
@@ -74,4 +75,11 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 	}
 	*w.High = uint(val)
 	return nil
+}
+
+type Iam struct {
+	ObjectID            ObjectID
+	MaxApdu             uint32
+	SegmentationSupport SegmentationSupport
+	VendorID            uint32
 }
