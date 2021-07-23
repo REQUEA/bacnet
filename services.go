@@ -1,4 +1,4 @@
-package main
+package bacnet
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 const MaxInstance = 0x3FFFFF
 
 type WhoIs struct {
-	low, high *uint //may be null if we want to check all range
+	Low, High *uint //may be null if we want to check all range
 }
 
 type ErrorIncorrectTag struct {
@@ -22,15 +22,15 @@ func (e ErrorIncorrectTag) Error() string {
 
 func (w WhoIs) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if w.low != nil && w.high != nil {
-		if *w.low > MaxInstance || *w.high > MaxInstance {
-			return nil, fmt.Errorf("Invalid WhoIs range: [%d, %d]: max value is %d", *w.low, *w.high, MaxInstance)
+	if w.Low != nil && w.High != nil {
+		if *w.Low > MaxInstance || *w.High > MaxInstance {
+			return nil, fmt.Errorf("Invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, MaxInstance)
 		}
-		if *w.low > *w.high {
-			return nil, fmt.Errorf("Invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.low, *w.high)
+		if *w.Low > *w.High {
+			return nil, fmt.Errorf("Invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
 		}
-		contextUnsigned(buf, 0, uint32(*w.low))
-		contextUnsigned(buf, 1, uint32(*w.high))
+		contextUnsigned(buf, 0, uint32(*w.Low))
+		contextUnsigned(buf, 1, uint32(*w.High))
 	}
 	return buf.Bytes(), nil
 }
@@ -41,8 +41,8 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 		// check. So keep the low and high pointer nil
 		return nil
 	}
-	w.low = new(uint)
-	w.high = new(uint)
+	w.Low = new(uint)
+	w.High = new(uint)
 	buf := bytes.NewBuffer(data)
 	// Tag 0 - Low Value
 	var expectedTagID byte = 0
@@ -58,7 +58,7 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("read 1st WhoIs value: %w", err)
 	}
-	*w.low = uint(val)
+	*w.Low = uint(val)
 	// Tag 1 - High Value
 	expectedTagID = 1
 	_, tag, err = decodeTag(buf)
@@ -72,6 +72,6 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("read 2st WhoIs value: %w", err)
 	}
-	*w.high = uint(val)
+	*w.High = uint(val)
 	return nil
 }

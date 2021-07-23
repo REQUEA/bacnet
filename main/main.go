@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bacnet"
 	"fmt"
 	"log"
 	"time"
@@ -18,17 +19,17 @@ func main() {
 	// }
 	// fmt.Printf("%+v\n", d)
 	// c.Close()
-	c2, err := NewClient("en0", 47808)
+	c2, err := bacnet.NewClient("en0", 47808)
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
 	fmt.Printf("%+v\n", c2)
-	data := WhoIs{
-		low:  new(uint),
-		high: new(uint),
+	data := bacnet.WhoIs{
+		Low:  new(uint),
+		High: new(uint),
 	}
-	*data.low = 0
-	*data.high = 65535
+	*data.Low = 0
+	*data.High = 65535
 	d2, err := c2.WhoIs(data)
 	if err != nil {
 		log.Fatal("whois: ", err)
