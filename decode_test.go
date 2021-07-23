@@ -11,7 +11,6 @@ import (
 
 //TODO: check for context
 func TestDecodeTag(t *testing.T) {
-	is := is.New(t)
 	ttc := []struct {
 		data     string //hex string
 		expected tag
@@ -54,6 +53,7 @@ func TestDecodeTag(t *testing.T) {
 	}
 	for _, tc := range ttc {
 		t.Run(fmt.Sprintf("Tag %s", tc.data), func(t *testing.T) {
+			is := is.New(t)
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
 			buf := bytes.NewBuffer(b)
@@ -73,4 +73,34 @@ func tagEqual(t1, t2 tag) bool {
 		t1.Value == t2.Value &&
 		t1.Opening == t2.Opening &&
 		t1.Closing == t2.Closing
+}
+
+func TestDecodeAppData(t *testing.T) {
+	ttc := []struct {
+		data     string //hex string
+		from     interface{}
+		expected interface{}
+	}{
+		{
+			data: "c4020075e9",
+			from: ObjectID{},
+			expected: ObjectID{
+				Type:     8,
+				Instance: 30185,
+			},
+		},
+	}
+	for _, tc := range ttc {
+		t.Run(fmt.Sprintf("AppData %s", tc.data), func(t *testing.T) {
+			is := is.New(t)
+			b, err := hex.DecodeString(tc.data)
+			is.NoErr(err)
+			buf := bytes.NewBuffer(b)
+			x := ObjectID{}
+			err = decodeAppData(buf, &x)
+			is.NoErr(err)
+			is.Equal(x, tc.expected)
+
+		})
+	}
 }

@@ -6,6 +6,7 @@ import (
 )
 
 const MaxInstance = 0x3FFFFF
+const InstanceBits = 22
 
 type WhoIs struct {
 	Low, High *uint //may be null if we want to check all range
@@ -53,7 +54,7 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 	if tag.ID != expectedTagID {
 		return fmt.Errorf("decode 1st WhoIs tag: %w", ErrorIncorrectTag{Expected: expectedTagID, Given: tag.ID})
 	}
-	//here the value of the tag is the length of the data
+	//The tag value is the length of the next data field
 	val, err := decodeUnsignedWithLen(buf, int(tag.Value))
 	if err != nil {
 		return fmt.Errorf("read 1st WhoIs value: %w", err)
@@ -82,4 +83,13 @@ type Iam struct {
 	MaxApdu             uint32
 	SegmentationSupport SegmentationSupport
 	VendorID            uint32
+}
+
+func (iam *Iam) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	err := decodeAppData(buf, &iam.ObjectID)
+	if err != nil {
+		return fmt.Errorf("read iam objectID: %w", err)
+	}
+	return nil
 }

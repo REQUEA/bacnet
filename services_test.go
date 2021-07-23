@@ -21,7 +21,7 @@ func TestWhoIsDec(t *testing.T) {
 		t.Error("Invalid whois decoding of high range ")
 	}
 
-	data, err = hex.DecodeString("09121b012345") //No range
+	data, err = hex.DecodeString("09121b012345") //With range
 	is.NoErr(err)
 	w = &WhoIs{}
 	err = w.UnmarshalBinary(data)

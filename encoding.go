@@ -3,7 +3,25 @@ package bacnet
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"reflect"
+)
+
+const (
+	ApplicationTagNull            byte = 0x00
+	ApplicationTagBoolean         byte = 0x01
+	ApplicationTagUnsignedInt     byte = 0x02
+	ApplicationTagSignedInt       byte = 0x03
+	ApplicationTagReal            byte = 0x04
+	ApplicationTagDouble          byte = 0x05
+	ApplicationTagOctetString     byte = 0x06
+	ApplicationTagCharacterString byte = 0x07
+	ApplicationTagBitString       byte = 0x08
+	ApplicationTagEnumerated      byte = 0x09
+	ApplicationTagDate            byte = 0x0A
+	ApplicationTagTime            byte = 0x0B
+	ApplicationTagObjectId        byte = 0x0C
 )
 
 type tag struct {
@@ -237,4 +255,41 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		//implementation allow it but i'm not sure
 		return 0, nil
 	}
+}
+
+//decodeAppData read the next tag and value. The value type advertised
+//in tag must be a standard bacnet application data type and must
+//match the type passed in the v parameter. If no error is
+//returned, v will contain the data read
+func decodeAppData(buf *bytes.Buffer, v interface{}) error {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return errors.New("decodeAppData: interface parameter isn't a pointer")
+	}
+	_, tag, err := decodeTag(buf)
+	if err != nil {
+		return fmt.Errorf("decodeAppData: read tag: %w", err)
+	}
+	//Take the pointer value
+	rv = rv.Elem()
+	switch tag.ID {
+	case ApplicationTagObjectId:
+		var obj ObjectID
+		if rv.Type() != reflect.TypeOf(obj) {
+			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
+		}
+		var val uint32
+		err := binary.Read(buf, binary.BigEndian, &val)
+		if err != nil {
+			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+		}
+		obj = ObjectID{
+			Type:     ObjectType(val >> InstanceBits),
+			Instance: ObjectInstance(val & MaxInstance),
+		}
+		rv.Set(reflect.ValueOf(obj))
+	default:
+		return fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
+	}
+	return nil
 }
