@@ -89,6 +89,21 @@ func TestDecodeAppData(t *testing.T) {
 				Instance: 30185,
 			},
 		},
+		{
+			data:     "2205c4",
+			from:     uint32(0),
+			expected: uint32(1476),
+		},
+		{
+			data:     "9100",
+			from:     SegmentationSupport(0),
+			expected: SegmentationSupportBoth,
+		},
+		{
+			data:     "22016c",
+			from:     uint32(0),
+			expected: uint32(364),
+		},
 	}
 	for _, tc := range ttc {
 		t.Run(fmt.Sprintf("AppData %s", tc.data), func(t *testing.T) {
@@ -96,10 +111,25 @@ func TestDecodeAppData(t *testing.T) {
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
 			buf := bytes.NewBuffer(b)
-			x := ObjectID{}
-			err = decodeAppData(buf, &x)
-			is.NoErr(err)
-			is.Equal(x, tc.expected)
+			switch tc.from.(type) {
+			case ObjectID:
+				x := ObjectID{}
+				err = decodeAppData(buf, &x)
+				is.NoErr(err)
+				is.Equal(x, tc.expected)
+			case uint32:
+				var x uint32
+				err = decodeAppData(buf, &x)
+				is.NoErr(err)
+				is.Equal(x, tc.expected)
+			case SegmentationSupport:
+				var x SegmentationSupport
+				err = decodeAppData(buf, &x)
+				is.NoErr(err)
+				is.Equal(x, tc.expected)
+			default:
+				t.Errorf("Invalid from type %T", tc.from)
+			}
 
 		})
 	}
