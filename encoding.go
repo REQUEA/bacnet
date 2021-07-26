@@ -50,9 +50,9 @@ func isClosingTag(x byte) bool {
 	return x&7 == 7
 }
 
-func isContextSpecific(x byte) bool {
-	return x&8 > 0
-}
+// func isContextSpecific(x byte) bool {
+// 	return x&8 > 0
+// }
 
 const (
 	flag16bits byte = 0xFE
@@ -94,10 +94,10 @@ func (t tag) MarshallBinary() ([]byte, error) {
 			buf.WriteByte(byte(t.Value))
 		} else if t.Value <= 65535 {
 			buf.WriteByte(flag16bits)
-			binary.Write(buf, binary.BigEndian, uint16(t.Value))
+			_ = binary.Write(buf, binary.BigEndian, uint16(t.Value))
 		} else {
 			buf.WriteByte(flag32bits)
-			binary.Write(buf, binary.BigEndian, uint32(t.Value))
+			_ = binary.Write(buf, binary.BigEndian, uint32(t.Value))
 		}
 	}
 	return buf.Bytes(), nil
@@ -136,16 +136,16 @@ func unsigned(buf *bytes.Buffer, value uint32) int {
 		buf.WriteByte(uint8(value))
 		return 1
 	} else if value < 0x10000 {
-		binary.Write(buf, binary.BigEndian, uint16(value))
+		_ = binary.Write(buf, binary.BigEndian, uint16(value))
 		return 2
 	} else if value < 0x1000000 {
 		// There is no default 24 bit integer in go, so we have to
 		// write it manually (in big endian)
 		buf.WriteByte(byte(value >> 16))
-		binary.Write(buf, binary.BigEndian, uint16(value))
+		_ = binary.Write(buf, binary.BigEndian, uint16(value))
 		return 3
 	} else {
-		binary.Write(buf, binary.BigEndian, value)
+		_ = binary.Write(buf, binary.BigEndian, value)
 		return 4
 	}
 }
