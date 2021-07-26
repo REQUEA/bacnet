@@ -33,7 +33,7 @@ type Address struct {
 	Net uint16 // BACnet network number
 	// LEN = 0 denotes broadcast MAC ADR and ADR field is absent
 	// LEN > 0 specifies length of ADR field
-	Len byte   // length of MAC address
+	Len byte   // length of MAC address //I think this is not needed
 	Adr []byte // hwaddr (MAC) address
 }
 
