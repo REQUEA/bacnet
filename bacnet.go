@@ -205,7 +205,7 @@ func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 
 func (c *Client) broadcast(npdu NPDU) (int, error) {
 	bytes, err := BVLC{
-		Type:     BVLCTypeBacnetIP,
+		Type:     TypeBacnetIP,
 		Function: BacFuncBroadcast,
 		NPDU:     npdu,
 	}.MarshalBinary()

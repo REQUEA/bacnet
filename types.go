@@ -11,6 +11,7 @@ type Version byte
 
 const Version1 Version = 1
 
+//go:generate stringer -type=NPDUPriority
 type NPDUPriority byte
 
 const (
@@ -199,6 +200,7 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 	return nil
 }
 
+////go:generate stringer -type=PDUType
 type PDUType byte
 
 //TODO: Maybe do from 0 to 7
@@ -211,6 +213,9 @@ const (
 	Reject                    PDUType = 0x60
 	Abort                     PDUType = 0x70
 )
+
+//TODO: implement stringer, make different types
+type ServiceType byte
 
 const (
 	ServiceUnconfirmedIAm               ServiceType = 0
@@ -231,8 +236,6 @@ const (
 	/* UnconfirmedPrivateTransfer service. See Clause 23. */
 	MaxServiceUnconfirmed ServiceType = 11
 )
-
-type ServiceType byte
 
 const (
 	/* Alarm and Event Services */
@@ -343,25 +346,25 @@ func (p *DataPayload) UnmarshalBinary(data []byte) error {
 
 type BVLCType byte
 
-const BVLCTypeBacnetIP BVLCType = 0x81
+const TypeBacnetIP BVLCType = 0x81
 
-// Bacnet Fuction
-type BacFunc byte
+//go:generate stringer -type=BacnetFunction
+type BacnetFunction byte
 
 // List of possible BACnet functions
 const (
-	BacFuncResult                          BacFunc = 0
-	BacFuncWriteBroadcastDistributionTable BacFunc = 1
-	BacFuncBroadcastDistributionTable      BacFunc = 2
-	BacFuncBroadcastDistributionTableAck   BacFunc = 3
-	BacFuncForwardedNPDU                   BacFunc = 4
-	BacFuncUnicast                         BacFunc = 10
-	BacFuncBroadcast                       BacFunc = 11
+	BacFuncResult                          BacnetFunction = 0
+	BacFuncWriteBroadcastDistributionTable BacnetFunction = 1
+	BacFuncBroadcastDistributionTable      BacnetFunction = 2
+	BacFuncBroadcastDistributionTableAck   BacnetFunction = 3
+	BacFuncForwardedNPDU                   BacnetFunction = 4
+	BacFuncUnicast                         BacnetFunction = 10
+	BacFuncBroadcast                       BacnetFunction = 11
 )
 
 type BVLC struct {
 	Type     BVLCType
-	Function BacFunc
+	Function BacnetFunction
 	//maybe Payload here ?
 	NPDU NPDU
 }
@@ -398,7 +401,7 @@ func (bvlc *BVLC) UnmarshalBinary(data []byte) error {
 	remaining := buf.Bytes()
 
 	bvlc.Type = BVLCType(bvlcType)
-	bvlc.Function = BacFunc(bvlcFunc)
+	bvlc.Function = BacnetFunction(bvlcFunc)
 	if len(remaining) != int(length)-4 {
 		return fmt.Errorf("incoherent Length field in BVCL. Advertized payload size is %d, real size  %d", length-4, len(remaining))
 	}
@@ -413,6 +416,7 @@ type ObjectID struct {
 	Instance ObjectInstance
 }
 
+//go:generate stringer -type=SegmentationSupport
 type SegmentationSupport byte
 
 const (
