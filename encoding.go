@@ -21,7 +21,7 @@ const (
 	ApplicationTagEnumerated      byte = 0x09
 	ApplicationTagDate            byte = 0x0A
 	ApplicationTagTime            byte = 0x0B
-	ApplicationTagObjectId        byte = 0x0C
+	ApplicationTagObjectID        byte = 0x0C
 )
 
 type tag struct {
@@ -97,7 +97,7 @@ func (t tag) MarshallBinary() ([]byte, error) {
 			_ = binary.Write(buf, binary.BigEndian, uint16(t.Value))
 		} else {
 			buf.WriteByte(flag32bits)
-			_ = binary.Write(buf, binary.BigEndian, uint32(t.Value))
+			_ = binary.Write(buf, binary.BigEndian, t.Value)
 		}
 	}
 	return buf.Bytes(), nil
@@ -154,12 +154,12 @@ func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 	length := 1
 	firstByte, err := buf.ReadByte()
 	if err != nil {
-		return 0, t, fmt.Errorf("Failed to read tagID: %w", err)
+		return 0, t, fmt.Errorf("read tagID: %w", err)
 	}
 	if isExtendedTagNumber(firstByte) {
 		tagNumber, err := buf.ReadByte()
 		if err != nil {
-			return 0, t, fmt.Errorf("Failed to read extended tagId: %w", err)
+			return 0, t, fmt.Errorf("read extended tagId: %w", err)
 		}
 		t.ID = tagNumber
 		length++
@@ -180,7 +180,7 @@ func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 	if isExtendedValue(firstByte) {
 		firstValueByte, err := buf.ReadByte()
 		if err != nil {
-			return 0, t, fmt.Errorf("Failed to read first byte of extended value tag: %w", err)
+			return 0, t, fmt.Errorf("read first byte of extended value tag: %w", err)
 		}
 		length++
 		switch firstValueByte {
@@ -188,14 +188,14 @@ func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 			var val uint16
 			err := binary.Read(buf, binary.BigEndian, &val)
 			if err != nil {
-				return 0, t, fmt.Errorf("Failed to read extended 16bits tag value: %w ", err)
+				return 0, t, fmt.Errorf("read extended 16bits tag value: %w ", err)
 			}
 			length += 2
 			t.Value = uint32(val)
 		case flag32bits:
 			err := binary.Read(buf, binary.BigEndian, &t.Value)
 			if err != nil {
-				return 0, t, fmt.Errorf("Failed to read extended 32bits tag value: %w", err)
+				return 0, t, fmt.Errorf("read extended 32bits tag value: %w", err)
 			}
 			length += 4
 		default:
@@ -249,7 +249,7 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		if err != nil {
 			return 0, fmt.Errorf("read unsigned with length 4 : %w", err)
 		}
-		return uint32(val), nil
+		return val, nil
 	default:
 		//TODO: check If allowed by specification, other
 		//implementation allow it but i'm not sure
@@ -295,7 +295,7 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 		}
 		rv.SetUint(uint64(val))
-	case ApplicationTagObjectId:
+	case ApplicationTagObjectID:
 		var obj ObjectID
 		if rv.Type() != reflect.TypeOf(obj) {
 			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())

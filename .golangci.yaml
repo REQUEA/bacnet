@@ -32,7 +32,6 @@ linters:
     - revive
     - gosec
     - misspell
-    - nestif
     - nilerr
     - nolintlint
     - prealloc

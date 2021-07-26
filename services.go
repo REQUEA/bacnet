@@ -25,10 +25,10 @@ func (w WhoIs) MarshalBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if w.Low != nil && w.High != nil {
 		if *w.Low > MaxInstance || *w.High > MaxInstance {
-			return nil, fmt.Errorf("Invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, MaxInstance)
+			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, MaxInstance)
 		}
 		if *w.Low > *w.High {
-			return nil, fmt.Errorf("Invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
+			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
 		}
 		contextUnsigned(buf, 0, uint32(*w.Low))
 		contextUnsigned(buf, 1, uint32(*w.High))
@@ -46,7 +46,7 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 	w.High = new(uint)
 	buf := bytes.NewBuffer(data)
 	// Tag 0 - Low Value
-	var expectedTagID byte = 0
+	expectedTagID := byte(0)
 	_, tag, err := decodeTag(buf)
 	if err != nil {
 		return fmt.Errorf("decode 1st WhoIs tag: %w", err)

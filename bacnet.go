@@ -27,7 +27,7 @@ const DefaultUDPPort = 47808
 
 func broadcastAddr(n *net.IPNet) (net.IP, error) {
 	if n.IP.To4() == nil {
-		return net.IP{}, errors.New("does not support IPv6 addresses.")
+		return net.IP{}, errors.New("does not support IPv6 addresses")
 	}
 	ip := make(net.IP, len(n.IP.To4()))
 	binary.BigEndian.PutUint32(ip, binary.BigEndian.Uint32(n.IP.To4())|^binary.BigEndian.Uint32(net.IP(n.Mask).To4()))
@@ -115,7 +115,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 //should we return a device object ?
 func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 	npdu := NPDU{
-		Version:               BacnetVersion1,
+		Version:               Version1,
 		IsNetworkLayerMessage: false,
 		ExpectingReply:        false,
 		Priority:              Normal,
@@ -161,7 +161,7 @@ func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 					apdu.ServiceType == ServiceUnconfirmedIAm {
 					iam, ok := apdu.Payload.(*Iam)
 					if !ok {
-						return nil, fmt.Errorf("Unexpected payload type %T", apdu.Payload)
+						return nil, fmt.Errorf("unexpected payload type %T", apdu.Payload)
 					}
 					set[*iam] = struct{}{}
 				}
