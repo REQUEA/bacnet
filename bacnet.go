@@ -112,6 +112,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	return nil
 }
 
+//should we return a device object ?
 func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 	npdu := NPDU{
 		Version:               BacnetVersion1,
@@ -129,7 +130,7 @@ func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 
 	rChan := make(chan BVLC)
 	c.subscriptions.Lock()
-	//TOdo add errgroup ?, ensure all f are done and not blocked
+	//TODO:  add errgroup ?, ensure all f are done and not blocked
 	c.subscriptions.f = func(bvlc BVLC) {
 		rChan <- bvlc
 	}
@@ -211,7 +212,6 @@ func (c *Client) broadcast(npdu NPDU) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println("Broadcast")
 	return c.udp.WriteToUDP(bytes, &net.UDPAddr{
 		IP:   c.broadcastAddress,
 		Port: DefaultUDPPort,
