@@ -60,6 +60,7 @@ const (
 	flag32bits byte = 0xFF
 )
 
+//Todo: should we really return an error here ?
 func (t tag) MarshallBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	var tagMeta byte
@@ -316,6 +317,48 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 	default:
 		//TODO: support all app data types
 		return fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
+	}
+	return nil
+}
+
+func encodeAppData(buf *bytes.Buffer, v interface{}) error {
+	switch val := v.(type) {
+	case float32:
+	case float64:
+	case bool:
+	case string:
+		return fmt.Errorf("not implemented ")
+	case uint32:
+		length := valueLength(val)
+		t := tag{ID: ApplicationTagUnsignedInt, Value: uint32(length)}
+		b, err := t.MarshallBinary()
+		if err != nil {
+			return err
+		}
+		_, _ = buf.Write(b)
+		unsigned(buf, val)
+	case SegmentationSupport:
+		v := uint32(val)
+		length := valueLength(v)
+		t := tag{ID: ApplicationTagEnumerated, Value: uint32(length)}
+		b, err := t.MarshallBinary()
+		if err != nil {
+			return err
+		}
+		_, _ = buf.Write(b)
+		unsigned(buf, v)
+	case ObjectID:
+		//Maybe use static values for default types ?
+		t := tag{ID: ApplicationTagObjectID, Value: 4}
+		b, err := t.MarshallBinary()
+		if err != nil {
+			return err
+		}
+		_, _ = buf.Write(b)
+		//Todo: maybe check that Type and instance are not invalid ?
+		_ = binary.Write(buf, binary.BigEndian, ((uint32(val.Type))<<InstanceBits)|(uint32(val.Instance)&MaxInstance))
+	default:
+		return fmt.Errorf("encodeAppdata: unknown type %T", v)
 	}
 	return nil
 }

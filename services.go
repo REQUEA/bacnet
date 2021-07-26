@@ -86,7 +86,24 @@ type Iam struct {
 }
 
 func (iam Iam) MarshalBinary() ([]byte, error) {
-	panic("not implemented")
+	buf := &bytes.Buffer{}
+	err := encodeAppData(buf, iam.ObjectID)
+	if err != nil {
+		return nil, err
+	}
+	err = encodeAppData(buf, iam.MaxApduLength)
+	if err != nil {
+		return nil, err
+	}
+	err = encodeAppData(buf, iam.SegmentationSupport)
+	if err != nil {
+		return nil, err
+	}
+	err = encodeAppData(buf, iam.VendorID)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (iam *Iam) UnmarshalBinary(data []byte) error {
