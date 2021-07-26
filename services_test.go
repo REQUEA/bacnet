@@ -44,7 +44,6 @@ func TestWhoIsDec(t *testing.T) {
 }
 
 func TestWhoIsCoherency(t *testing.T) {
-	is := is.New(t)
 	ttc := []struct {
 		data string //hex string
 		name string
@@ -64,6 +63,7 @@ func TestWhoIsCoherency(t *testing.T) {
 	}
 	for _, tc := range ttc {
 		t.Run(tc.name, func(t *testing.T) {
+			is := is.New(t)
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
 			w := &WhoIs{}
