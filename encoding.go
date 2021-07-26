@@ -216,7 +216,6 @@ const (
 )
 
 func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
-	fmt.Printf("%+v\n", length)
 	switch length {
 	case size8:
 		val, err := buf.ReadByte()
@@ -312,6 +311,7 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 		}
 		rv.Set(reflect.ValueOf(obj))
 	default:
+		//TODO: support all app data types
 		return fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
 	}
 	return nil

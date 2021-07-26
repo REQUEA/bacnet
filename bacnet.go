@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/alexbeltran/gobacnet/types"
 )
@@ -15,6 +17,12 @@ type Client struct {
 	broadcastAddress net.IP
 	udpPort          int
 	udp              *net.UDPConn
+	subscriptions    *Subscriptions
+}
+
+type Subscriptions struct {
+	sync.Mutex
+	f func(BVLC)
 }
 
 const DefaultUDPPort = 47808
@@ -28,7 +36,7 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 	return ip, nil
 }
 func NewClient(inter string, port int) (*Client, error) {
-	c := &Client{}
+	c := &Client{subscriptions: &Subscriptions{}}
 	i, err := net.InterfaceByName(inter)
 	if err != nil {
 		return nil, err
@@ -99,18 +107,14 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%+v\n", bvlc)
-	if bvlc.NPDU.Destination != nil {
-		fmt.Printf("dest: %+v\n", *bvlc.NPDU.Destination)
-	}
-	if bvlc.NPDU.ADPU != nil {
-		fmt.Printf("apdu %+v\n", *bvlc.NPDU.ADPU)
-		fmt.Printf("%+v\n", bvlc.NPDU.ADPU.Payload)
+	//Todo: not race safe here: lock
+	if c.subscriptions.f != nil {
+		c.subscriptions.f(bvlc)
 	}
 	return nil
 }
 
-func (c *Client) WhoIs(data WhoIs) ([]types.Device, error) {
+func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 	npdu := NPDU{
 		Version:               BacnetVersion1,
 		IsNetworkLayerMessage: false,
@@ -125,11 +129,46 @@ func (c *Client) WhoIs(data WhoIs) ([]types.Device, error) {
 		},
 	}
 
+	rChan := make(chan BVLC)
+	c.subscriptions.Lock()
+	//TOdo add errgroup ?, ensure all f are done and not blocked
+	c.subscriptions.f = func(bvlc BVLC) {
+		rChan <- bvlc
+	}
+	c.subscriptions.Unlock()
 	_, err := c.broadcast(npdu)
 	if err != nil {
 		return nil, err
 	}
-	return nil, nil
+	//This is the max wait time for answers to the query
+	//Todo: pass it as parameter
+	timer := time.NewTimer(1 * time.Second)
+	defer timer.Stop()
+	//Use a set to deduplicate results
+	set := map[Iam]struct{}{}
+	for {
+		select {
+		case <-timer.C:
+			result := []Iam{}
+			for iam := range set {
+				result = append(result, iam)
+			}
+			return result, nil
+		case bvlc := <-rChan:
+			//clean/filter  network answers here
+			if bvlc.NPDU.ADPU != nil {
+				apdu := bvlc.NPDU.ADPU
+				if apdu.DataType == UnconfirmedServiceRequest &&
+					apdu.ServiceType == ServiceUnconfirmedIAm {
+					iam, ok := apdu.Payload.(*Iam)
+					if !ok {
+						return nil, fmt.Errorf("Unexpected payload type %T", apdu.Payload)
+					}
+					set[*iam] = struct{}{}
+				}
+			}
+		}
+	}
 }
 
 func (c *Client) send(dest types.Address, data []byte) (int, error) {
