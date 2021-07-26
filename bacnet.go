@@ -8,8 +8,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/alexbeltran/gobacnet/types"
 )
 
 type Client struct {
@@ -171,38 +169,38 @@ func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 	}
 }
 
-func (c *Client) send(dest types.Address, data []byte) (int, error) {
-	return 0, nil
-	// var header types.BVLC
+// func (c *Client) send(dest types.Address, data []byte) (int, error) {
+// 	return 0, nil
+// 	var header types.BVLC
 
-	// // Set packet type
-	// header.Type = types.BVLCTypeBacnetIP
+// 	// Set packet type
+// 	header.Type = types.BVLCTypeBacnetIP
 
-	// if dest.IsBroadcast() || dest.IsSubBroadcast() {
-	// 	// SET BROADCAST FLAG
-	// 	header.Function = types.BacFuncBroadcast
-	// } else {
-	// 	// SET UNICAST FLAG
-	// 	header.Function = types.BacFuncUnicast
-	// }
-	// mtuHeaderLength := 4
-	// header.Length = uint16(mtuHeaderLength + len(data))
-	// header.Data = data
-	// e := encoding.NewEncoder()
-	// err := e.BVLC(header)
-	// if err != nil {
-	// 	return 0, err
-	// }
+// 	if dest.IsBroadcast() || dest.IsSubBroadcast() {
+// 		// SET BROADCAST FLAG
+// 		header.Function = types.BacFuncBroadcast
+// 	} else {
+// 		// SET UNICAST FLAG
+// 		header.Function = types.BacFuncUnicast
+// 	}
+// 	mtuHeaderLength := 4
+// 	header.Length = uint16(mtuHeaderLength + len(data))
+// 	header.Data = data
+// 	e := encoding.NewEncoder()
+// 	err := e.BVLC(header)
+// 	if err != nil {
+// 		return 0, err
+// 	}
 
-	// // Get IP Address
-	// d, err := dest.UDPAddr()
-	// if err != nil {
-	// 	return 0, err
-	// }
+// 	// Get IP Address
+// 	d, err := dest.UDPAddr()
+// 	if err != nil {
+// 		return 0, err
+// 	}
 
-	// // use default udp type, src = local address (nil)
-	// return c.listener.WriteTo(e.Bytes(), &d)
-}
+// 	// use default udp type, src = local address (nil)
+// 	return c.listener.WriteTo(e.Bytes(), &d)
+// }
 
 func (c *Client) broadcast(npdu NPDU) (int, error) {
 	bytes, err := BVLC{
