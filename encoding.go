@@ -132,20 +132,22 @@ func contextUnsigned(buf *bytes.Buffer, tabNumber byte, value uint32) int {
 	return len(b) + unsigned(buf, value)
 }
 
+//unsigned writes the value in the buffer using a variabled-sized encoding
 func unsigned(buf *bytes.Buffer, value uint32) int {
-	if value < 0x100 {
+	switch {
+	case value < 0x100:
 		buf.WriteByte(uint8(value))
 		return 1
-	} else if value < 0x10000 {
+	case value < 0x10000:
 		_ = binary.Write(buf, binary.BigEndian, uint16(value))
 		return 2
-	} else if value < 0x1000000 {
+	case value < 0x100000:
 		// There is no default 24 bit integer in go, so we have to
 		// write it manually (in big endian)
 		buf.WriteByte(byte(value >> 16))
 		_ = binary.Write(buf, binary.BigEndian, uint16(value))
 		return 3
-	} else {
+	default:
 		_ = binary.Write(buf, binary.BigEndian, value)
 		return 4
 	}
