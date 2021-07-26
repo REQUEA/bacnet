@@ -365,8 +365,7 @@ const (
 type BVLC struct {
 	Type     BVLCType
 	Function Function
-	//maybe Payload here ?
-	NPDU NPDU
+	NPDU     NPDU
 }
 
 func (bvlc BVLC) MarshalBinary() ([]byte, error) {
