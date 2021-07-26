@@ -11,7 +11,7 @@ import (
 )
 
 type Client struct {
-	ipAdress         net.IP
+	//ipAdress         net.IP
 	broadcastAddress net.IP
 	udpPort          int
 	udp              *net.UDPConn
@@ -61,7 +61,7 @@ func NewClient(inter string, port int) (*Client, error) {
 			if err != nil {
 				return nil, err
 			}
-			c.ipAdress = ip
+			//c.ipAdress = ip
 			c.broadcastAddress = broadcast
 			break
 		}
