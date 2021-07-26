@@ -25,6 +25,7 @@ func TestWhoIsDec(t *testing.T) {
 	is.NoErr(err)
 	w = &WhoIs{}
 	err = w.UnmarshalBinary(data)
+	is.NoErr(err)
 	if w.Low == nil || *w.Low != 0x12 {
 		t.Error("Invalid whois decoding of low range ")
 	}
@@ -36,6 +37,7 @@ func TestWhoIsDec(t *testing.T) {
 	is.NoErr(err)
 	w = &WhoIs{}
 	err = w.UnmarshalBinary(data)
+	is.NoErr(err)
 	if w.High != nil || w.Low != nil {
 		t.Error("Non nil range value")
 	}

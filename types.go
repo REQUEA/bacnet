@@ -276,7 +276,7 @@ const (
 	/* lifeSafetyOperation (27) see Alarm and Event Services */
 	/* subscribeCOVProperty (28) see Alarm and Event Services */
 	/* getEventInformation (29) see Alarm and Event Services */
-	maxBACnetConfirmedService ServiceType = 30
+	//MaxBACnetConfirmedService ServiceType = 30
 )
 
 type APDU struct {
