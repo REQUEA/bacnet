@@ -349,22 +349,22 @@ type BVLCType byte
 const TypeBacnetIP BVLCType = 0x81
 
 //go:generate stringer -type=BacnetFunction
-type BacnetFunction byte
+type Function byte
 
 // List of possible BACnet functions
 const (
-	BacFuncResult                          BacnetFunction = 0
-	BacFuncWriteBroadcastDistributionTable BacnetFunction = 1
-	BacFuncBroadcastDistributionTable      BacnetFunction = 2
-	BacFuncBroadcastDistributionTableAck   BacnetFunction = 3
-	BacFuncForwardedNPDU                   BacnetFunction = 4
-	BacFuncUnicast                         BacnetFunction = 10
-	BacFuncBroadcast                       BacnetFunction = 11
+	BacFuncResult                          Function = 0
+	BacFuncWriteBroadcastDistributionTable Function = 1
+	BacFuncBroadcastDistributionTable      Function = 2
+	BacFuncBroadcastDistributionTableAck   Function = 3
+	BacFuncForwardedNPDU                   Function = 4
+	BacFuncUnicast                         Function = 10
+	BacFuncBroadcast                       Function = 11
 )
 
 type BVLC struct {
 	Type     BVLCType
-	Function BacnetFunction
+	Function Function
 	//maybe Payload here ?
 	NPDU NPDU
 }
@@ -401,7 +401,7 @@ func (bvlc *BVLC) UnmarshalBinary(data []byte) error {
 	remaining := buf.Bytes()
 
 	bvlc.Type = BVLCType(bvlcType)
-	bvlc.Function = BacnetFunction(bvlcFunc)
+	bvlc.Function = Function(bvlcFunc)
 	if len(remaining) != int(length)-4 {
 		return fmt.Errorf("incoherent Length field in BVCL. Advertized payload size is %d, real size  %d", length-4, len(remaining))
 	}

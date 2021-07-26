@@ -27,7 +27,7 @@ var (
 	_BacnetFunction_index_1 = [...]uint8{0, 14, 30}
 )
 
-func (i BacnetFunction) String() string {
+func (i Function) String() string {
 	switch {
 	case i <= 4:
 		return _BacnetFunction_name_0[_BacnetFunction_index_0[i]:_BacnetFunction_index_0[i+1]]
