@@ -25,7 +25,8 @@ const (
 )
 
 type tag struct {
-	// Tag id. Typically sequential, except when it is not...
+	// Tag id. Typically sequential when tag is contextual. Or refer
+	// to the standard AppData Types
 	ID      byte
 	Context bool
 	// Either has a value or length of the next value
