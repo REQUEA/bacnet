@@ -42,7 +42,6 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 					Priority:              Normal,
 					Destination: &Address{
 						Net: 0xffff,
-						Len: 0,
 						Adr: []byte{},
 					},
 					Source:   &Address{},

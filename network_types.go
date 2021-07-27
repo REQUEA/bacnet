@@ -23,7 +23,6 @@ const (
 
 type Address struct {
 	// mac_len = 0 is a broadcast address
-	MacLen byte
 	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
 	// use de/encode_unsigned32/16 for re/storing the IP address
 	Mac []byte
@@ -33,17 +32,15 @@ type Address struct {
 	Net uint16 // BACnet network number
 	// LEN = 0 denotes broadcast MAC ADR and ADR field is absent
 	// LEN > 0 specifies length of ADR field
-	Len byte   // length of MAC address //I think this is not needed
 	Adr []byte // hwaddr (MAC) address
 }
 
-func AddressFromUDP(udp *net.UDPAddr) Address {
-	b := bytes.NewBuffer(udp.IP)
+func AddressFromUDP(udp net.UDPAddr) *Address {
+	b := bytes.NewBuffer(udp.IP.To4())
 	port := uint16(udp.Port)
 	_ = binary.Write(b, binary.BigEndian, port)
-	return Address{
-		MacLen: byte(len(b.Bytes())),
-		Mac:    b.Bytes(),
+	return &Address{
+		Mac: b.Bytes(),
 	}
 }
 
@@ -91,12 +88,12 @@ func (npdu NPDU) MarshalBinary() ([]byte, error) {
 	b.WriteByte(control)
 	if hasDest {
 		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Net)
-		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Len)
+		_ = binary.Write(b, binary.BigEndian, byte(len(npdu.Destination.Adr)))
 		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Adr)
 	}
 	if hasSrc {
 		_ = binary.Write(b, binary.BigEndian, npdu.Source.Net)
-		_ = binary.Write(b, binary.BigEndian, npdu.Source.Len)
+		_ = binary.Write(b, binary.BigEndian, byte(len(npdu.Source.Adr)))
 		_ = binary.Write(b, binary.BigEndian, npdu.Source.Adr)
 	}
 	if hasDest {
@@ -146,11 +143,12 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("read NPDU dest Address.Net: %w", err)
 		}
-		err = binary.Read(buf, binary.BigEndian, &npdu.Destination.Len)
+		var length byte
+		err = binary.Read(buf, binary.BigEndian, &length)
 		if err != nil {
 			return fmt.Errorf("read NPDU dest Address.Len: %w", err)
 		}
-		npdu.Destination.Adr = make([]byte, int(npdu.Destination.Len))
+		npdu.Destination.Adr = make([]byte, int(length))
 		err = binary.Read(buf, binary.BigEndian, &npdu.Destination.Adr)
 		if err != nil {
 			return fmt.Errorf("read NPDU dest Address.Net: %w", err)
@@ -163,11 +161,12 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("read NPDU src Address.Net: %w", err)
 		}
-		err = binary.Read(buf, binary.BigEndian, &npdu.Source.Len)
+		var length byte
+		err = binary.Read(buf, binary.BigEndian, &length)
 		if err != nil {
 			return fmt.Errorf("read NPDU src Address.Len: %w", err)
 		}
-		npdu.Source.Adr = make([]byte, int(npdu.Source.Len))
+		npdu.Source.Adr = make([]byte, int(length))
 		err = binary.Read(buf, binary.BigEndian, &npdu.Source.Adr)
 		if err != nil {
 			return fmt.Errorf("read NPDU src Address.Net: %w", err)
