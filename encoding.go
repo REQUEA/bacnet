@@ -8,6 +8,7 @@ import (
 	"reflect"
 )
 
+//Todo: make it private
 const (
 	ApplicationTagNull            byte = 0x00
 	ApplicationTagBoolean         byte = 0x01
@@ -24,6 +25,7 @@ const (
 	ApplicationTagObjectID        byte = 0x0C
 )
 
+//Todo: maybe not several boolean but a type field
 type tag struct {
 	// Tag id. Typically sequential when tag is contextual. Or refer
 	// to the standard AppData Types
