@@ -49,12 +49,11 @@ func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
 		Opening: false,
 		Closing: false,
 	}
-	b, err := t.MarshallBinary()
+	err := encodeTag(e.buf, t)
 	if err != nil {
 		e.err = err
 		return
 	}
-	_, _ = e.buf.Write(b)
 	unsigned(e.buf, value)
 }
 
@@ -71,33 +70,30 @@ func (e *Encoder) EncodeAppData(v interface{}) {
 	case uint32:
 		length := valueLength(val)
 		t := tag{ID: applicationTagUnsignedInt, Value: uint32(length)}
-		b, err := t.MarshallBinary()
+		err := encodeTag(e.buf, t)
 		if err != nil {
 			e.err = err
 			return
 		}
-		_, _ = e.buf.Write(b)
 		unsigned(e.buf, val)
 	case types.SegmentationSupport:
 		v := uint32(val)
 		length := valueLength(v)
 		t := tag{ID: applicationTagEnumerated, Value: uint32(length)}
-		b, err := t.MarshallBinary()
+		err := encodeTag(e.buf, t)
 		if err != nil {
 			e.err = err
 			return
 		}
-		_, _ = e.buf.Write(b)
 		unsigned(e.buf, v)
 	case types.ObjectID:
 		//Todo : Maybe use static values for default types ?
 		t := tag{ID: applicationTagObjectID, Value: 4}
-		b, err := t.MarshallBinary()
+		err := encodeTag(e.buf, t)
 		if err != nil {
 			e.err = err
 			return
 		}
-		_, _ = e.buf.Write(b)
 		//Todo: maybe check that Type and instance are not invalid ?
 		_ = binary.Write(e.buf, binary.BigEndian, ((uint32(val.Type))<<types.InstanceBits)|(uint32(val.Instance)&types.MaxInstance))
 	default:

@@ -65,8 +65,7 @@ func isContextSpecific(x byte) bool {
 }
 
 //Todo: should we really return an error here ?
-func (t tag) MarshallBinary() ([]byte, error) {
-	buf := &bytes.Buffer{}
+func encodeTag(buf *bytes.Buffer, t tag) error {
 	var tagMeta byte
 	if t.Context {
 		tagMeta |= 0x8
@@ -106,7 +105,7 @@ func (t tag) MarshallBinary() ([]byte, error) {
 			_ = binary.Write(buf, binary.BigEndian, t.Value)
 		}
 	}
-	return buf.Bytes(), nil
+	return nil
 }
 
 func decodeTag(buf *bytes.Buffer) (t tag, err error) {
