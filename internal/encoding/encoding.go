@@ -9,21 +9,20 @@ import (
 	"reflect"
 )
 
-//Todo: make it private
 const (
-	ApplicationTagNull            byte = 0x00
-	ApplicationTagBoolean         byte = 0x01
-	ApplicationTagUnsignedInt     byte = 0x02
-	ApplicationTagSignedInt       byte = 0x03
-	ApplicationTagReal            byte = 0x04
-	ApplicationTagDouble          byte = 0x05
-	ApplicationTagOctetString     byte = 0x06
-	ApplicationTagCharacterString byte = 0x07
-	ApplicationTagBitString       byte = 0x08
-	ApplicationTagEnumerated      byte = 0x09
-	ApplicationTagDate            byte = 0x0A
-	ApplicationTagTime            byte = 0x0B
-	ApplicationTagObjectID        byte = 0x0C
+	applicationTagNull            byte = 0x00
+	applicationTagBoolean         byte = 0x01
+	applicationTagUnsignedInt     byte = 0x02
+	applicationTagSignedInt       byte = 0x03
+	applicationTagReal            byte = 0x04
+	applicationTagDouble          byte = 0x05
+	applicationTagOctetString     byte = 0x06
+	applicationTagCharacterString byte = 0x07
+	applicationTagBitString       byte = 0x08
+	applicationTagEnumerated      byte = 0x09
+	applicationTagDate            byte = 0x0A
+	applicationTagTime            byte = 0x0B
+	applicationTagObjectID        byte = 0x0C
 )
 
 //Todo: maybe not several boolean but a type field
@@ -119,7 +118,7 @@ func (e *Encoder) EncodeAppData(v interface{}) {
 		e.err = fmt.Errorf("not implemented ")
 	case uint32:
 		length := valueLength(val)
-		t := tag{ID: ApplicationTagUnsignedInt, Value: uint32(length)}
+		t := tag{ID: applicationTagUnsignedInt, Value: uint32(length)}
 		b, err := t.MarshallBinary()
 		if err != nil {
 			e.err = err
@@ -130,7 +129,7 @@ func (e *Encoder) EncodeAppData(v interface{}) {
 	case types.SegmentationSupport:
 		v := uint32(val)
 		length := valueLength(v)
-		t := tag{ID: ApplicationTagEnumerated, Value: uint32(length)}
+		t := tag{ID: applicationTagEnumerated, Value: uint32(length)}
 		b, err := t.MarshallBinary()
 		if err != nil {
 			e.err = err
@@ -140,7 +139,7 @@ func (e *Encoder) EncodeAppData(v interface{}) {
 		unsigned(e.buf, v)
 	case types.ObjectID:
 		//Todo : Maybe use static values for default types ?
-		t := tag{ID: ApplicationTagObjectID, Value: 4}
+		t := tag{ID: applicationTagObjectID, Value: 4}
 		b, err := t.MarshallBinary()
 		if err != nil {
 			e.err = err
@@ -231,7 +230,7 @@ func (d *Decoder) DecodeAppData(v interface{}) {
 	rv = rv.Elem()
 	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
 	switch tag.ID {
-	case ApplicationTagUnsignedInt:
+	case applicationTagUnsignedInt:
 		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
 			return
@@ -243,7 +242,7 @@ func (d *Decoder) DecodeAppData(v interface{}) {
 		}
 
 		rv.SetUint(uint64(val))
-	case ApplicationTagEnumerated:
+	case applicationTagEnumerated:
 		var seg types.SegmentationSupport
 		if rv.Type() != reflect.TypeOf(seg) {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
@@ -255,7 +254,7 @@ func (d *Decoder) DecodeAppData(v interface{}) {
 			return
 		}
 		rv.SetUint(uint64(val))
-	case ApplicationTagObjectID:
+	case applicationTagObjectID:
 		var obj types.ObjectID
 		if rv.Type() != reflect.TypeOf(obj) {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
