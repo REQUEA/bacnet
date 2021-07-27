@@ -59,9 +59,8 @@ func TestDecodeTag(t *testing.T) {
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
 			buf := bytes.NewBuffer(b)
-			length, tag, err := decodeTag(buf)
+			tag, err := decodeTag(buf)
 			is.NoErr(err)
-			is.Equal(length, len(b))
 			if !tagEqual(tag, tc.expected) {
 				t.Errorf("Tag differ: expected %+v got %+v", tc.expected, tag)
 			}

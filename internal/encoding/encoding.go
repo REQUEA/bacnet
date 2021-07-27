@@ -113,7 +113,7 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if d.err != nil {
 		return
 	}
-	_, t, err := decodeTag(d.buf)
+	t, err := decodeTag(d.buf)
 	if err != nil {
 		d.err = err
 		return
@@ -236,19 +236,17 @@ func unsigned(buf *bytes.Buffer, value uint32) int {
 	}
 }
 
-func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
-	length := 1
+func decodeTag(buf *bytes.Buffer) (t tag, err error) {
 	firstByte, err := buf.ReadByte()
 	if err != nil {
-		return 0, t, fmt.Errorf("read tagID: %w", err)
+		return t, fmt.Errorf("read tagID: %w", err)
 	}
 	if isExtendedTagNumber(firstByte) {
 		tagNumber, err := buf.ReadByte()
 		if err != nil {
-			return 0, t, fmt.Errorf("read extended tagId: %w", err)
+			return t, fmt.Errorf("read extended tagId: %w", err)
 		}
 		t.ID = tagNumber
-		length++
 	} else {
 		tagNumber := firstByte >> 4
 		t.ID = tagNumber
@@ -256,11 +254,11 @@ func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 
 	if isOpeningTag(firstByte) {
 		t.Opening = true
-		return length, t, nil
+		return t, nil
 	}
 	if isClosingTag(firstByte) {
 		t.Closing = true
-		return length, t, nil
+		return t, nil
 	}
 	if isContextSpecific(firstByte) {
 		t.Context = true
@@ -268,24 +266,21 @@ func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 	if isExtendedValue(firstByte) {
 		firstValueByte, err := buf.ReadByte()
 		if err != nil {
-			return 0, t, fmt.Errorf("read first byte of extended value tag: %w", err)
+			return t, fmt.Errorf("read first byte of extended value tag: %w", err)
 		}
-		length++
 		switch firstValueByte {
 		case flag16bits:
 			var val uint16
 			err := binary.Read(buf, binary.BigEndian, &val)
 			if err != nil {
-				return 0, t, fmt.Errorf("read extended 16bits tag value: %w ", err)
+				return t, fmt.Errorf("read extended 16bits tag value: %w ", err)
 			}
-			length += 2
 			t.Value = uint32(val)
 		case flag32bits:
 			err := binary.Read(buf, binary.BigEndian, &t.Value)
 			if err != nil {
-				return 0, t, fmt.Errorf("read extended 32bits tag value: %w", err)
+				return t, fmt.Errorf("read extended 32bits tag value: %w", err)
 			}
-			length += 4
 		default:
 			t.Value = uint32(firstValueByte)
 
@@ -293,7 +288,7 @@ func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 	} else {
 		t.Value = uint32(firstByte & 0x7)
 	}
-	return length, t, nil
+	return t, nil
 }
 
 const (
@@ -354,7 +349,7 @@ func DecodeAppData(buf *bytes.Buffer, v interface{}) error {
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return errors.New("decodeAppData: interface parameter isn't a pointer")
 	}
-	_, tag, err := decodeTag(buf)
+	tag, err := decodeTag(buf)
 	if err != nil {
 		return fmt.Errorf("decodeAppData: read tag: %w", err)
 	}
