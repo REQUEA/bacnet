@@ -74,3 +74,35 @@ func TestWhoIsCoherency(t *testing.T) {
 		})
 	}
 }
+func TestIamEncodingAndCoherency(t *testing.T) {
+	ttc := []struct {
+		data string //hex string
+		iam  Iam
+	}{
+		{
+			data: "c4020075e92205c4910022016c",
+			iam: Iam{
+				ObjectID: ObjectID{
+					Type:     8,
+					Instance: 30185,
+				},
+				MaxApduLength:       1476,
+				SegmentationSupport: SegmentationSupportBoth,
+				VendorID:            364,
+			},
+		},
+	}
+	for _, tc := range ttc {
+		t.Run(tc.data, func(t *testing.T) {
+			is := is.New(t)
+			result, err := tc.iam.MarshalBinary()
+			is.NoErr(err)
+			is.Equal(tc.data, hex.EncodeToString(result))
+			iam := Iam{}
+			is.NoErr(iam.UnmarshalBinary(result))
+			result2, err := iam.MarshalBinary()
+			is.NoErr(err)
+			is.Equal(tc.data, hex.EncodeToString(result2))
+		})
+	}
+}
