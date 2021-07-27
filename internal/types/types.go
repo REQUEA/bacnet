@@ -20,3 +20,10 @@ const (
 	SegmentationSupportReceive  SegmentationSupport = 0x02
 	SegmentationSupportNone     SegmentationSupport = 0x03
 )
+
+//PropertyIdentifier is used to control a ReadProperty request
+type PropertyIdentifier struct {
+	Type uint32
+	//Not null if it's an array property
+	ArrayIndex *uint32
+}

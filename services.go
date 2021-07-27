@@ -63,3 +63,23 @@ func (iam *Iam) UnmarshalBinary(data []byte) error {
 	decoder.DecodeAppData(&iam.VendorID)
 	return decoder.Error()
 }
+
+type ReadPropertyReq struct {
+	ObjectID types.ObjectID
+	Property types.PropertyIdentifier
+}
+
+func (rp ReadPropertyReq) MarshalBinary() ([]byte, error) {
+	encoder := encoding.NewEncoder()
+	encoder.ContextObjectID(0, rp.ObjectID)
+	encoder.ContextUnsigned(1, rp.Property.Type)
+	if rp.Property.ArrayIndex != nil {
+		encoder.ContextUnsigned(2, *rp.Property.ArrayIndex)
+	}
+	return encoder.Bytes(), encoder.Error()
+}
+
+func (rp *ReadPropertyReq) UnmarshalBinary(data []byte) error {
+	panic("not implemented")
+	return nil
+}

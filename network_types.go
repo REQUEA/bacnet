@@ -24,7 +24,6 @@ const (
 type Address struct {
 	// mac_len = 0 is a broadcast address
 	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
-	// use de/encode_unsigned32/16 for re/storing the IP address
 	Mac []byte
 	// DNET,DLEN,DADR or SNET,SLEN,SADR
 	// the following are used if the device is behind a router
@@ -36,11 +35,19 @@ type Address struct {
 }
 
 func AddressFromUDP(udp net.UDPAddr) *Address {
-	b := bytes.NewBuffer(udp.IP.To4())
+	b := bytes.NewBuffer(udp.IP)
 	port := uint16(udp.Port)
 	_ = binary.Write(b, binary.BigEndian, port)
 	return &Address{
 		Mac: b.Bytes(),
+	}
+}
+
+func UDPFromAddress(addr Address) net.UDPAddr {
+	return net.UDPAddr{
+		IP:   addr.Mac[:4],
+		Port: int(binary.BigEndian.Uint16(addr.Mac[4:])),
+		Zone: "",
 	}
 }
 
@@ -281,15 +288,34 @@ const (
 	//MaxBACnetConfirmedService ServiceType = 30
 )
 
+//Todo: support more complex APDU
 type APDU struct {
 	DataType    PDUType
 	ServiceType ServiceType
 	Payload     Payload
+	//Only meaningfully for confirmed  and ack
+	InvokeID byte
+	//MaxSegs
+	//Segmented message
+	//More follow
+	//SegmentedResponseAccepted
+	//MaxApdu int
+	// InvokeId                  uint8
+	// Sequence                  uint8
+	// WindowNumber              uint8
+	// Error                     struct {
+	// 	Class uint32
+	// 	Code  uint32
+	// }
 }
 
 func (apdu APDU) MarshalBinary() ([]byte, error) {
 	b := &bytes.Buffer{}
 	b.WriteByte(byte(apdu.DataType))
+	if apdu.DataType == ConfirmedServiceRequest {
+		b.WriteByte(5) //Todo: Write other  control flag here
+		b.WriteByte(apdu.InvokeID)
+	}
 	b.WriteByte(byte(apdu.ServiceType))
 	bytes, err := apdu.Payload.MarshalBinary()
 	if err != nil {

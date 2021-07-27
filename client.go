@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"bacnet/internal/types"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -11,7 +12,7 @@ import (
 )
 
 type Client struct {
-	//ipAdress         net.IP
+	ipAdress         net.IP
 	broadcastAddress net.IP
 	udpPort          int
 	udp              *net.UDPConn
@@ -20,7 +21,7 @@ type Client struct {
 
 type Subscriptions struct {
 	sync.Mutex
-	f func(BVLC)
+	f func(BVLC, net.UDPAddr)
 }
 
 const DefaultUDPPort = 47808
@@ -67,7 +68,7 @@ func NewClient(inter string, port int) (*Client, error) {
 		}
 	}
 
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 		IP:   net.IPv4zero,
 		Port: c.udpPort,
 	})
@@ -107,13 +108,18 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	}
 	//Todo: not race safe here: lock
 	if c.subscriptions.f != nil {
-		c.subscriptions.f(bvlc)
+		c.subscriptions.f(bvlc, *src)
 	}
 	return nil
 }
 
+type IamAddress struct {
+	Iam
+	Address Address
+}
+
 //should we return a device object ?
-func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]Iam, error) {
+func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) {
 	npdu := NPDU{
 		Version:               Version1,
 		IsNetworkLayerMessage: false,
@@ -128,80 +134,102 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]Iam, error) {
 		},
 	}
 
-	rChan := make(chan BVLC)
+	rChan := make(chan struct {
+		bvlc BVLC
+		src  net.UDPAddr
+	})
 	c.subscriptions.Lock()
 	//TODO:  add errgroup ?, ensure all f are done and not blocked
-	c.subscriptions.f = func(bvlc BVLC) {
-		rChan <- bvlc
+	c.subscriptions.f = func(bvlc BVLC, src net.UDPAddr) {
+		rChan <- struct {
+			bvlc BVLC
+			src  net.UDPAddr
+		}{
+			bvlc: bvlc,
+			src:  src,
+		}
 	}
 	c.subscriptions.Unlock()
 	_, err := c.broadcast(npdu)
 	if err != nil {
 		return nil, err
 	}
-	//This is the max wait time for answers to the query
-	//Todo: pass it as parameter
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	//Use a set to deduplicate results
-	set := map[Iam]struct{}{}
+	set := map[Iam]Address{}
 	for {
 		select {
 		case <-timer.C:
-			result := []Iam{}
-			for iam := range set {
-				result = append(result, iam)
+			result := []IamAddress{}
+			for iam, addr := range set {
+				result = append(result, IamAddress{Iam: iam, Address: addr})
 			}
 			return result, nil
-		case bvlc := <-rChan:
+		case r := <-rChan:
 			//clean/filter  network answers here
-			if bvlc.NPDU.ADPU != nil {
-				apdu := bvlc.NPDU.ADPU
+			apdu := r.bvlc.NPDU.ADPU
+			if apdu != nil {
 				if apdu.DataType == UnconfirmedServiceRequest &&
 					apdu.ServiceType == ServiceUnconfirmedIAm {
 					iam, ok := apdu.Payload.(*Iam)
 					if !ok {
 						return nil, fmt.Errorf("unexpected payload type %T", apdu.Payload)
 					}
-					set[*iam] = struct{}{}
+					addr := AddressFromUDP(r.src)
+					set[*iam] = *addr
 				}
 			}
 		}
 	}
 }
 
-// func (c *Client) send(dest types.Address, data []byte) (int, error) {
-// 	return 0, nil
-// 	var header types.BVLC
+func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifier) error {
+	npdu := NPDU{
+		Version:               Version1,
+		IsNetworkLayerMessage: false,
+		ExpectingReply:        true,
+		Priority:              Normal,
+		Destination:           &device.Address,
+		Source: AddressFromUDP(net.UDPAddr{
+			IP:   c.ipAdress,
+			Port: c.udpPort,
+		}),
+		HopCount: 255,
+		ADPU: &APDU{
+			DataType:    ConfirmedServiceRequest,
+			ServiceType: ServiceConfirmedReadProperty,
+			InvokeID:    1,
+			Payload: &ReadPropertyReq{
+				ObjectID: device.ObjectID,
+				Property: property,
+			},
+		},
+	}
+	_, err := c.send(npdu)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
-// 	// Set packet type
-// 	header.Type = types.BVLCTypeBacnetIP
+//Todo: unify these two by observing dest addr
+func (c *Client) send(npdu NPDU) (int, error) {
+	bytes, err := BVLC{
+		Type:     TypeBacnetIP,
+		Function: BacFuncUnicast,
+		NPDU:     npdu,
+	}.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+	if npdu.Destination == nil {
+		return 0, fmt.Errorf("destination bacnet address should be not nil to send unicast")
+	}
+	addr := UDPFromAddress(*npdu.Destination)
+	return c.udp.WriteToUDP(bytes, &addr)
 
-// 	if dest.IsBroadcast() || dest.IsSubBroadcast() {
-// 		// SET BROADCAST FLAG
-// 		header.Function = types.BacFuncBroadcast
-// 	} else {
-// 		// SET UNICAST FLAG
-// 		header.Function = types.BacFuncUnicast
-// 	}
-// 	mtuHeaderLength := 4
-// 	header.Length = uint16(mtuHeaderLength + len(data))
-// 	header.Data = data
-// 	e := encoding.NewEncoder()
-// 	err := e.BVLC(header)
-// 	if err != nil {
-// 		return 0, err
-// 	}
-
-// 	// Get IP Address
-// 	d, err := dest.UDPAddr()
-// 	if err != nil {
-// 		return 0, err
-// 	}
-
-// 	// use default udp type, src = local address (nil)
-// 	return c.listener.WriteTo(e.Bytes(), &d)
-// }
+}
 
 func (c *Client) broadcast(npdu NPDU) (int, error) {
 	bytes, err := BVLC{

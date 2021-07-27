@@ -2,6 +2,7 @@ package main
 
 import (
 	"bacnet"
+	"bacnet/internal/types"
 	"fmt"
 	"log"
 	"time"
@@ -36,6 +37,10 @@ func main() {
 	}
 	fmt.Printf("%+v\n", d2)
 	time.Sleep(time.Second)
+	err = c2.ReadProperty(d2[0], types.PropertyIdentifier{Type: 77})
+	if err != nil {
+		log.Fatal(err)
+	}
 	//var selectObjet = types.Device{}
 	// for _, objet := range d {
 	// 	fmt.Printf("%+v\n",objet)

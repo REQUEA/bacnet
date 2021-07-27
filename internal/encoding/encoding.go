@@ -36,7 +36,8 @@ func (e *Encoder) Bytes() []byte {
 	return e.buf.Bytes()
 }
 
-//ContextUnsigned write a (context)tag / value pair
+//ContextUnsigned write a (context)tag / value pair where the value
+//type is an unsigned int
 func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
 	if e.err != nil {
 		return
@@ -55,6 +56,28 @@ func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
 		return
 	}
 	unsigned(e.buf, value)
+}
+
+//ContextObjectID write a (context)tag / value pair where the value
+//type is an unsigned int
+func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
+	if e.err != nil {
+		return
+	}
+	t := tag{
+		ID:      tabNumber,
+		Context: true,
+		Value:   4, //length of objectID is 4
+		Opening: false,
+		Closing: false,
+	}
+	err := encodeTag(e.buf, t)
+	if err != nil {
+		e.err = err
+		return
+	}
+	//Todo:  check objectID is valid, use name constant for tag value
+	_ = binary.Write(e.buf, binary.BigEndian, ((uint32(objectID.Type))<<types.InstanceBits)|(uint32(objectID.Instance)&types.MaxInstance))
 }
 
 func (e *Encoder) EncodeAppData(v interface{}) {
