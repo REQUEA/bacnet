@@ -9,6 +9,7 @@ import (
 	"reflect"
 )
 
+//nolint: deadcode, varcheck
 const (
 	applicationTagNull            byte = 0x00
 	applicationTagBoolean         byte = 0x01
