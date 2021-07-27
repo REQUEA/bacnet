@@ -10,7 +10,6 @@ import (
 	"github.com/matryer/is"
 )
 
-//TODO: check for context
 func TestDecodeTag(t *testing.T) {
 	ttc := []struct {
 		data     string //hex string
@@ -19,15 +18,17 @@ func TestDecodeTag(t *testing.T) {
 		{
 			data: "09",
 			expected: tag{
-				ID:    0,
-				Value: 1,
+				ID:      0,
+				Value:   1,
+				Context: true,
 			},
 		},
 		{
 			data: "1a",
 			expected: tag{
-				ID:    1,
-				Value: 2,
+				ID:      1,
+				Value:   2,
+				Context: true,
 			},
 		},
 		{
@@ -58,7 +59,7 @@ func TestDecodeTag(t *testing.T) {
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
 			buf := bytes.NewBuffer(b)
-			length, tag, err := DecodeTag(buf)
+			length, tag, err := decodeTag(buf)
 			is.NoErr(err)
 			is.Equal(length, len(b))
 			if !tagEqual(tag, tc.expected) {

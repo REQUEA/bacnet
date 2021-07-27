@@ -25,8 +25,8 @@ func main() {
 	}
 	fmt.Printf("%+v\n", c2)
 	data := bacnet.WhoIs{
-		Low:  new(uint),
-		High: new(uint),
+		Low:  new(uint32),
+		High: new(uint32),
 	}
 	*data.Low = 0
 	*data.High = 65535

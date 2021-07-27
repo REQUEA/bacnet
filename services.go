@@ -8,16 +8,7 @@ import (
 )
 
 type WhoIs struct {
-	Low, High *uint //may be null if we want to check all range
-}
-
-type ErrorIncorrectTag struct {
-	Expected uint8
-	Given    uint8
-}
-
-func (e ErrorIncorrectTag) Error() string {
-	return fmt.Sprintf("incorrect tag %d, expected %d.", e.Given, e.Expected)
+	Low, High *uint32 //may be null if we want to check all range
 }
 
 func (w WhoIs) MarshalBinary() ([]byte, error) {
@@ -29,8 +20,8 @@ func (w WhoIs) MarshalBinary() ([]byte, error) {
 		if *w.Low > *w.High {
 			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
 		}
-		encoding.ContextUnsigned(buf, 0, uint32(*w.Low))
-		encoding.ContextUnsigned(buf, 1, uint32(*w.High))
+		encoding.ContextUnsigned(buf, 0, *w.Low)
+		encoding.ContextUnsigned(buf, 1, *w.High)
 	}
 	return buf.Bytes(), nil
 }
@@ -41,40 +32,12 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 		// check. So keep the low and high pointer nil
 		return nil
 	}
-	w.Low = new(uint)
-	w.High = new(uint)
-	buf := bytes.NewBuffer(data)
-	// Tag 0 - Low Value
-	expectedTagID := byte(0)
-	_, tag, err := encoding.DecodeTag(buf)
-	if err != nil {
-		return fmt.Errorf("decode 1st WhoIs tag: %w", err)
-	}
-	if tag.ID != expectedTagID {
-		return fmt.Errorf("decode 1st WhoIs tag: %w", ErrorIncorrectTag{Expected: expectedTagID, Given: tag.ID})
-	}
-	//The tag value is the length of the next data field
-	val, err := encoding.DecodeUnsignedWithLen(buf, int(tag.Value))
-	if err != nil {
-		return fmt.Errorf("read 1st WhoIs value: %w", err)
-	}
-	*w.Low = uint(val)
-
-	// Tag 1 - High Value
-	expectedTagID = 1
-	_, tag, err = encoding.DecodeTag(buf)
-	if err != nil {
-		return fmt.Errorf("decode 2nd WhoIs tag: %w", err)
-	}
-	if tag.ID != expectedTagID {
-		return fmt.Errorf("decode 2nd WhoIs tag: %w", ErrorIncorrectTag{Expected: expectedTagID, Given: tag.ID})
-	}
-	val, err = encoding.DecodeUnsignedWithLen(buf, int(tag.Value))
-	if err != nil {
-		return fmt.Errorf("read 2st WhoIs value: %w", err)
-	}
-	*w.High = uint(val)
-	return nil
+	w.Low = new(uint32)
+	w.High = new(uint32)
+	decoder := encoding.NewDecoder(data)
+	decoder.ContextValue(byte(0), w.Low)
+	decoder.ContextValue(byte(1), w.High)
+	return decoder.Error()
 }
 
 type Iam struct {

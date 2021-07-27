@@ -54,14 +54,93 @@ func isClosingTag(x byte) bool {
 	return x&7 == 7
 }
 
-// func isContextSpecific(x byte) bool {
-// 	return x&8 > 0
-// }
+func isContextSpecific(x byte) bool {
+	return x&8 > 0
+}
 
 const (
 	flag16bits byte = 0xFE
 	flag32bits byte = 0xFF
 )
+
+type Encoder struct {
+	buf *bytes.Buffer
+	err error
+}
+
+func NewEncoder() Encoder {
+	e := Encoder{
+		buf: new(bytes.Buffer),
+		err: nil,
+	}
+	return e
+}
+
+func (e Encoder) Error() error {
+	return e.err
+}
+
+func (e Encoder) Bytes() []byte {
+	return e.buf.Bytes()
+}
+
+//Todo: doc
+type Decoder struct {
+	buf *bytes.Buffer
+	err error
+	//tagCounter int
+}
+
+func NewDecoder(b []byte) *Decoder {
+	return &Decoder{
+		buf: bytes.NewBuffer(b),
+		err: nil,
+	}
+}
+
+func (d *Decoder) Error() error {
+	return d.err
+}
+
+func (d *Decoder) Bytes() []byte {
+	return d.buf.Bytes()
+}
+
+//Todo: maybe add context to errors
+//ContextValue readsthe next context tag/value couple and set val accordingly.
+// Set the decoder error   if the tagID isn't the expected
+func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
+	if d.err != nil {
+		return
+	}
+	_, t, err := decodeTag(d.buf)
+	if err != nil {
+		d.err = err
+		return
+	}
+	if t.ID != expectedTagID {
+		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
+		return
+	}
+	if !t.Context {
+		d.err = errors.New("tag isn't contextual")
+	}
+	v, err := DecodeUnsignedWithLen(d.buf, int(t.Value))
+	if err != nil {
+		d.err = err
+		return
+	}
+	*val = v
+}
+
+type ErrorIncorrectTag struct {
+	Expected byte
+	Got      byte
+}
+
+func (e ErrorIncorrectTag) Error() string {
+	return fmt.Sprintf("incorrect tag %d, expected %d.", e.Got, e.Expected)
+}
 
 //Todo: should we really return an error here ?
 func (t tag) MarshallBinary() ([]byte, error) {
@@ -157,7 +236,7 @@ func unsigned(buf *bytes.Buffer, value uint32) int {
 	}
 }
 
-func DecodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
+func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 	length := 1
 	firstByte, err := buf.ReadByte()
 	if err != nil {
@@ -183,7 +262,9 @@ func DecodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 		t.Closing = true
 		return length, t, nil
 	}
-	//TODO: IScontext specific ?
+	if isContextSpecific(firstByte) {
+		t.Context = true
+	}
 	if isExtendedValue(firstByte) {
 		firstValueByte, err := buf.ReadByte()
 		if err != nil {
@@ -273,7 +354,7 @@ func DecodeAppData(buf *bytes.Buffer, v interface{}) error {
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return errors.New("decodeAppData: interface parameter isn't a pointer")
 	}
-	_, tag, err := DecodeTag(buf)
+	_, tag, err := decodeTag(buf)
 	if err != nil {
 		return fmt.Errorf("decodeAppData: read tag: %w", err)
 	}
