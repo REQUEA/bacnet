@@ -113,7 +113,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 }
 
 //should we return a device object ?
-func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
+func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]Iam, error) {
 	npdu := NPDU{
 		Version:               Version1,
 		IsNetworkLayerMessage: false,
@@ -141,7 +141,7 @@ func (c *Client) WhoIs(data WhoIs) ([]Iam, error) {
 	}
 	//This is the max wait time for answers to the query
 	//Todo: pass it as parameter
-	timer := time.NewTimer(1 * time.Second)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	//Use a set to deduplicate results
 	set := map[Iam]struct{}{}

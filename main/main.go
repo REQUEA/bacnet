@@ -30,7 +30,7 @@ func main() {
 	}
 	*data.Low = 0
 	*data.High = 65535
-	d2, err := c2.WhoIs(data)
+	d2, err := c2.WhoIs(data, time.Second)
 	if err != nil {
 		log.Fatal("whois: ", err)
 	}
