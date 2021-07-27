@@ -12,7 +12,7 @@ type WhoIs struct {
 }
 
 func (w WhoIs) MarshalBinary() ([]byte, error) {
-	buf := &bytes.Buffer{}
+	encoder := encoding.NewEncoder()
 	if w.Low != nil && w.High != nil {
 		if *w.Low > types.MaxInstance || *w.High > types.MaxInstance {
 			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, types.MaxInstance)
@@ -20,10 +20,10 @@ func (w WhoIs) MarshalBinary() ([]byte, error) {
 		if *w.Low > *w.High {
 			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
 		}
-		encoding.ContextUnsigned(buf, 0, *w.Low)
-		encoding.ContextUnsigned(buf, 1, *w.High)
+		encoder.ContextUnsigned(0, *w.Low)
+		encoder.ContextUnsigned(1, *w.High)
 	}
-	return buf.Bytes(), nil
+	return encoder.Bytes(), encoder.Error()
 }
 
 func (w *WhoIs) UnmarshalBinary(data []byte) error {

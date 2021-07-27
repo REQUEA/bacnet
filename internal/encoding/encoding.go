@@ -68,6 +68,7 @@ type Encoder struct {
 	err error
 }
 
+//Todo: doc
 func NewEncoder() Encoder {
 	e := Encoder{
 		buf: new(bytes.Buffer),
@@ -76,12 +77,34 @@ func NewEncoder() Encoder {
 	return e
 }
 
-func (e Encoder) Error() error {
+func (e *Encoder) Error() error {
 	return e.err
 }
 
-func (e Encoder) Bytes() []byte {
+func (e *Encoder) Bytes() []byte {
 	return e.buf.Bytes()
+}
+
+//ContextUnsigned write a (context)tag / value pair
+func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
+	if e.err != nil {
+		return
+	}
+	length := valueLength(value)
+	t := tag{
+		ID:      tabNumber,
+		Context: true,
+		Value:   uint32(length),
+		Opening: false,
+		Closing: false,
+	}
+	b, err := t.MarshallBinary()
+	if err != nil {
+		e.err = err
+		return
+	}
+	_, _ = e.buf.Write(b)
+	unsigned(e.buf, value)
 }
 
 //Todo: doc
@@ -107,8 +130,8 @@ func (d *Decoder) Bytes() []byte {
 }
 
 //Todo: maybe add context to errors
-//ContextValue readsthe next context tag/value couple and set val accordingly.
-// Set the decoder error   if the tagID isn't the expected
+//ContextValue reads the next context tag/value couple and set val accordingly.
+//Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
 func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if d.err != nil {
 		return
@@ -199,20 +222,6 @@ func valueLength(value uint32) int {
 		return 3
 	}
 	return 4
-}
-
-func ContextUnsigned(buf *bytes.Buffer, tabNumber byte, value uint32) int {
-	length := valueLength(value)
-	t := tag{
-		ID:      tabNumber,
-		Context: true,
-		Value:   uint32(length),
-		Opening: false,
-		Closing: false,
-	}
-	b, _ := t.MarshallBinary()
-	buf.Write(b)
-	return len(b) + unsigned(buf, value)
 }
 
 //unsigned writes the value in the buffer using a variabled-sized encoding
