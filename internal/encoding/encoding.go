@@ -107,6 +107,53 @@ func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
 	unsigned(e.buf, value)
 }
 
+func (e *Encoder) EncodeAppData(v interface{}) {
+	if e.err != nil {
+		return
+	}
+	switch val := v.(type) {
+	case float32:
+	case float64:
+	case bool:
+	case string:
+		e.err = fmt.Errorf("not implemented ")
+	case uint32:
+		length := valueLength(val)
+		t := tag{ID: ApplicationTagUnsignedInt, Value: uint32(length)}
+		b, err := t.MarshallBinary()
+		if err != nil {
+			e.err = err
+			return
+		}
+		_, _ = e.buf.Write(b)
+		unsigned(e.buf, val)
+	case types.SegmentationSupport:
+		v := uint32(val)
+		length := valueLength(v)
+		t := tag{ID: ApplicationTagEnumerated, Value: uint32(length)}
+		b, err := t.MarshallBinary()
+		if err != nil {
+			e.err = err
+			return
+		}
+		_, _ = e.buf.Write(b)
+		unsigned(e.buf, v)
+	case types.ObjectID:
+		//Todo : Maybe use static values for default types ?
+		t := tag{ID: ApplicationTagObjectID, Value: 4}
+		b, err := t.MarshallBinary()
+		if err != nil {
+			e.err = err
+			return
+		}
+		_, _ = e.buf.Write(b)
+		//Todo: maybe check that Type and instance are not invalid ?
+		_ = binary.Write(e.buf, binary.BigEndian, ((uint32(val.Type))<<types.InstanceBits)|(uint32(val.Instance)&types.MaxInstance))
+	default:
+		e.err = fmt.Errorf("encodeAppdata: unknown type %T", v)
+	}
+}
+
 //Todo: doc
 type Decoder struct {
 	buf *bytes.Buffer
@@ -414,46 +461,4 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		//implementation allow it but i'm not sure
 		return 0, nil
 	}
-}
-
-func EncodeAppData(buf *bytes.Buffer, v interface{}) error {
-	switch val := v.(type) {
-	case float32:
-	case float64:
-	case bool:
-	case string:
-		return fmt.Errorf("not implemented ")
-	case uint32:
-		length := valueLength(val)
-		t := tag{ID: ApplicationTagUnsignedInt, Value: uint32(length)}
-		b, err := t.MarshallBinary()
-		if err != nil {
-			return err
-		}
-		_, _ = buf.Write(b)
-		unsigned(buf, val)
-	case types.SegmentationSupport:
-		v := uint32(val)
-		length := valueLength(v)
-		t := tag{ID: ApplicationTagEnumerated, Value: uint32(length)}
-		b, err := t.MarshallBinary()
-		if err != nil {
-			return err
-		}
-		_, _ = buf.Write(b)
-		unsigned(buf, v)
-	case types.ObjectID:
-		//Maybe use static values for default types ?
-		t := tag{ID: ApplicationTagObjectID, Value: 4}
-		b, err := t.MarshallBinary()
-		if err != nil {
-			return err
-		}
-		_, _ = buf.Write(b)
-		//Todo: maybe check that Type and instance are not invalid ?
-		_ = binary.Write(buf, binary.BigEndian, ((uint32(val.Type))<<types.InstanceBits)|(uint32(val.Instance)&types.MaxInstance))
-	default:
-		return fmt.Errorf("encodeAppdata: unknown type %T", v)
-	}
-	return nil
 }

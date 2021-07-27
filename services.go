@@ -3,7 +3,6 @@ package bacnet
 import (
 	"bacnet/internal/encoding"
 	"bacnet/internal/types"
-	"bytes"
 	"fmt"
 )
 
@@ -48,24 +47,12 @@ type Iam struct {
 }
 
 func (iam Iam) MarshalBinary() ([]byte, error) {
-	buf := &bytes.Buffer{}
-	err := encoding.EncodeAppData(buf, iam.ObjectID)
-	if err != nil {
-		return nil, err
-	}
-	err = encoding.EncodeAppData(buf, iam.MaxApduLength)
-	if err != nil {
-		return nil, err
-	}
-	err = encoding.EncodeAppData(buf, iam.SegmentationSupport)
-	if err != nil {
-		return nil, err
-	}
-	err = encoding.EncodeAppData(buf, iam.VendorID)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	encoder := encoding.NewEncoder()
+	encoder.EncodeAppData(iam.ObjectID)
+	encoder.EncodeAppData(iam.MaxApduLength)
+	encoder.EncodeAppData(iam.SegmentationSupport)
+	encoder.EncodeAppData(iam.VendorID)
+	return encoder.Bytes(), encoder.Error()
 }
 
 func (iam *Iam) UnmarshalBinary(data []byte) error {
