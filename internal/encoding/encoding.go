@@ -125,10 +125,6 @@ func (d *Decoder) Error() error {
 	return d.err
 }
 
-func (d *Decoder) Bytes() []byte {
-	return d.buf.Bytes()
-}
-
 //Todo: maybe add context to errors
 //ContextValue reads the next context tag/value couple and set val accordingly.
 //Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
@@ -163,6 +159,77 @@ type ErrorIncorrectTag struct {
 
 func (e ErrorIncorrectTag) Error() string {
 	return fmt.Sprintf("incorrect tag %d, expected %d.", e.Got, e.Expected)
+}
+
+//DecodeAppData read the next tag and value. The value type advertised
+//in tag must be a standard bacnet application data type and must
+//match the type passed in the v parameter. If no error is
+//returned, v will contain the data read
+func (d *Decoder) DecodeAppData(v interface{}) {
+	if d.err != nil {
+		return
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		d.err = errors.New("decodeAppData: interface parameter isn't a pointer")
+		return
+	}
+	tag, err := decodeTag(d.buf)
+	if err != nil {
+		d.err = fmt.Errorf("decodeAppData: read tag: %w", err)
+		return
+	}
+	//TODO: return err if tag is context
+	//Take the pointer value
+	rv = rv.Elem()
+	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
+	switch tag.ID {
+	case ApplicationTagUnsignedInt:
+		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
+			return
+		}
+		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
+		if err != nil {
+			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			return
+		}
+
+		rv.SetUint(uint64(val))
+	case ApplicationTagEnumerated:
+		var seg types.SegmentationSupport
+		if rv.Type() != reflect.TypeOf(seg) {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
+			return
+		}
+		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
+		if err != nil {
+			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			return
+		}
+		rv.SetUint(uint64(val))
+	case ApplicationTagObjectID:
+		var obj types.ObjectID
+		if rv.Type() != reflect.TypeOf(obj) {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
+			return
+		}
+		var val uint32
+		err := binary.Read(d.buf, binary.BigEndian, &val)
+		if err != nil {
+			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			return
+		}
+		obj = types.ObjectID{
+			Type:     types.ObjectType(val >> types.InstanceBits),
+			Instance: types.ObjectInstance(val & types.MaxInstance),
+		}
+		rv.Set(reflect.ValueOf(obj))
+	default:
+		//TODO: support all app data types
+		d.err = fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
+		return
+	}
 }
 
 //Todo: should we really return an error here ?
@@ -323,7 +390,7 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		}
 		return uint32(val), nil
 	case size24:
-		// There is no default 24 bit integer in go, so we have to
+		// There is no default 24 bit integer in go, so we have tXo
 		// write it manually (in big endian)
 		var val uint16
 		msb, err := buf.ReadByte()
@@ -347,66 +414,6 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		//implementation allow it but i'm not sure
 		return 0, nil
 	}
-}
-
-//decodeAppData read the next tag and value. The value type advertised
-//in tag must be a standard bacnet application data type and must
-//match the type passed in the v parameter. If no error is
-//returned, v will contain the data read
-func DecodeAppData(buf *bytes.Buffer, v interface{}) error {
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("decodeAppData: interface parameter isn't a pointer")
-	}
-	tag, err := decodeTag(buf)
-	if err != nil {
-		return fmt.Errorf("decodeAppData: read tag: %w", err)
-	}
-	//TODO: return err if tag is context
-	//Take the pointer value
-	rv = rv.Elem()
-	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
-	switch tag.ID {
-	case ApplicationTagUnsignedInt:
-		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
-			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
-		}
-		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
-		if err != nil {
-			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
-		}
-
-		rv.SetUint(uint64(val))
-	case ApplicationTagEnumerated:
-		var seg types.SegmentationSupport
-		if rv.Type() != reflect.TypeOf(seg) {
-			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
-		}
-		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
-		if err != nil {
-			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
-		}
-		rv.SetUint(uint64(val))
-	case ApplicationTagObjectID:
-		var obj types.ObjectID
-		if rv.Type() != reflect.TypeOf(obj) {
-			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
-		}
-		var val uint32
-		err := binary.Read(buf, binary.BigEndian, &val)
-		if err != nil {
-			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
-		}
-		obj = types.ObjectID{
-			Type:     types.ObjectType(val >> types.InstanceBits),
-			Instance: types.ObjectInstance(val & types.MaxInstance),
-		}
-		rv.Set(reflect.ValueOf(obj))
-	default:
-		//TODO: support all app data types
-		return fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
-	}
-	return nil
 }
 
 func EncodeAppData(buf *bytes.Buffer, v interface{}) error {

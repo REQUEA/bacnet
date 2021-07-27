@@ -69,23 +69,10 @@ func (iam Iam) MarshalBinary() ([]byte, error) {
 }
 
 func (iam *Iam) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewBuffer(data)
-	err := encoding.DecodeAppData(buf, &iam.ObjectID)
-	if err != nil {
-		return fmt.Errorf("decode iam objectID: %w", err)
-	}
-	err = encoding.DecodeAppData(buf, &iam.MaxApduLength)
-	if err != nil {
-		return fmt.Errorf("decode iam MaxAPDU: %w", err)
-	}
-	err = encoding.DecodeAppData(buf, &iam.SegmentationSupport)
-	if err != nil {
-		return fmt.Errorf("decode iam SegmentationSupport: %w", err)
-	}
-	err = encoding.DecodeAppData(buf, &iam.VendorID)
-	if err != nil {
-		return fmt.Errorf("decode iam VendorID: %w", err)
-	}
-
-	return nil
+	decoder := encoding.NewDecoder(data)
+	decoder.DecodeAppData(&iam.ObjectID)
+	decoder.DecodeAppData(&iam.MaxApduLength)
+	decoder.DecodeAppData(&iam.SegmentationSupport)
+	decoder.DecodeAppData(&iam.VendorID)
+	return decoder.Error()
 }

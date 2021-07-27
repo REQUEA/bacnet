@@ -111,22 +111,22 @@ func TestDecodeAppData(t *testing.T) {
 			is := is.New(t)
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
-			buf := bytes.NewBuffer(b)
+			decoder := NewDecoder(b)
 			switch tc.from.(type) {
 			case types.ObjectID:
 				x := types.ObjectID{}
-				err = DecodeAppData(buf, &x)
-				is.NoErr(err)
+				decoder.DecodeAppData(&x)
+				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			case uint32:
 				var x uint32
-				err = DecodeAppData(buf, &x)
-				is.NoErr(err)
+				decoder.DecodeAppData(&x)
+				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			case types.SegmentationSupport:
 				var x types.SegmentationSupport
-				err = DecodeAppData(buf, &x)
-				is.NoErr(err)
+				decoder.DecodeAppData(&x)
+				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			default:
 				t.Errorf("Invalid from type %T", tc.from)
