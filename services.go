@@ -18,7 +18,7 @@ type ErrorIncorrectTag struct {
 }
 
 func (e ErrorIncorrectTag) Error() string {
-	return fmt.Sprintf("Incorrect tag %d, expected %d.", e.Given, e.Expected)
+	return fmt.Sprintf("incorrect tag %d, expected %d.", e.Given, e.Expected)
 }
 
 func (w WhoIs) MarshalBinary() ([]byte, error) {
