@@ -148,7 +148,7 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if !t.Context {
 		d.err = errors.New("tag isn't contextual")
 	}
-	v, err := DecodeUnsignedWithLen(d.buf, int(t.Value))
+	v, err := decodeUnsignedWithLen(d.buf, int(t.Value))
 	if err != nil {
 		d.err = err
 		return
@@ -307,7 +307,7 @@ const (
 	size32 = 4
 )
 
-func DecodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
+func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 	switch length {
 	case size8:
 		val, err := buf.ReadByte()
@@ -371,7 +371,7 @@ func DecodeAppData(buf *bytes.Buffer, v interface{}) error {
 		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
 			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
 		}
-		val, err := DecodeUnsignedWithLen(buf, int(tag.Value))
+		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
 		if err != nil {
 			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 		}
@@ -382,7 +382,7 @@ func DecodeAppData(buf *bytes.Buffer, v interface{}) error {
 		if rv.Type() != reflect.TypeOf(seg) {
 			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
 		}
-		val, err := DecodeUnsignedWithLen(buf, int(tag.Value))
+		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
 		if err != nil {
 			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 		}
