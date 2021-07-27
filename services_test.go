@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"bacnet/internal/types"
 	"encoding/hex"
 	"testing"
 
@@ -82,12 +83,12 @@ func TestIamEncodingAndCoherency(t *testing.T) {
 		{
 			data: "c4020075e92205c4910022016c",
 			iam: Iam{
-				ObjectID: ObjectID{
+				ObjectID: types.ObjectID{
 					Type:     8,
 					Instance: 30185,
 				},
 				MaxApduLength:       1476,
-				SegmentationSupport: SegmentationSupportBoth,
+				SegmentationSupport: types.SegmentationSupportBoth,
 				VendorID:            364,
 			},
 		},

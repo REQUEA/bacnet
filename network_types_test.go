@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"bacnet/internal/types"
 	"encoding/hex"
 	"testing"
 
@@ -50,12 +51,12 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 						DataType:    UnconfirmedServiceRequest,
 						ServiceType: ServiceUnconfirmedIAm,
 						Payload: &Iam{
-							ObjectID: ObjectID{
+							ObjectID: types.ObjectID{
 								Type:     8,
 								Instance: 30185,
 							},
 							MaxApduLength:       1476,
-							SegmentationSupport: SegmentationSupportBoth,
+							SegmentationSupport: types.SegmentationSupportBoth,
 							VendorID:            364,
 						},
 					},

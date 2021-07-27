@@ -1,6 +1,7 @@
-package bacnet
+package encoding
 
 import (
+	"bacnet/internal/types"
 	"bytes"
 	"encoding/hex"
 	"fmt"
@@ -57,7 +58,7 @@ func TestDecodeTag(t *testing.T) {
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
 			buf := bytes.NewBuffer(b)
-			length, tag, err := decodeTag(buf)
+			length, tag, err := DecodeTag(buf)
 			is.NoErr(err)
 			is.Equal(length, len(b))
 			if !tagEqual(tag, tc.expected) {
@@ -83,8 +84,8 @@ func TestDecodeAppData(t *testing.T) {
 	}{
 		{
 			data: "c4020075e9",
-			from: ObjectID{},
-			expected: ObjectID{
+			from: types.ObjectID{},
+			expected: types.ObjectID{
 				Type:     8,
 				Instance: 30185,
 			},
@@ -96,8 +97,8 @@ func TestDecodeAppData(t *testing.T) {
 		},
 		{
 			data:     "9100",
-			from:     SegmentationSupport(0),
-			expected: SegmentationSupportBoth,
+			from:     types.SegmentationSupport(0),
+			expected: types.SegmentationSupportBoth,
 		},
 		{
 			data:     "22016c",
@@ -112,19 +113,19 @@ func TestDecodeAppData(t *testing.T) {
 			is.NoErr(err)
 			buf := bytes.NewBuffer(b)
 			switch tc.from.(type) {
-			case ObjectID:
-				x := ObjectID{}
-				err = decodeAppData(buf, &x)
+			case types.ObjectID:
+				x := types.ObjectID{}
+				err = DecodeAppData(buf, &x)
 				is.NoErr(err)
 				is.Equal(x, tc.expected)
 			case uint32:
 				var x uint32
-				err = decodeAppData(buf, &x)
+				err = DecodeAppData(buf, &x)
 				is.NoErr(err)
 				is.Equal(x, tc.expected)
-			case SegmentationSupport:
-				var x SegmentationSupport
-				err = decodeAppData(buf, &x)
+			case types.SegmentationSupport:
+				var x types.SegmentationSupport
+				err = DecodeAppData(buf, &x)
 				is.NoErr(err)
 				is.Equal(x, tc.expected)
 			default:

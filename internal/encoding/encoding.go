@@ -1,6 +1,7 @@
-package bacnet
+package encoding
 
 import (
+	"bacnet/internal/types"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -121,7 +122,7 @@ func valueLength(value uint32) int {
 	return 4
 }
 
-func contextUnsigned(buf *bytes.Buffer, tabNumber byte, value uint32) int {
+func ContextUnsigned(buf *bytes.Buffer, tabNumber byte, value uint32) int {
 	length := valueLength(value)
 	t := tag{
 		ID:      tabNumber,
@@ -156,7 +157,7 @@ func unsigned(buf *bytes.Buffer, value uint32) int {
 	}
 }
 
-func decodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
+func DecodeTag(buf *bytes.Buffer) (len int, t tag, err error) {
 	length := 1
 	firstByte, err := buf.ReadByte()
 	if err != nil {
@@ -221,7 +222,7 @@ const (
 	size32 = 4
 )
 
-func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
+func DecodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 	switch length {
 	case size8:
 		val, err := buf.ReadByte()
@@ -267,12 +268,12 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 //in tag must be a standard bacnet application data type and must
 //match the type passed in the v parameter. If no error is
 //returned, v will contain the data read
-func decodeAppData(buf *bytes.Buffer, v interface{}) error {
+func DecodeAppData(buf *bytes.Buffer, v interface{}) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return errors.New("decodeAppData: interface parameter isn't a pointer")
 	}
-	_, tag, err := decodeTag(buf)
+	_, tag, err := DecodeTag(buf)
 	if err != nil {
 		return fmt.Errorf("decodeAppData: read tag: %w", err)
 	}
@@ -285,24 +286,24 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
 			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
 		}
-		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
+		val, err := DecodeUnsignedWithLen(buf, int(tag.Value))
 		if err != nil {
 			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 		}
 
 		rv.SetUint(uint64(val))
 	case ApplicationTagEnumerated:
-		var seg SegmentationSupport
+		var seg types.SegmentationSupport
 		if rv.Type() != reflect.TypeOf(seg) {
 			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
 		}
-		val, err := decodeUnsignedWithLen(buf, int(tag.Value))
+		val, err := DecodeUnsignedWithLen(buf, int(tag.Value))
 		if err != nil {
 			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 		}
 		rv.SetUint(uint64(val))
 	case ApplicationTagObjectID:
-		var obj ObjectID
+		var obj types.ObjectID
 		if rv.Type() != reflect.TypeOf(obj) {
 			return fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
 		}
@@ -311,9 +312,9 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 		if err != nil {
 			return fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 		}
-		obj = ObjectID{
-			Type:     ObjectType(val >> InstanceBits),
-			Instance: ObjectInstance(val & MaxInstance),
+		obj = types.ObjectID{
+			Type:     types.ObjectType(val >> types.InstanceBits),
+			Instance: types.ObjectInstance(val & types.MaxInstance),
 		}
 		rv.Set(reflect.ValueOf(obj))
 	default:
@@ -323,7 +324,7 @@ func decodeAppData(buf *bytes.Buffer, v interface{}) error {
 	return nil
 }
 
-func encodeAppData(buf *bytes.Buffer, v interface{}) error {
+func EncodeAppData(buf *bytes.Buffer, v interface{}) error {
 	switch val := v.(type) {
 	case float32:
 	case float64:
@@ -339,7 +340,7 @@ func encodeAppData(buf *bytes.Buffer, v interface{}) error {
 		}
 		_, _ = buf.Write(b)
 		unsigned(buf, val)
-	case SegmentationSupport:
+	case types.SegmentationSupport:
 		v := uint32(val)
 		length := valueLength(v)
 		t := tag{ID: ApplicationTagEnumerated, Value: uint32(length)}
@@ -349,7 +350,7 @@ func encodeAppData(buf *bytes.Buffer, v interface{}) error {
 		}
 		_, _ = buf.Write(b)
 		unsigned(buf, v)
-	case ObjectID:
+	case types.ObjectID:
 		//Maybe use static values for default types ?
 		t := tag{ID: ApplicationTagObjectID, Value: 4}
 		b, err := t.MarshallBinary()
@@ -358,7 +359,7 @@ func encodeAppData(buf *bytes.Buffer, v interface{}) error {
 		}
 		_, _ = buf.Write(b)
 		//Todo: maybe check that Type and instance are not invalid ?
-		_ = binary.Write(buf, binary.BigEndian, ((uint32(val.Type))<<InstanceBits)|(uint32(val.Instance)&MaxInstance))
+		_ = binary.Write(buf, binary.BigEndian, ((uint32(val.Type))<<types.InstanceBits)|(uint32(val.Instance)&types.MaxInstance))
 	default:
 		return fmt.Errorf("encodeAppdata: unknown type %T", v)
 	}
