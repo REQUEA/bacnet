@@ -245,7 +245,7 @@ func (d *Decoder) AppData(v interface{}) {
 	//Take the pointer value
 	rv = rv.Elem()
 	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
-	//Todo: Ensure that rv.Kind() != reflect.Interface checks if empty interface is passed
+	//Todo: Ensure that rv.Kind() != reflect.Interface checks if empty interface is passed, maybe chack that number of method is empty ?
 	switch tag.ID {
 	case applicationTagUnsignedInt:
 		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 && rv.Kind() != reflect.Interface {
