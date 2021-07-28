@@ -149,7 +149,7 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if d.err != nil {
 		return
 	}
-	t, err := decodeTag(d.buf)
+	_, t, err := decodeTag(d.buf)
 	if err != nil {
 		d.err = err
 		return
@@ -175,11 +175,12 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 	if d.err != nil {
 		return
 	}
-	t, err := decodeTag(d.buf)
+	_, t, err := decodeTag(d.buf)
 	if err != nil {
 		d.err = err
 		return
 	}
+
 	if t.ID != expectedTagID {
 		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
 		return
@@ -211,7 +212,7 @@ func (d *Decoder) DecodeAppData(v interface{}) {
 		d.err = errors.New("decodeAppData: interface parameter isn't a pointer")
 		return
 	}
-	tag, err := decodeTag(d.buf)
+	_, tag, err := decodeTag(d.buf)
 	if err != nil {
 		d.err = fmt.Errorf("decodeAppData: read tag: %w", err)
 		return

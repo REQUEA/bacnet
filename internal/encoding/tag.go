@@ -110,16 +110,18 @@ func encodeTag(buf *bytes.Buffer, t tag) error {
 	return nil
 }
 
-func decodeTag(buf *bytes.Buffer) (t tag, err error) {
+func decodeTag(buf *bytes.Buffer) (length int, t tag, err error) {
 	firstByte, err := buf.ReadByte()
 	if err != nil {
-		return t, fmt.Errorf("read tagID: %w", err)
+		return length, t, fmt.Errorf("read tagID: %w", err)
 	}
+	length++
 	if isExtendedTagNumber(firstByte) {
 		tagNumber, err := buf.ReadByte()
 		if err != nil {
-			return t, fmt.Errorf("read extended tagId: %w", err)
+			return length, t, fmt.Errorf("read extended tagId: %w", err)
 		}
+		length++
 		t.ID = tagNumber
 	} else {
 		tagNumber := firstByte >> 4
@@ -128,11 +130,11 @@ func decodeTag(buf *bytes.Buffer) (t tag, err error) {
 
 	if isOpeningTag(firstByte) {
 		t.Opening = true
-		return t, nil
+		return length, t, nil
 	}
 	if isClosingTag(firstByte) {
 		t.Closing = true
-		return t, nil
+		return length, t, nil
 	}
 	if isContextSpecific(firstByte) {
 		t.Context = true
@@ -140,21 +142,24 @@ func decodeTag(buf *bytes.Buffer) (t tag, err error) {
 	if isExtendedValue(firstByte) {
 		firstValueByte, err := buf.ReadByte()
 		if err != nil {
-			return t, fmt.Errorf("read first byte of extended value tag: %w", err)
+			return length, t, fmt.Errorf("read first byte of extended value tag: %w", err)
 		}
+		length++
 		switch firstValueByte {
 		case flag16bits:
 			var val uint16
 			err := binary.Read(buf, binary.BigEndian, &val)
 			if err != nil {
-				return t, fmt.Errorf("read extended 16bits tag value: %w ", err)
+				return length, t, fmt.Errorf("read extended 16bits tag value: %w ", err)
 			}
+			length += 2
 			t.Value = uint32(val)
 		case flag32bits:
 			err := binary.Read(buf, binary.BigEndian, &t.Value)
 			if err != nil {
-				return t, fmt.Errorf("read extended 32bits tag value: %w", err)
+				return length, t, fmt.Errorf("read extended 32bits tag value: %w", err)
 			}
+			length += 4
 		default:
 			t.Value = uint32(firstValueByte)
 
@@ -162,5 +167,5 @@ func decodeTag(buf *bytes.Buffer) (t tag, err error) {
 	} else {
 		t.Value = uint32(firstByte & 0x7)
 	}
-	return t, nil
+	return length, t, nil
 }
