@@ -141,21 +141,41 @@ func NewDecoder(b []byte) *Decoder {
 func (d *Decoder) Error() error {
 	return d.err
 }
+func (d *Decoder) ResetError() {
+	d.err = nil
+}
+
+//unread unread the last n bytes read from the decoder. This allows to retry decoding of the same data
+func (d *Decoder) unread(n int) error {
+	for x := 0; x < n; x++ {
+		fmt.Println("Unread")
+		err := d.buf.UnreadByte()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 //Todo: maybe add context to errors
 //ContextValue reads the next context tag/value couple and set val accordingly.
 //Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
+//If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
 func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if d.err != nil {
 		return
 	}
-	_, t, err := decodeTag(d.buf)
+	length, t, err := decodeTag(d.buf)
 	if err != nil {
 		d.err = err
 		return
 	}
 	if t.ID != expectedTagID {
 		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
+		err := d.unread(length)
+		if err != nil {
+			d.err = err
+		}
 		return
 	}
 	if !t.Context {
@@ -171,11 +191,12 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 
 //ContextObjectID read a (context)tag / value pair where the value
 //type is an unsigned int
+//If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
 func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) {
 	if d.err != nil {
 		return
 	}
-	_, t, err := decodeTag(d.buf)
+	length, t, err := decodeTag(d.buf)
 	if err != nil {
 		d.err = err
 		return
@@ -183,6 +204,10 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 
 	if t.ID != expectedTagID {
 		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
+		err := d.unread(length)
+		if err != nil {
+			d.err = err
+		}
 		return
 	}
 	if !t.Context {

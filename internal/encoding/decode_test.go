@@ -4,6 +4,7 @@ import (
 	"bacnet/internal/types"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -61,19 +62,27 @@ func TestDecodeTag(t *testing.T) {
 			buf := bytes.NewBuffer(b)
 			_, tag, err := decodeTag(buf)
 			is.NoErr(err)
-			if !tagEqual(tag, tc.expected) {
-				t.Errorf("Tag differ: expected %+v got %+v", tc.expected, tag)
-			}
+			is.Equal(tag, tc.expected)
 		})
 	}
 }
-
-func tagEqual(t1, t2 tag) bool {
-	return t1.ID == t2.ID &&
-		t1.Context == t2.Context &&
-		t1.Value == t2.Value &&
-		t1.Opening == t2.Opening &&
-		t1.Closing == t2.Closing
+func TestDecodeTagWithFailure(t *testing.T) {
+	data := []byte{0x39, 0x42}
+	d := NewDecoder(data)
+	var val uint32
+	d.ContextValue(2, &val)
+	var e ErrorIncorrectTag
+	if d.Error() == nil || !errors.As(d.Error(), &e) {
+		t.Fatal("Error should be set as ErrorIncorectTag: ", d.Error())
+	}
+	d.ResetError()
+	d.ContextValue(3, &val)
+	if d.Error() != nil {
+		t.Fatal("Unexpected error: ", d.Error())
+	}
+	if val != 0x42 {
+		t.Fatal("Wrong value")
+	}
 }
 
 func TestDecodeAppData(t *testing.T) {
