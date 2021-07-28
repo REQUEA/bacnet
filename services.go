@@ -108,7 +108,9 @@ func (rp *ReadPropertyData) UnmarshalBinary(data []byte) error {
 	var e encoding.ErrorIncorrectTag
 	//This tag is optionnal, maybe it doesn't exist
 	if err != nil && errors.As(err, &e) {
+		rp.Property.ArrayIndex = nil
 		decoder.ResetError()
 	}
+	decoder.ContextAbstractType(3, &rp.Data)
 	return decoder.Error()
 }

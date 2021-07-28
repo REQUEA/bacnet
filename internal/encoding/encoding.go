@@ -245,9 +245,10 @@ func (d *Decoder) AppData(v interface{}) {
 	//Take the pointer value
 	rv = rv.Elem()
 	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
+	//Todo: Ensure that rv.Kind() != reflect.Interface checks if empty interface is passed
 	switch tag.ID {
 	case applicationTagUnsignedInt:
-		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 {
+		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 && rv.Kind() != reflect.Interface {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
 			return
 		}
@@ -257,10 +258,10 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 
-		rv.SetUint(uint64(val))
+		rv.Set(reflect.ValueOf(val))
 	case applicationTagEnumerated:
 		var seg types.SegmentationSupport
-		if rv.Type() != reflect.TypeOf(seg) {
+		if rv.Type() != reflect.TypeOf(seg) && rv.Kind() != reflect.Interface {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
 			return
 		}
@@ -269,10 +270,10 @@ func (d *Decoder) AppData(v interface{}) {
 			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 			return
 		}
-		rv.SetUint(uint64(val))
+		rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
 	case applicationTagObjectID:
 		var obj types.ObjectID
-		if rv.Type() != reflect.TypeOf(obj) {
+		if rv.Type() != reflect.TypeOf(obj) && rv.Kind() != reflect.Interface {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
 			return
 		}
@@ -287,11 +288,77 @@ func (d *Decoder) AppData(v interface{}) {
 			Instance: types.ObjectInstance(val & types.MaxInstance),
 		}
 		rv.Set(reflect.ValueOf(obj))
+	case applicationTagCharacterString:
+		var s string
+		if rv.Type() != reflect.TypeOf(s) && rv.Kind() != reflect.Interface {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "CharacterString", rv.Type().String())
+			return
+		}
+		sEncoding, err := d.buf.ReadByte()
+		if err != nil {
+			d.err = err //Todo, wrap
+			return
+		}
+		if sEncoding != utf8Encoding {
+			d.err = fmt.Errorf("unsuported strign encoding: 0x%x", sEncoding)
+			return
+		}
+		b := make([]byte, int(tag.Value)-1) //Minus one because encoding is already consumed
+		err = binary.Read(d.buf, binary.BigEndian, b)
+		if err != nil {
+			d.err = err //todo: wrap
+			return
+		}
+		s = string(b) //Conversion allowed because string are utf8 only in go
+		rv.Set(reflect.ValueOf(s))
 	default:
 		//TODO: support all app data types
 		d.err = fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
 		return
 	}
+}
+
+const utf8Encoding = byte(0)
+
+func (d *Decoder) ContextAbstractType(expectedTagNumber byte, v interface{}) {
+	if d.err != nil {
+		return
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		d.err = errors.New("decodeAppData: interface parameter isn't a pointer")
+		return
+	}
+	_, tag, err := decodeTag(d.buf)
+	if err != nil {
+		d.err = fmt.Errorf("decoder abstractType: read opening tag: %w", err)
+		return
+	}
+	if !tag.Opening {
+		d.err = fmt.Errorf("decoder abstractType: expected opening tag")
+		return
+	}
+	if tag.ID != expectedTagNumber {
+		d.err = ErrorIncorrectTag{Expected: expectedTagNumber, Got: tag.ID}
+	}
+	//Todo: check if we can have several tag inside the Opening/closing pair
+	d.AppData(v)
+	if d.err != nil {
+		return
+	}
+	_, tag, err = decodeTag(d.buf)
+	if err != nil {
+		d.err = fmt.Errorf("decoder abstractType: read closing tag: %w", err)
+		return
+	}
+	if !tag.Closing {
+		d.err = fmt.Errorf("decoder abstractType: expected closing tag")
+		return
+	}
+	if tag.ID != expectedTagNumber {
+		d.err = ErrorIncorrectTag{Expected: expectedTagNumber, Got: tag.ID}
+	}
+
 }
 
 // valueLength caclulates how large the necessary value needs to be to fit in the appropriate
