@@ -80,7 +80,7 @@ func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
 	_ = binary.Write(e.buf, binary.BigEndian, ((uint32(objectID.Type))<<types.InstanceBits)|(uint32(objectID.Instance)&types.MaxInstance))
 }
 
-func (e *Encoder) EncodeAppData(v interface{}) {
+func (e *Encoder) AppData(v interface{}) {
 	if e.err != nil {
 		return
 	}
@@ -223,11 +223,11 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 	*objectID = obj
 }
 
-//DecodeAppData read the next tag and value. The value type advertised
+//AppData read the next tag and value. The value type advertised
 //in tag must be a standard bacnet application data type and must
 //match the type passed in the v parameter. If no error is
 //returned, v will contain the data read
-func (d *Decoder) DecodeAppData(v interface{}) {
+func (d *Decoder) AppData(v interface{}) {
 	if d.err != nil {
 		return
 	}

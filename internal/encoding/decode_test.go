@@ -124,17 +124,17 @@ func TestDecodeAppData(t *testing.T) {
 			switch tc.from.(type) {
 			case types.ObjectID:
 				x := types.ObjectID{}
-				decoder.DecodeAppData(&x)
+				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			case uint32:
 				var x uint32
-				decoder.DecodeAppData(&x)
+				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			case types.SegmentationSupport:
 				var x types.SegmentationSupport
-				decoder.DecodeAppData(&x)
+				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			default:

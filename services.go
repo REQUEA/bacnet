@@ -3,6 +3,7 @@ package bacnet
 import (
 	"bacnet/internal/encoding"
 	"bacnet/internal/types"
+	"errors"
 	"fmt"
 )
 
@@ -48,19 +49,19 @@ type Iam struct {
 
 func (iam Iam) MarshalBinary() ([]byte, error) {
 	encoder := encoding.NewEncoder()
-	encoder.EncodeAppData(iam.ObjectID)
-	encoder.EncodeAppData(iam.MaxApduLength)
-	encoder.EncodeAppData(iam.SegmentationSupport)
-	encoder.EncodeAppData(iam.VendorID)
+	encoder.AppData(iam.ObjectID)
+	encoder.AppData(iam.MaxApduLength)
+	encoder.AppData(iam.SegmentationSupport)
+	encoder.AppData(iam.VendorID)
 	return encoder.Bytes(), encoder.Error()
 }
 
 func (iam *Iam) UnmarshalBinary(data []byte) error {
 	decoder := encoding.NewDecoder(data)
-	decoder.DecodeAppData(&iam.ObjectID)
-	decoder.DecodeAppData(&iam.MaxApduLength)
-	decoder.DecodeAppData(&iam.SegmentationSupport)
-	decoder.DecodeAppData(&iam.VendorID)
+	decoder.AppData(&iam.ObjectID)
+	decoder.AppData(&iam.MaxApduLength)
+	decoder.AppData(&iam.SegmentationSupport)
+	decoder.AppData(&iam.VendorID)
 	return decoder.Error()
 }
 
@@ -101,6 +102,13 @@ func (rp *ReadPropertyData) UnmarshalBinary(data []byte) error {
 	decoder := encoding.NewDecoder(data)
 	decoder.ContextObjectID(0, &rp.ObjectID)
 	decoder.ContextValue(1, &rp.Property.Type)
-
+	rp.Property.ArrayIndex = new(uint32)
+	decoder.ContextValue(2, rp.Property.ArrayIndex)
+	err := decoder.Error()
+	var e encoding.ErrorIncorrectTag
+	//This tag is optionnal, maybe it doesn't exist
+	if err != nil && errors.As(err, &e) {
+		decoder.ResetError()
+	}
 	return decoder.Error()
 }
