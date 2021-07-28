@@ -148,7 +148,6 @@ func (d *Decoder) ResetError() {
 //unread unread the last n bytes read from the decoder. This allows to retry decoding of the same data
 func (d *Decoder) unread(n int) error {
 	for x := 0; x < n; x++ {
-		fmt.Println("Unread")
 		err := d.buf.UnreadByte()
 		if err != nil {
 			return err
