@@ -17,6 +17,7 @@ type Client struct {
 	udpPort          int
 	udp              *net.UDPConn
 	subscriptions    *Subscriptions
+	transactions     map[byte]func(BVLC)
 }
 
 type Subscriptions struct {
@@ -35,7 +36,7 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 	return ip, nil
 }
 func NewClient(inter string, port int) (*Client, error) {
-	c := &Client{subscriptions: &Subscriptions{}}
+	c := &Client{subscriptions: &Subscriptions{}, transactions: map[byte]func(BVLC){}}
 	i, err := net.InterfaceByName(inter)
 	if err != nil {
 		return nil, err
@@ -90,6 +91,7 @@ func (c *Client) listen() {
 			//Todo; do better, use logger
 			panic(err)
 		}
+		//Todo: Ensure this can never panic and bring down application
 		go func() {
 			err := c.handleMessage(addr, b[:i])
 			if err != nil {
@@ -109,6 +111,13 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	//Todo: not race safe here: lock
 	if c.subscriptions.f != nil {
 		c.subscriptions.f(bvlc, *src)
+	}
+
+	//Todo : check if nil
+	if bvlc.NPDU.ADPU.DataType == ComplexAck {
+		//todo: allow failure
+		fmt.Printf("%+v\n", bvlc.NPDU.ADPU) // output for debug
+		c.transactions[bvlc.NPDU.ADPU.InvokeID](bvlc)
 	}
 	return nil
 }
@@ -150,6 +159,9 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 		}
 	}
 	c.subscriptions.Unlock()
+	defer func() {
+		c.subscriptions.f = nil
+	}()
 	_, err := c.broadcast(npdu)
 	if err != nil {
 		return nil, err
@@ -185,6 +197,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 }
 
 func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifier) error {
+	invoke := byte(1) //Todo: Generate one
 	npdu := NPDU{
 		Version:               Version1,
 		IsNetworkLayerMessage: false,
@@ -199,21 +212,27 @@ func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifi
 		ADPU: &APDU{
 			DataType:    ConfirmedServiceRequest,
 			ServiceType: ServiceConfirmedReadProperty,
-			InvokeID:    1,
+			InvokeID:    invoke,
 			Payload: &ReadPropertyReq{
 				ObjectID: device.ObjectID,
 				Property: property,
 			},
 		},
 	}
+	//Todo: lock it
+	c.transactions[invoke] = func(bvlc BVLC) {
+		fmt.Printf("Got answer %+v\n", bvlc.NPDU.ADPU.Payload)
+
+	}
 	_, err := c.send(npdu)
 	if err != nil {
 		return err
 	}
+	time.Sleep(time.Second)
 	return nil
 }
 
-//Todo: unify these two by observing dest addr
+//Todo: unify these two by observing dest addr ?
 func (c *Client) send(npdu NPDU) (int, error) {
 	bytes, err := BVLC{
 		Type:     TypeBacnetIP,

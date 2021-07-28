@@ -169,6 +169,35 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	*val = v
 }
 
+//ContextObjectID read a (context)tag / value pair where the value
+//type is an unsigned int
+func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) {
+	if d.err != nil {
+		return
+	}
+	t, err := decodeTag(d.buf)
+	if err != nil {
+		d.err = err
+		return
+	}
+	if t.ID != expectedTagID {
+		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
+		return
+	}
+	if !t.Context {
+		d.err = errors.New("tag isn't contextual")
+		return
+	}
+	//Todo: check is tag size is ok
+	var val uint32
+	_ = binary.Read(d.buf, binary.BigEndian, &val)
+	obj := types.ObjectID{
+		Type:     types.ObjectType(val >> types.InstanceBits),
+		Instance: types.ObjectInstance(val & types.MaxInstance),
+	}
+	*objectID = obj
+}
+
 //DecodeAppData read the next tag and value. The value type advertised
 //in tag must be a standard bacnet application data type and must
 //match the type passed in the v parameter. If no error is

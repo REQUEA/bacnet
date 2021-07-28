@@ -295,12 +295,11 @@ type APDU struct {
 	Payload     Payload
 	//Only meaningfully for confirmed  and ack
 	InvokeID byte
-	//MaxSegs
-	//Segmented message
-	//More follow
-	//SegmentedResponseAccepted
-	//MaxApdu int
-	// InvokeId                  uint8
+	// MaxSegs
+	// Segmented message
+	// MoreFollow
+	// SegmentedResponseAccepted
+	// MaxApdu int
 	// Sequence                  uint8
 	// WindowNumber              uint8
 	// Error                     struct {
@@ -330,24 +329,31 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("read APDU DataType: %w", err)
 	}
+	if apdu.DataType == ComplexAck {
+		apdu.InvokeID, err = buf.ReadByte()
+		if err != nil {
+			return err
+		}
+	}
 	err = binary.Read(buf, binary.BigEndian, &apdu.ServiceType)
 	if err != nil {
 		return fmt.Errorf("read APDU ServiceType: %w", err)
 	}
 	if apdu.DataType == UnconfirmedServiceRequest && apdu.ServiceType == ServiceUnconfirmedWhoIs {
 		apdu.Payload = &WhoIs{}
-		return apdu.Payload.UnmarshalBinary(buf.Bytes())
 
 	} else if apdu.DataType == UnconfirmedServiceRequest && apdu.ServiceType == ServiceUnconfirmedIAm {
 		apdu.Payload = &Iam{}
-		return apdu.Payload.UnmarshalBinary(buf.Bytes())
+
+	} else if apdu.DataType == ComplexAck && apdu.ServiceType == ServiceConfirmedReadProperty {
+		apdu.Payload = &ReadPropertyData{}
 
 	} else {
 		// Just pass raw data, decoding is not yet ready
-		apdu.Payload = &DataPayload{buf.Bytes()}
+		apdu.Payload = &DataPayload{}
 	}
+	return apdu.Payload.UnmarshalBinary(buf.Bytes())
 
-	return nil
 }
 
 type Payload interface {

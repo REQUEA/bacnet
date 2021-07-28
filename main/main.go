@@ -37,7 +37,7 @@ func main() {
 	}
 	fmt.Printf("%+v\n", d2)
 	time.Sleep(time.Second)
-	err = c2.ReadProperty(d2[0], types.PropertyIdentifier{Type: 77})
+	err = c2.ReadProperty(d2[0], types.PropertyIdentifier{Type: 78})
 	if err != nil {
 		log.Fatal(err)
 	}
