@@ -25,12 +25,9 @@ type Address struct {
 	// mac_len = 0 is a broadcast address
 	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
 	Mac []byte
-	// DNET,DLEN,DADR or SNET,SLEN,SADR
 	// the following are used if the device is behind a router
 	// net = 0 indicates local
 	Net uint16 // BACnet network number
-	// LEN = 0 denotes broadcast MAC ADR and ADR field is absent
-	// LEN > 0 specifies length of ADR field
 	Adr []byte // hwaddr (MAC) address
 }
 

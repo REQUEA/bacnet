@@ -1,7 +1,6 @@
 package bacnet
 
 import (
-	"bacnet/internal/types"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -62,7 +61,7 @@ func NewClient(inter string, port int) (*Client, error) {
 			if err != nil {
 				return nil, err
 			}
-			//c.ipAdress = ip
+			c.ipAdress = ip
 			c.broadcastAddress = broadcast
 			break
 		}
@@ -199,7 +198,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 	}
 }
 
-func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifier) (interface{}, error) {
+func (c *Client) ReadProperty(device IamAddress, readProp ReadPropertyReq) (interface{}, error) {
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
@@ -217,10 +216,7 @@ func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifi
 			DataType:    ConfirmedServiceRequest,
 			ServiceType: ServiceConfirmedReadProperty,
 			InvokeID:    invokeID,
-			Payload: &ReadPropertyReq{
-				ObjectID: device.ObjectID,
-				Property: property,
-			},
+			Payload:     &readProp,
 		},
 	}
 	//Todo: pass context to cancel
