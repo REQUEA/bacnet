@@ -118,7 +118,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 		invokeID := bvlc.NPDU.ADPU.InvokeID
 		ch, ok := c.transactions.GetTransaction(invokeID)
 		if !ok {
-			panic("no transaction found")
+			return errors.New("no transaction found")
 		}
 		ch <- bvlc
 	}
@@ -199,7 +199,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 	}
 }
 
-func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifier) error {
+func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifier) (interface{}, error) {
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
@@ -229,11 +229,11 @@ func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifi
 	defer c.transactions.StopTransaction(invokeID)
 	_, err := c.send(npdu)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	bvlc := <-rChan
-	fmt.Printf("Got answer: %+v\n", bvlc.NPDU.ADPU.Payload)
-	return nil
+
+	return bvlc.NPDU.ADPU.Payload.(*ReadPropertyData).Data, nil
 }
 
 //Todo: unify these two by observing dest addr ?
