@@ -11,8 +11,9 @@ import (
 
 func TestValidAppData(t *testing.T) {
 	ttc := []struct {
-		data     string //hex string
-		expected interface{}
+		data        string //hex string
+		expected    interface{}
+		expectedBis interface{} //nil if same as one
 	}{
 		{
 			data: "c4020075e9",
@@ -26,8 +27,9 @@ func TestValidAppData(t *testing.T) {
 			expected: uint32(1476),
 		},
 		{
-			data:     "9100",
-			expected: types.SegmentationSupportBoth,
+			data:        "9100",
+			expected:    types.SegmentationSupportBoth,
+			expectedBis: uint32(0),
 		},
 		{
 			data:     "22016c",
@@ -74,7 +76,11 @@ func TestValidAppData(t *testing.T) {
 			decoder = NewDecoder(b)
 			decoder.AppData(&v)
 			is.NoErr(decoder.err)
-			is.Equal(v, tc.expected)
+			if tc.expectedBis != nil {
+				is.Equal(v, tc.expectedBis)
+			} else {
+				is.Equal(v, tc.expected)
+			}
 
 		})
 		t.Run(fmt.Sprintf("AppData encode %s (%T)", tc.data, tc.expected), func(t *testing.T) {

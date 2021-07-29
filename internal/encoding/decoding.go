@@ -132,35 +132,36 @@ func (d *Decoder) AppData(v interface{}) {
 	//Todo: Ensure that rv.Kind() != reflect.Interface checks if empty interface is passed, maybe chack that number of method is empty ?
 	switch tag.ID {
 	case applicationTagUnsignedInt:
-		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 && rv.Kind() != reflect.Interface {
+		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
+		if err != nil {
+			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			return
+		}
+		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 && !isEmptyInterface(rv) {
 			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
 			return
 		}
-		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
-		if err != nil {
-			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
-			return
-		}
-
 		rv.Set(reflect.ValueOf(val))
 	case applicationTagEnumerated:
-		var seg types.SegmentationSupport
-		if rv.Type() != reflect.TypeOf(seg) && rv.Kind() != reflect.Interface {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
-			return
-		}
 		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
 		if err != nil {
 			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 			return
 		}
-		rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
+		switch rv.Type() {
+		case reflect.TypeOf(types.SegmentationSupport(0)):
+			rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
+		default:
+			if isEmptyInterface(rv) {
+				rv.Set(reflect.ValueOf(val))
+			} else {
+				d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
+				return
+			}
+		}
+
 	case applicationTagObjectID:
 		var obj types.ObjectID
-		if rv.Type() != reflect.TypeOf(obj) && rv.Kind() != reflect.Interface {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
-			return
-		}
 		var val uint32
 		err := binary.Read(d.buf, binary.BigEndian, &val)
 		if err != nil {
@@ -168,13 +169,12 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		obj = types.ObjectIDFromUint32(val)
-		rv.Set(reflect.ValueOf(obj))
-	case applicationTagCharacterString:
-		var s string
-		if rv.Type() != reflect.TypeOf(s) && rv.Kind() != reflect.Interface {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "CharacterString", rv.Type().String())
+		if rv.Type() != reflect.TypeOf(obj) && !isEmptyInterface(rv) {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
 			return
 		}
+		rv.Set(reflect.ValueOf(obj))
+	case applicationTagCharacterString:
 		sEncoding, err := d.buf.ReadByte()
 		if err != nil {
 			d.err = err //Todo, wrap
@@ -194,13 +194,21 @@ func (d *Decoder) AppData(v interface{}) {
 			d.err = fmt.Errorf("decode string: stort read %d instead of %d", n, len(b))
 			return
 		}
-		s = string(b) //Conversion allowed because string are utf8 only in go
+		s := string(b) //Conversion allowed because string are utf8 only in go
+		if rv.Type() != reflect.TypeOf(s) && !isEmptyInterface(rv) {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "CharacterString", rv.Type().String())
+			return
+		}
 		rv.Set(reflect.ValueOf(s))
 	default:
 		//TODO: support all app data types
 		d.err = fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)
 		return
 	}
+}
+
+func isEmptyInterface(rv reflect.Value) bool {
+	return rv.Kind() == reflect.Interface && rv.Type().NumMethod() == 0
 }
 
 const utf8Encoding = byte(0)

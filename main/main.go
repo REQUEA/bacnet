@@ -67,6 +67,7 @@ func main() {
 		},
 		Property: types.PropertyIdentifier{
 			Type: uint32(types.PROP_PRESENT_VALUE),
+			//Type: uint32(types.PROP_UNITS),
 		},
 	})
 	if err != nil {
