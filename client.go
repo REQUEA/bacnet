@@ -3,7 +3,6 @@ package bacnet
 import (
 	"bacnet/internal/types"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -17,7 +16,7 @@ type Client struct {
 	udpPort          int
 	udp              *net.UDPConn
 	subscriptions    *Subscriptions
-	transactions     map[byte]func(BVLC)
+	transactions     *Transactions
 }
 
 type Subscriptions struct {
@@ -36,7 +35,7 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 	return ip, nil
 }
 func NewClient(inter string, port int) (*Client, error) {
-	c := &Client{subscriptions: &Subscriptions{}, transactions: map[byte]func(BVLC){}}
+	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions()}
 	i, err := net.InterfaceByName(inter)
 	if err != nil {
 		return nil, err
@@ -102,7 +101,7 @@ func (c *Client) listen() {
 }
 
 func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
-	fmt.Printf("Received packet %s from addr %v \n", hex.EncodeToString(b), src)
+	//fmt.Printf("Received packet %s from addr %v \n", hex.EncodeToString(b), src)
 	var bvlc BVLC
 	err := bvlc.UnmarshalBinary(b)
 	if err != nil {
@@ -116,8 +115,12 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	//Todo : check if nil
 	if bvlc.NPDU.ADPU.DataType == ComplexAck {
 		//todo: allow failure
-		fmt.Printf("%+v\n", bvlc.NPDU.ADPU) // output for debug
-		c.transactions[bvlc.NPDU.ADPU.InvokeID](bvlc)
+		invokeID := bvlc.NPDU.ADPU.InvokeID
+		ch, ok := c.transactions.GetTransaction(invokeID)
+		if !ok {
+			panic("no transaction found")
+		}
+		ch <- bvlc
 	}
 	return nil
 }
@@ -197,7 +200,8 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 }
 
 func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifier) error {
-	invoke := byte(1) //Todo: Generate one
+	invokeID := c.transactions.GetID()
+	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
 		Version:               Version1,
 		IsNetworkLayerMessage: false,
@@ -212,23 +216,23 @@ func (c *Client) ReadProperty(device IamAddress, property types.PropertyIdentifi
 		ADPU: &APDU{
 			DataType:    ConfirmedServiceRequest,
 			ServiceType: ServiceConfirmedReadProperty,
-			InvokeID:    invoke,
+			InvokeID:    invokeID,
 			Payload: &ReadPropertyReq{
 				ObjectID: device.ObjectID,
 				Property: property,
 			},
 		},
 	}
-	//Todo: lock it
-	c.transactions[invoke] = func(bvlc BVLC) {
-		fmt.Printf("Got answer %+v\n", bvlc.NPDU.ADPU.Payload)
-
-	}
+	//Todo: pass context to cancel
+	rChan := make(chan BVLC)
+	c.transactions.SetTransaction(invokeID, rChan)
+	defer c.transactions.StopTransaction(invokeID)
 	_, err := c.send(npdu)
 	if err != nil {
 		return err
 	}
-	time.Sleep(time.Second)
+	bvlc := <-rChan
+	fmt.Printf("Got answer: %+v\n", bvlc.NPDU.ADPU.Payload)
 	return nil
 }
 

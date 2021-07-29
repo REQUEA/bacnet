@@ -1,5 +1,6 @@
 package types
 
+//nolint: revive, stylecheck
 const (
 	PROP_ACKED_TRANSITIONS                   uint64 = 0x00
 	PROP_ACK_REQUIRED                        uint64 = 0x01

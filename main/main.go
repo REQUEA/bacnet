@@ -37,9 +37,18 @@ func main() {
 	}
 	fmt.Printf("%+v\n", d2)
 	time.Sleep(time.Second)
-	err = c2.ReadProperty(d2[0], types.PropertyIdentifier{Type: 78})
+	prop := types.PropertyIdentifier{Type: uint32(types.PROP_OBJECT_LIST), ArrayIndex: new(uint32)}
+	*prop.ArrayIndex = 0
+	err = c2.ReadProperty(d2[0], prop)
 	if err != nil {
 		log.Fatal(err)
+	}
+	for i := 1; i < 343; i++ {
+		*prop.ArrayIndex = uint32(i)
+		err = c2.ReadProperty(d2[0], prop)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	//var selectObjet = types.Device{}
 	// for _, objet := range d {
