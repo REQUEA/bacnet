@@ -75,7 +75,7 @@ type ReadProperty struct {
 func (rp ReadProperty) MarshalBinary() ([]byte, error) {
 	encoder := encoding.NewEncoder()
 	encoder.ContextObjectID(0, rp.ObjectID)
-	encoder.ContextUnsigned(1, rp.Property.Type)
+	encoder.ContextUnsigned(1, uint32(rp.Property.Type))
 	if rp.Property.ArrayIndex != nil {
 		encoder.ContextUnsigned(2, *rp.Property.ArrayIndex)
 	}
@@ -88,7 +88,9 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 	}
 	decoder := encoding.NewDecoder(data)
 	decoder.ContextObjectID(0, &rp.ObjectID)
-	decoder.ContextValue(1, &rp.Property.Type)
+	var val uint32
+	decoder.ContextValue(1, &val)
+	rp.Property.Type = types.PropertyType(val)
 	rp.Property.ArrayIndex = new(uint32)
 	decoder.ContextValue(2, rp.Property.ArrayIndex)
 	err := decoder.Error()

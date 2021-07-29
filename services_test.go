@@ -121,7 +121,7 @@ func TestReadPropertyReq(t *testing.T) {
 					Instance: 8121,
 				},
 				Property: types.PropertyIdentifier{
-					Type: uint32(types.PROP_UNITS),
+					Type: types.Units,
 				},
 			},
 		},
@@ -149,7 +149,7 @@ func TestReadPropertyResp(t *testing.T) {
 					Instance: 8121,
 				},
 				Property: types.PropertyIdentifier{
-					Type: uint32(types.PROP_UNITS),
+					Type: types.Units,
 				},
 				Data: uint32(98),
 			},

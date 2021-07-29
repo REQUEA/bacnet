@@ -111,9 +111,11 @@ const (
 	SegmentationSupportNone     SegmentationSupport = 0x03
 )
 
+type PropertyType uint32
+
 //PropertyIdentifier is used to control a ReadProperty request
 type PropertyIdentifier struct {
-	Type uint32
+	Type PropertyType
 	//Not null if it's an array property and we want only one index of
 	//this array
 	ArrayIndex *uint32

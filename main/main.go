@@ -37,7 +37,7 @@ func main() {
 	}
 	fmt.Printf("%+v\n", d2)
 	time.Sleep(time.Second)
-	prop := types.PropertyIdentifier{Type: uint32(types.PROP_OBJECT_LIST), ArrayIndex: new(uint32)}
+	prop := types.PropertyIdentifier{Type: types.ObjectList, ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
 	d, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
 		ObjectID: d2[0].ObjectID,
@@ -67,7 +67,7 @@ func main() {
 		},
 		Property: types.PropertyIdentifier{
 			//Type: uint32(types.PROP_PRESENT_VALUE),
-			Type: uint32(types.PROP_UNITS),
+			Type: types.Units,
 		},
 		Data: new(float32),
 	})
