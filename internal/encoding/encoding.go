@@ -51,11 +51,7 @@ func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
 		Opening: false,
 		Closing: false,
 	}
-	err := encodeTag(e.buf, t)
-	if err != nil {
-		e.err = err
-		return
-	}
+	encodeTag(e.buf, t)
 	unsigned(e.buf, value)
 }
 
@@ -72,11 +68,7 @@ func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
 		Opening: false,
 		Closing: false,
 	}
-	err := encodeTag(e.buf, t)
-	if err != nil {
-		e.err = err
-		return
-	}
+	encodeTag(e.buf, t)
 	v, err := objectID.Encode()
 	if err != nil {
 		e.err = err
@@ -94,49 +86,29 @@ func (e *Encoder) AppData(v interface{}) {
 		e.err = fmt.Errorf("not implemented ")
 	case float32:
 		t := tag{ID: applicationTagReal, Value: 4}
-		err := encodeTag(e.buf, t)
-		if err != nil {
-			e.err = err
-			return
-		}
+		encodeTag(e.buf, t)
 		_ = binary.Write(e.buf, binary.BigEndian, val)
 	case string:
 		//+1 because there will be one byte for the string encoding format
 		t := tag{ID: applicationTagCharacterString, Value: uint32(len(val) + 1)}
-		err := encodeTag(e.buf, t)
-		if err != nil {
-			e.err = err
-			return
-		}
+		encodeTag(e.buf, t)
 		_ = e.buf.WriteByte(utf8Encoding)
 		_, _ = e.buf.Write([]byte(val))
 	case uint32:
 		length := valueLength(val)
 		t := tag{ID: applicationTagUnsignedInt, Value: uint32(length)}
-		err := encodeTag(e.buf, t)
-		if err != nil {
-			e.err = err
-			return
-		}
+		encodeTag(e.buf, t)
 		unsigned(e.buf, val)
 	case types.SegmentationSupport:
 		v := uint32(val)
 		length := valueLength(v)
 		t := tag{ID: applicationTagEnumerated, Value: uint32(length)}
-		err := encodeTag(e.buf, t)
-		if err != nil {
-			e.err = err
-			return
-		}
+		encodeTag(e.buf, t)
 		unsigned(e.buf, v)
 	case types.ObjectID:
 		//Todo : Maybe use static values for default types ?
 		t := tag{ID: applicationTagObjectID, Value: 4}
-		err := encodeTag(e.buf, t)
-		if err != nil {
-			e.err = err
-			return
-		}
+		encodeTag(e.buf, t)
 		v, err := val.Encode()
 		if err != nil {
 			e.err = err

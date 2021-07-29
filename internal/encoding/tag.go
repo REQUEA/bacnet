@@ -34,7 +34,6 @@ const (
 	applicationTagObjectID        byte = 0x0C
 )
 
-//Todo: maybe not several boolean but a type field
 type tag struct {
 	// Tag id. Typically sequential when tag is contextual. Or refer
 	// to the standard AppData Types
@@ -66,8 +65,7 @@ func isContextSpecific(x byte) bool {
 	return x&8 > 0
 }
 
-//Todo: should we really return an error here ?
-func encodeTag(buf *bytes.Buffer, t tag) error {
+func encodeTag(buf *bytes.Buffer, t tag) {
 	var tagMeta byte
 	if t.Context {
 		tagMeta |= 0x8
@@ -107,7 +105,6 @@ func encodeTag(buf *bytes.Buffer, t tag) error {
 			_ = binary.Write(buf, binary.BigEndian, t.Value)
 		}
 	}
-	return nil
 }
 
 func decodeTag(buf *bytes.Buffer) (length int, t tag, err error) {

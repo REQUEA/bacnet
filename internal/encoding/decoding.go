@@ -44,7 +44,6 @@ func (d *Decoder) unread(n int) error {
 	return nil
 }
 
-//Todo: maybe add context to errors
 //ContextValue reads the next context tag/value couple and set val accordingly.
 //Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
 //If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.

@@ -89,7 +89,7 @@ func TestValidTag(t *testing.T) {
 		t.Run(fmt.Sprintf("Tag encode %s", tc.data), func(t *testing.T) {
 			is := is.New(t)
 			buf := &bytes.Buffer{}
-			is.NoErr(encodeTag(buf, tc.expected))
+			encodeTag(buf, tc.expected)
 			is.Equal(hex.EncodeToString(buf.Bytes()), tc.data)
 		})
 	}
