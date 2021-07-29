@@ -106,7 +106,6 @@ func (e *Encoder) AppData(v interface{}) {
 		encodeTag(e.buf, t)
 		unsigned(e.buf, v)
 	case types.ObjectID:
-		//Todo : Maybe use static values for default types ?
 		t := tag{ID: applicationTagObjectID, Value: 4}
 		encodeTag(e.buf, t)
 		v, err := val.Encode()

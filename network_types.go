@@ -376,7 +376,7 @@ type BVLCType byte
 
 const TypeBacnetIP BVLCType = 0x81
 
-//go:generate stringer -type=BacnetFunction
+//go:generate stringer -type=Function
 type Function byte
 
 // List of possible BACnet functions
