@@ -343,7 +343,7 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 		apdu.Payload = &Iam{}
 
 	} else if apdu.DataType == ComplexAck && apdu.ServiceType == ServiceConfirmedReadProperty {
-		apdu.Payload = &ReadPropertyData{}
+		apdu.Payload = &ReadProperty{}
 
 	} else {
 		// Just pass raw data, decoding is not yet ready

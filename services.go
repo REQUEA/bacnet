@@ -65,12 +65,14 @@ func (iam *Iam) UnmarshalBinary(data []byte) error {
 	return decoder.Error()
 }
 
-type ReadPropertyReq struct {
+type ReadProperty struct {
 	ObjectID types.ObjectID
 	Property types.PropertyIdentifier
+	//Data is here to contains the response
+	Data interface{}
 }
 
-func (rp ReadPropertyReq) MarshalBinary() ([]byte, error) {
+func (rp ReadProperty) MarshalBinary() ([]byte, error) {
 	encoder := encoding.NewEncoder()
 	encoder.ContextObjectID(0, rp.ObjectID)
 	encoder.ContextUnsigned(1, rp.Property.Type)
@@ -80,22 +82,7 @@ func (rp ReadPropertyReq) MarshalBinary() ([]byte, error) {
 	return encoder.Bytes(), encoder.Error()
 }
 
-func (rp *ReadPropertyReq) UnmarshalBinary(data []byte) error {
-	panic("not implemented")
-}
-
-type ReadPropertyData struct {
-	ObjectID types.ObjectID
-	Property types.PropertyIdentifier
-	Data     interface{}
-}
-
-func (rp ReadPropertyData) MarshalBinary() ([]byte, error) {
-	panic("not implemented")
-
-}
-
-func (rp *ReadPropertyData) UnmarshalBinary(data []byte) error {
+func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 	if len(data) < 7 {
 		return fmt.Errorf("unmarshall readPropertyData: payload too short: %d bytes", len(data))
 	}

@@ -199,7 +199,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 	}
 }
 
-func (c *Client) ReadProperty(device IamAddress, readProp ReadPropertyReq) (interface{}, error) {
+func (c *Client) ReadProperty(device IamAddress, readProp ReadProperty) (interface{}, error) {
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
@@ -230,7 +230,7 @@ func (c *Client) ReadProperty(device IamAddress, readProp ReadPropertyReq) (inte
 	}
 	bvlc := <-rChan
 
-	return bvlc.NPDU.ADPU.Payload.(*ReadPropertyData).Data, nil
+	return bvlc.NPDU.ADPU.Payload.(*ReadProperty).Data, nil
 }
 
 //Todo: unify these two by observing dest addr ?

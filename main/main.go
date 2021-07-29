@@ -39,7 +39,7 @@ func main() {
 	time.Sleep(time.Second)
 	prop := types.PropertyIdentifier{Type: uint32(types.PROP_OBJECT_LIST), ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
-	d, err := c2.ReadProperty(d2[0], bacnet.ReadPropertyReq{
+	d, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
 		ObjectID: d2[0].ObjectID,
 		Property: prop,
 	})
@@ -48,27 +48,28 @@ func main() {
 	}
 	fmt.Printf("%d %+v\n", 0, d) // output for debug
 
-	// for i := 1; i < 343; i++ {
-	// 	*prop.ArrayIndex = uint32(i)
-	// 	d, err := c2.ReadProperty(d2[0], bacnet.ReadPropertyReq{
-	// 		ObjectID: d2[0].ObjectID,
-	// 		Property: prop,
-	// 	})
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	fmt.Printf("%d %+v\n", i, d) // output for debug
-	// }
+	for i := 1; i < 343; i++ {
+		*prop.ArrayIndex = uint32(i)
+		d, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+			ObjectID: d2[0].ObjectID,
+			Property: prop,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%d %+v\n", i, d) // output for debug
+	}
 
-	d, err = c2.ReadProperty(d2[0], bacnet.ReadPropertyReq{
+	d, err = c2.ReadProperty(d2[0], bacnet.ReadProperty{
 		ObjectID: types.ObjectID{
 			Type:     1,
 			Instance: 8121,
 		},
 		Property: types.PropertyIdentifier{
-			Type: uint32(types.PROP_PRESENT_VALUE),
-			//Type: uint32(types.PROP_UNITS),
+			//Type: uint32(types.PROP_PRESENT_VALUE),
+			Type: uint32(types.PROP_UNITS),
 		},
+		Data: new(float32),
 	})
 	if err != nil {
 		log.Fatal(err)

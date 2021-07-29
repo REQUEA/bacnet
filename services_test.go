@@ -107,3 +107,61 @@ func TestIamEncodingAndCoherency(t *testing.T) {
 		})
 	}
 }
+
+func TestReadPropertyReq(t *testing.T) {
+	ttc := []struct {
+		data string //hex string
+		rp   ReadProperty
+	}{
+		{
+			data: "0c00401fb91975",
+			rp: ReadProperty{
+				ObjectID: types.ObjectID{
+					Type:     types.AnalogOutput,
+					Instance: 8121,
+				},
+				Property: types.PropertyIdentifier{
+					Type: uint32(types.PROP_UNITS),
+				},
+			},
+		},
+	}
+	for _, tc := range ttc {
+		t.Run(tc.data, func(t *testing.T) {
+			is := is.New(t)
+			result, err := tc.rp.MarshalBinary()
+			is.NoErr(err)
+			is.Equal(hex.EncodeToString(result), tc.data)
+		})
+	}
+}
+
+func TestReadPropertyResp(t *testing.T) {
+	ttc := []struct {
+		data string //hex string
+		rp   ReadProperty
+	}{
+		{
+			data: "0c00401fb919753e91623f",
+			rp: ReadProperty{
+				ObjectID: types.ObjectID{
+					Type:     types.AnalogOutput,
+					Instance: 8121,
+				},
+				Property: types.PropertyIdentifier{
+					Type: uint32(types.PROP_UNITS),
+				},
+				Data: uint32(98),
+			},
+		},
+	}
+	for _, tc := range ttc {
+		t.Run(tc.data, func(t *testing.T) {
+			is := is.New(t)
+			rp := ReadProperty{}
+			b, _ := hex.DecodeString(tc.data)
+			is.NoErr(rp.UnmarshalBinary(b))
+			is.Equal(rp, tc.rp)
+		})
+	}
+}
