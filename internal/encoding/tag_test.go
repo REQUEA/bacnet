@@ -52,6 +52,22 @@ func TestValidTag(t *testing.T) {
 			},
 		},
 		{
+			data: "3e",
+			expected: tag{
+				ID:      3,
+				Context: true,
+				Opening: true,
+			},
+		},
+		{
+			data: "3f",
+			expected: tag{
+				ID:      3,
+				Context: true,
+				Closing: true,
+			},
+		},
+		{
 			data: "7511",
 			expected: tag{
 				ID:    applicationTagCharacterString,

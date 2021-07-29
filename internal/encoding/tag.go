@@ -127,6 +127,9 @@ func decodeTag(buf *bytes.Buffer) (length int, t tag, err error) {
 		tagNumber := firstByte >> 4
 		t.ID = tagNumber
 	}
+	if isContextSpecific(firstByte) {
+		t.Context = true
+	}
 
 	if isOpeningTag(firstByte) {
 		t.Opening = true
@@ -136,9 +139,7 @@ func decodeTag(buf *bytes.Buffer) (length int, t tag, err error) {
 		t.Closing = true
 		return length, t, nil
 	}
-	if isContextSpecific(firstByte) {
-		t.Context = true
-	}
+
 	if isExtendedValue(firstByte) {
 		firstValueByte, err := buf.ReadByte()
 		if err != nil {
