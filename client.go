@@ -16,7 +16,18 @@ type Client struct {
 	udp              *net.UDPConn
 	subscriptions    *Subscriptions
 	transactions     *Transactions
+	Logger           Logger
 }
+
+type Logger interface {
+	Info(msg string)
+	Error(msg string)
+}
+
+type NoOpLogger struct{}
+
+func (NoOpLogger) Info(msg string)  {}
+func (NoOpLogger) Error(msg string) {}
 
 type Subscriptions struct {
 	sync.Mutex
@@ -35,7 +46,7 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 }
 
 func NewClient(inter string, port int) (*Client, error) {
-	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions()}
+	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions(), Logger: NoOpLogger{}}
 	i, err := net.InterfaceByName(inter)
 	if err != nil {
 		return nil, err
@@ -87,14 +98,17 @@ func (c *Client) listen() {
 		b := make([]byte, 2048)
 		i, addr, err := c.udp.ReadFromUDP(b)
 		if err != nil {
-			//Todo; do better, use logger
-			panic(err)
+			c.Logger.Error(err.Error())
 		}
-		//Todo: Ensure this can never panic and bring down application
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					c.Logger.Error("panic in handle message: " + r.(error).Error())
+				}
+			}()
 			err := c.handleMessage(addr, b[:i])
 			if err != nil {
-				panic(err)
+				c.Logger.Error("handle msg: " + err.Error())
 			}
 		}()
 	}
