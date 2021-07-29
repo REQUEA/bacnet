@@ -185,9 +185,13 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		b := make([]byte, int(tag.Value)-1) //Minus one because encoding is already consumed
-		err = binary.Read(d.buf, binary.BigEndian, b)
+		n, err := d.buf.Read(b)
 		if err != nil {
 			d.err = err //todo: wrap
+			return
+		}
+		if n != len(b) {
+			d.err = fmt.Errorf("decode string: stort read %d instead of %d", n, len(b))
 			return
 		}
 		s = string(b) //Conversion allowed because string are utf8 only in go

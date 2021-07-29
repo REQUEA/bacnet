@@ -94,8 +94,17 @@ func (e *Encoder) AppData(v interface{}) {
 	case float32:
 	case float64:
 	case bool:
-	case string:
 		e.err = fmt.Errorf("not implemented ")
+	case string:
+		//+1 because there will be one byte for the string encoding format
+		t := tag{ID: applicationTagCharacterString, Value: uint32(len(val) + 1)}
+		err := encodeTag(e.buf, t)
+		if err != nil {
+			e.err = err
+			return
+		}
+		_ = e.buf.WriteByte(utf8Encoding)
+		_, _ = e.buf.Write([]byte(val))
 	case uint32:
 		length := valueLength(val)
 		t := tag{ID: applicationTagUnsignedInt, Value: uint32(length)}
@@ -129,7 +138,6 @@ func (e *Encoder) AppData(v interface{}) {
 			return
 		}
 		_ = binary.Write(e.buf, binary.BigEndian, v)
-
 	default:
 		e.err = fmt.Errorf("encodeAppdata: unknown type %T", v)
 	}

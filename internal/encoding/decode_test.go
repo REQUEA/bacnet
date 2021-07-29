@@ -3,33 +3,13 @@ package encoding
 import (
 	"bacnet/internal/types"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/matryer/is"
 )
 
-func TestDecodeTagWithFailure(t *testing.T) {
-	data := []byte{0x39, 0x42}
-	d := NewDecoder(data)
-	var val uint32
-	d.ContextValue(2, &val)
-	var e ErrorIncorrectTag
-	if d.Error() == nil || !errors.As(d.Error(), &e) {
-		t.Fatal("Error should be set as ErrorIncorectTag: ", d.Error())
-	}
-	d.ResetError()
-	d.ContextValue(3, &val)
-	if d.Error() != nil {
-		t.Fatal("Unexpected error: ", d.Error())
-	}
-	if val != 0x42 {
-		t.Fatal("Wrong value")
-	}
-}
-
-func TestDecodeAppData(t *testing.T) {
+func TestValidAppData(t *testing.T) {
 	ttc := []struct {
 		data     string //hex string
 		expected interface{}
@@ -59,7 +39,7 @@ func TestDecodeAppData(t *testing.T) {
 		},
 	}
 	for _, tc := range ttc {
-		t.Run(fmt.Sprintf("AppData %s (%T)", tc.data, tc.expected), func(t *testing.T) {
+		t.Run(fmt.Sprintf("AppData decode %s (%T)", tc.data, tc.expected), func(t *testing.T) {
 			is := is.New(t)
 			b, err := hex.DecodeString(tc.data)
 			is.NoErr(err)
@@ -96,6 +76,13 @@ func TestDecodeAppData(t *testing.T) {
 			is.NoErr(decoder.err)
 			is.Equal(v, tc.expected)
 
+		})
+		t.Run(fmt.Sprintf("AppData encode %s (%T)", tc.data, tc.expected), func(t *testing.T) {
+			is := is.New(t)
+			enc := NewEncoder()
+			enc.AppData(tc.expected)
+			is.NoErr(enc.Error())
+			is.Equal(hex.EncodeToString(enc.Bytes()), tc.data)
 		})
 	}
 }

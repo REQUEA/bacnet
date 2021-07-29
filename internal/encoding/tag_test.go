@@ -3,6 +3,7 @@ package encoding
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -91,5 +92,24 @@ func TestValidTag(t *testing.T) {
 			is.NoErr(encodeTag(buf, tc.expected))
 			is.Equal(hex.EncodeToString(buf.Bytes()), tc.data)
 		})
+	}
+}
+
+func TestDecodeTagWithFailure(t *testing.T) {
+	data := []byte{0x39, 0x42}
+	d := NewDecoder(data)
+	var val uint32
+	d.ContextValue(2, &val)
+	var e ErrorIncorrectTag
+	if d.Error() == nil || !errors.As(d.Error(), &e) {
+		t.Fatal("Error should be set as ErrorIncorectTag: ", d.Error())
+	}
+	d.ResetError()
+	d.ContextValue(3, &val)
+	if d.Error() != nil {
+		t.Fatal("Unexpected error: ", d.Error())
+	}
+	if val != 0x42 {
+		t.Fatal("Wrong value")
 	}
 }
