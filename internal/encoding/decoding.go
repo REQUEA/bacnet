@@ -142,38 +142,18 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		rv.Set(reflect.ValueOf(val))
-	case applicationTagEnumerated:
-		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
+	case applicationTagReal:
+		var f float32
+		err := binary.Read(d.buf, binary.BigEndian, &f)
 		if err != nil {
-			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			d.err = fmt.Errorf("decode AppData: read float32: %w", err)
 			return
 		}
-		switch rv.Type() {
-		case reflect.TypeOf(types.SegmentationSupport(0)):
-			rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
-		default:
-			if isEmptyInterface(rv) {
-				rv.Set(reflect.ValueOf(val))
-			} else {
-				d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
-				return
-			}
-		}
-
-	case applicationTagObjectID:
-		var obj types.ObjectID
-		var val uint32
-		err := binary.Read(d.buf, binary.BigEndian, &val)
-		if err != nil {
-			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+		if rv.Kind() != reflect.Float32 && !isEmptyInterface(rv) {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Real", rv.Type().String())
 			return
 		}
-		obj = types.ObjectIDFromUint32(val)
-		if rv.Type() != reflect.TypeOf(obj) && !isEmptyInterface(rv) {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
-			return
-		}
-		rv.Set(reflect.ValueOf(obj))
+		rv.Set(reflect.ValueOf(f))
 	case applicationTagCharacterString:
 		sEncoding, err := d.buf.ReadByte()
 		if err != nil {
@@ -200,6 +180,38 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		rv.Set(reflect.ValueOf(s))
+	case applicationTagEnumerated:
+		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
+		if err != nil {
+			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			return
+		}
+		switch rv.Type() {
+		case reflect.TypeOf(types.SegmentationSupport(0)):
+			rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
+		default:
+			if isEmptyInterface(rv) {
+				rv.Set(reflect.ValueOf(val))
+			} else {
+				d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
+				return
+			}
+		}
+	case applicationTagObjectID:
+		var obj types.ObjectID
+		var val uint32
+		err := binary.Read(d.buf, binary.BigEndian, &val)
+		if err != nil {
+			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
+			return
+		}
+		obj = types.ObjectIDFromUint32(val)
+		if rv.Type() != reflect.TypeOf(obj) && !isEmptyInterface(rv) {
+			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
+			return
+		}
+		rv.Set(reflect.ValueOf(obj))
+
 	default:
 		//TODO: support all app data types
 		d.err = fmt.Errorf("decodeAppData: unsupported type 0x%x", tag.ID)

@@ -77,7 +77,6 @@ func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
 		e.err = err
 		return
 	}
-	//Todo:  check objectID is valid, use name constant for tag value
 	v, err := objectID.Encode()
 	if err != nil {
 		e.err = err
@@ -91,10 +90,16 @@ func (e *Encoder) AppData(v interface{}) {
 		return
 	}
 	switch val := v.(type) {
-	case float32:
-	case float64:
-	case bool:
+	case float64, bool:
 		e.err = fmt.Errorf("not implemented ")
+	case float32:
+		t := tag{ID: applicationTagReal, Value: 4}
+		err := encodeTag(e.buf, t)
+		if err != nil {
+			e.err = err
+			return
+		}
+		_ = binary.Write(e.buf, binary.BigEndian, val)
 	case string:
 		//+1 because there will be one byte for the string encoding format
 		t := tag{ID: applicationTagCharacterString, Value: uint32(len(val) + 1)}

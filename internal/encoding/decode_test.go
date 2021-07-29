@@ -39,6 +39,10 @@ func TestValidAppData(t *testing.T) {
 			data:     "7511004543592d53313030302d413437383035",
 			expected: "ECY-S1000-A47805",
 		},
+		{
+			data:     "4400000000",
+			expected: float32(0),
+		},
 	}
 	for _, tc := range ttc {
 		t.Run(fmt.Sprintf("AppData decode %s (%T)", tc.data, tc.expected), func(t *testing.T) {
@@ -65,6 +69,11 @@ func TestValidAppData(t *testing.T) {
 				is.Equal(x, tc.expected)
 			case string:
 				var x string
+				decoder.AppData(&x)
+				is.NoErr(decoder.err)
+				is.Equal(x, tc.expected)
+			case float32:
+				var x float32
 				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
