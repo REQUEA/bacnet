@@ -33,6 +33,7 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 	binary.BigEndian.PutUint32(ip, binary.BigEndian.Uint32(n.IP.To4())|^binary.BigEndian.Uint32(net.IP(n.Mask).To4()))
 	return ip, nil
 }
+
 func NewClient(inter string, port int) (*Client, error) {
 	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions()}
 	i, err := net.InterfaceByName(inter)

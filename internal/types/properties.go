@@ -1,5 +1,6 @@
 package types
 
+//Todo: cleanup, stringer
 //nolint: revive, stylecheck
 const (
 	PROP_ACKED_TRANSITIONS                   uint64 = 0x00
