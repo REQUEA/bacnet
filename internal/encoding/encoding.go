@@ -14,12 +14,15 @@ const (
 	flag32bits byte = 0xFF
 )
 
+//Encoder is the struct used to turn bacnet types to byte arrays. All
+//public methods of encoder can set the internal error value. If such
+//error is set, all encoding methods will be no-ops. This allows to
+//defer error checking after several encoding operations
 type Encoder struct {
 	buf *bytes.Buffer
 	err error
 }
 
-//Todo: doc
 func NewEncoder() Encoder {
 	e := Encoder{
 		buf: new(bytes.Buffer),
@@ -134,7 +137,10 @@ func (e *Encoder) AppData(v interface{}) {
 	}
 }
 
-//Todo: doc
+//Decoder is the struct used to turn byte arrays to bacnet types. All
+//public methods of decoder can set the internal error value. If such
+//error is set, all decoding methods will be no-ops. This allows to
+//defer error checking after several decoding operations
 type Decoder struct {
 	buf *bytes.Buffer
 	err error
