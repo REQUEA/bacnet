@@ -77,7 +77,12 @@ func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
 		return
 	}
 	//Todo:  check objectID is valid, use name constant for tag value
-	_ = binary.Write(e.buf, binary.BigEndian, ((uint32(objectID.Type))<<types.InstanceBits)|(uint32(objectID.Instance)&types.MaxInstance))
+	v, err := objectID.Encode()
+	if err != nil {
+		e.err = err
+		return
+	}
+	_ = binary.Write(e.buf, binary.BigEndian, v)
 }
 
 func (e *Encoder) AppData(v interface{}) {
@@ -117,8 +122,13 @@ func (e *Encoder) AppData(v interface{}) {
 			e.err = err
 			return
 		}
-		//Todo: maybe check that Type and instance are not invalid ?
-		_ = binary.Write(e.buf, binary.BigEndian, ((uint32(val.Type))<<types.InstanceBits)|(uint32(val.Instance)&types.MaxInstance))
+		v, err := val.Encode()
+		if err != nil {
+			e.err = err
+			return
+		}
+		_ = binary.Write(e.buf, binary.BigEndian, v)
+
 	default:
 		e.err = fmt.Errorf("encodeAppdata: unknown type %T", v)
 	}
@@ -216,11 +226,7 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 	//Todo: check is tag size is ok
 	var val uint32
 	_ = binary.Read(d.buf, binary.BigEndian, &val)
-	obj := types.ObjectID{
-		Type:     types.ObjectType(val >> types.InstanceBits),
-		Instance: types.ObjectInstance(val & types.MaxInstance),
-	}
-	*objectID = obj
+	*objectID = types.ObjectIDFromUint32(val)
 }
 
 //AppData read the next tag and value. The value type advertised
@@ -283,10 +289,7 @@ func (d *Decoder) AppData(v interface{}) {
 			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 			return
 		}
-		obj = types.ObjectID{
-			Type:     types.ObjectType(val >> types.InstanceBits),
-			Instance: types.ObjectInstance(val & types.MaxInstance),
-		}
+		obj = types.ObjectIDFromUint32(val)
 		rv.Set(reflect.ValueOf(obj))
 	case applicationTagCharacterString:
 		var s string

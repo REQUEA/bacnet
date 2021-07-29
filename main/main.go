@@ -48,18 +48,31 @@ func main() {
 	}
 	fmt.Printf("%d %+v\n", 0, d) // output for debug
 
-	for i := 1; i < 343; i++ {
-		*prop.ArrayIndex = uint32(i)
-		d, err := c2.ReadProperty(d2[0], bacnet.ReadPropertyReq{
-			ObjectID: d2[0].ObjectID,
-			Property: prop,
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("%d %+v\n", i, d) // output for debug
-	}
+	// for i := 1; i < 343; i++ {
+	// 	*prop.ArrayIndex = uint32(i)
+	// 	d, err := c2.ReadProperty(d2[0], bacnet.ReadPropertyReq{
+	// 		ObjectID: d2[0].ObjectID,
+	// 		Property: prop,
+	// 	})
+	// 	if err != nil {
+	// 		log.Fatal(err)
+	// 	}
+	// 	fmt.Printf("%d %+v\n", i, d) // output for debug
+	// }
 
+	d, err = c2.ReadProperty(d2[0], bacnet.ReadPropertyReq{
+		ObjectID: types.ObjectID{
+			Type:     1,
+			Instance: 8121,
+		},
+		Property: types.PropertyIdentifier{
+			Type: uint32(types.PROP_PRESENT_VALUE),
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%+v\n", d) // output for debug
 	//var selectObjet = types.Device{}
 	// for _, objet := range d {
 	// 	fmt.Printf("%+v\n",objet)
