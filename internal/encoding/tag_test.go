@@ -100,7 +100,7 @@ func TestDecodeTagWithFailure(t *testing.T) {
 	d := NewDecoder(data)
 	var val uint32
 	d.ContextValue(2, &val)
-	var e ErrorIncorrectTag
+	var e ErrorIncorrectTagID
 	if d.Error() == nil || !errors.As(d.Error(), &e) {
 		t.Fatal("Error should be set as ErrorIncorectTag: ", d.Error())
 	}

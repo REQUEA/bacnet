@@ -58,7 +58,7 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 		return
 	}
 	if t.ID != expectedTagID {
-		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
+		d.err = ErrorIncorrectTagID{Expected: expectedTagID, Got: t.ID}
 		err := d.unread(length)
 		if err != nil {
 			d.err = err
@@ -90,7 +90,7 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 	}
 
 	if t.ID != expectedTagID {
-		d.err = ErrorIncorrectTag{Expected: expectedTagID, Got: t.ID}
+		d.err = ErrorIncorrectTagID{Expected: expectedTagID, Got: t.ID}
 		err := d.unread(length)
 		if err != nil {
 			d.err = err
@@ -105,6 +105,15 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 	var val uint32
 	_ = binary.Read(d.buf, binary.BigEndian, &val)
 	*objectID = types.ObjectIDFromUint32(val)
+}
+
+type AppDataTypeMismatch struct {
+	wanted string
+	got    reflect.Type
+}
+
+func (e AppDataTypeMismatch) Error() string {
+	return fmt.Sprintf("decode AppData: mismatched type, cannot decode %s in type %s", e.wanted, e.got.String())
 }
 
 //AppData read the next tag and value. The value type advertised
@@ -125,11 +134,12 @@ func (d *Decoder) AppData(v interface{}) {
 		d.err = fmt.Errorf("decodeAppData: read tag: %w", err)
 		return
 	}
-	//TODO: return err if tag is context
+	if tag.Context {
+		d.err = errors.New("decode AppData: unexpected context tag ")
+		return
+	}
 	//Take the pointer value
 	rv = rv.Elem()
-	//TODO: Make stringer  of AppliactionTag and print them rather than fixed string
-	//Todo: Ensure that rv.Kind() != reflect.Interface checks if empty interface is passed, maybe chack that number of method is empty ?
 	switch tag.ID {
 	case applicationTagUnsignedInt:
 		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
@@ -138,7 +148,7 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		if rv.Kind() != reflect.Uint8 && rv.Kind() != reflect.Uint16 && rv.Kind() != reflect.Uint32 && !isEmptyInterface(rv) {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "UnsignedInt", rv.Type().String())
+			d.err = AppDataTypeMismatch{wanted: "UnsignedInt", got: rv.Type()}
 			return
 		}
 		rv.Set(reflect.ValueOf(val))
@@ -150,14 +160,14 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		if rv.Kind() != reflect.Float32 && !isEmptyInterface(rv) {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Real", rv.Type().String())
+			d.err = AppDataTypeMismatch{wanted: "Real", got: rv.Type()}
 			return
 		}
 		rv.Set(reflect.ValueOf(f))
 	case applicationTagCharacterString:
 		sEncoding, err := d.buf.ReadByte()
 		if err != nil {
-			d.err = err //Todo, wrap
+			d.err = fmt.Errorf("decode appData: read string encoding: %w", err)
 			return
 		}
 		if sEncoding != utf8Encoding {
@@ -167,7 +177,7 @@ func (d *Decoder) AppData(v interface{}) {
 		b := make([]byte, int(tag.Value)-1) //Minus one because encoding is already consumed
 		n, err := d.buf.Read(b)
 		if err != nil {
-			d.err = err //todo: wrap
+			d.err = fmt.Errorf("decode appdata: read string: %w", err)
 			return
 		}
 		if n != len(b) {
@@ -176,7 +186,7 @@ func (d *Decoder) AppData(v interface{}) {
 		}
 		s := string(b) //Conversion allowed because string are utf8 only in go
 		if rv.Type() != reflect.TypeOf(s) && !isEmptyInterface(rv) {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "CharacterString", rv.Type().String())
+			d.err = AppDataTypeMismatch{wanted: "CharacterString", got: rv.Type()}
 			return
 		}
 		rv.Set(reflect.ValueOf(s))
@@ -193,7 +203,7 @@ func (d *Decoder) AppData(v interface{}) {
 			if isEmptyInterface(rv) {
 				rv.Set(reflect.ValueOf(val))
 			} else {
-				d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "Enumerated", rv.Type().String())
+				d.err = AppDataTypeMismatch{wanted: "Enumetared", got: rv.Type()}
 				return
 			}
 		}
@@ -207,7 +217,7 @@ func (d *Decoder) AppData(v interface{}) {
 		}
 		obj = types.ObjectIDFromUint32(val)
 		if rv.Type() != reflect.TypeOf(obj) && !isEmptyInterface(rv) {
-			d.err = fmt.Errorf("decodeAppData: mismatched type, cannot decode %s in type %s", "ObjectID", rv.Type().String())
+			d.err = AppDataTypeMismatch{wanted: "ObjectID", got: rv.Type()}
 			return
 		}
 		rv.Set(reflect.ValueOf(obj))
@@ -244,7 +254,7 @@ func (d *Decoder) ContextAbstractType(expectedTagNumber byte, v interface{}) {
 		return
 	}
 	if tag.ID != expectedTagNumber {
-		d.err = ErrorIncorrectTag{Expected: expectedTagNumber, Got: tag.ID}
+		d.err = ErrorIncorrectTagID{Expected: expectedTagNumber, Got: tag.ID}
 	}
 	//Todo: check if we can have several tag inside the Opening/closing pair
 	d.AppData(v)
@@ -261,7 +271,7 @@ func (d *Decoder) ContextAbstractType(expectedTagNumber byte, v interface{}) {
 		return
 	}
 	if tag.ID != expectedTagNumber {
-		d.err = ErrorIncorrectTag{Expected: expectedTagNumber, Got: tag.ID}
+		d.err = ErrorIncorrectTagID{Expected: expectedTagNumber, Got: tag.ID}
 	}
 
 }

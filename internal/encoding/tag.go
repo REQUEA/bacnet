@@ -6,14 +6,14 @@ import (
 	"fmt"
 )
 
-//ErrorIncorrectTag is the error return when the decoded tag doesn't
+//ErrorIncorrectTagID is the error return when the decoded tag doesn't
 //have the expected ID
-type ErrorIncorrectTag struct {
+type ErrorIncorrectTagID struct {
 	Expected byte
 	Got      byte
 }
 
-func (e ErrorIncorrectTag) Error() string {
+func (e ErrorIncorrectTagID) Error() string {
 	return fmt.Sprintf("incorrect tagID %d, expected %d.", e.Got, e.Expected)
 }
 
