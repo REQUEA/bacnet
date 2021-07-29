@@ -1,7 +1,7 @@
 package bacnet
 
 import (
-	"bacnet/internal/types"
+	"bacnet/types"
 	"encoding/hex"
 	"testing"
 

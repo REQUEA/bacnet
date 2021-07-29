@@ -2,7 +2,7 @@ package main
 
 import (
 	"bacnet"
-	"bacnet/internal/types"
+	"bacnet/types"
 	"fmt"
 	"log"
 	"time"

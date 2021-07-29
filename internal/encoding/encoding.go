@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"bacnet/internal/types"
+	"bacnet/types"
 	"bytes"
 	"encoding/binary"
 	"fmt"

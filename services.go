@@ -2,7 +2,7 @@ package bacnet
 
 import (
 	"bacnet/internal/encoding"
-	"bacnet/internal/types"
+	"bacnet/types"
 	"errors"
 	"fmt"
 )
