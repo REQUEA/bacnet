@@ -45,9 +45,12 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 	return ip, nil
 }
 
-func NewClient(inter string, port int) (*Client, error) {
+//NewClient creates a new bacnet client. It binds on the given port
+//and network interface (eth0 for example). If Port if 0, the default
+//bacnet port is used
+func NewClient(netInterface string, port int) (*Client, error) {
 	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions(), Logger: NoOpLogger{}}
-	i, err := net.InterfaceByName(inter)
+	i, err := net.InterfaceByName(netInterface)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +63,7 @@ func NewClient(inter string, port int) (*Client, error) {
 		return nil, err
 	}
 	if len(addrs) == 0 {
-		return nil, fmt.Errorf("interface %s has no addresses", inter)
+		return nil, fmt.Errorf("interface %s has no addresses", netInterface)
 	}
 	for _, adr := range addrs {
 		ip, ipnet, err := net.ParseCIDR(adr.String())
@@ -77,6 +80,9 @@ func NewClient(inter string, port int) (*Client, error) {
 			c.broadcastAddress = broadcast
 			break
 		}
+	}
+	if c.ipAdress == nil {
+		return nil, fmt.Errorf("No IPv4 address assigned to interface: %s", netInterface)
 	}
 
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
@@ -115,7 +121,6 @@ func (c *Client) listen() {
 }
 
 func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
-	//fmt.Printf("Received packet %s from addr %v \n", hex.EncodeToString(b), src)
 	var bvlc BVLC
 	err := bvlc.UnmarshalBinary(b)
 	if err != nil {
@@ -126,14 +131,15 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 		c.subscriptions.f(bvlc, *src)
 	}
 
-	//Todo : check if nil
-	if bvlc.NPDU.ADPU.DataType == ComplexAck {
+	apdu := bvlc.NPDU.ADPU
+	if apdu != nil && apdu.DataType == ComplexAck {
 		//todo: allow failure
 		invokeID := bvlc.NPDU.ADPU.InvokeID
 		ch, ok := c.transactions.GetTransaction(invokeID)
 		if !ok {
 			return errors.New("no transaction found")
 		}
+		// Todo: can we block here ? Maybe pass context to cancel if needed
 		ch <- bvlc
 	}
 	return nil
