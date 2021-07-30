@@ -1,3 +1,7 @@
+run:
+  skip-dirs:
+    - main
+    
 issues:
   # List of regexps of issue texts to exclude, empty list by default.
   # But independently from this option we use default exclude patterns,
@@ -14,7 +18,7 @@ issues:
         - errcheck
         - dupl
         - gosec
-
+        
 linters:
   enable:
     - bodyclose
