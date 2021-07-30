@@ -140,6 +140,8 @@ func (d *Decoder) AppData(v interface{}) {
 	//Take the pointer value
 	rv = rv.Elem()
 	switch tag.ID {
+	case applicationTagNull:
+		//nothing to do
 	case applicationTagUnsignedInt:
 		val, err := decodeUnsignedWithLen(d.buf, int(tag.Value))
 		if err != nil {

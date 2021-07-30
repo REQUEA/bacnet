@@ -43,6 +43,10 @@ func TestValidAppData(t *testing.T) {
 			data:     "4400000000",
 			expected: float32(0),
 		},
+		{
+			data:     "00",
+			expected: nil,
+		},
 	}
 	for _, tc := range ttc {
 		t.Run(fmt.Sprintf("AppData decode %s (%T)", tc.data, tc.expected), func(t *testing.T) {
@@ -78,7 +82,10 @@ func TestValidAppData(t *testing.T) {
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
 			default:
-				t.Errorf("Invalid from type %T", tc.expected)
+				if tc.expected != nil { //This is for NullTag to pass
+					t.Errorf("Invalid from type %T", tc.expected)
+				}
+
 			}
 			//Ensure that it work when passed an empty interface
 			var v interface{}

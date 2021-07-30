@@ -81,6 +81,11 @@ func (e *Encoder) AppData(v interface{}) {
 	if e.err != nil {
 		return
 	}
+	if v == nil {
+		t := tag{ID: applicationTagNull}
+		encodeTag(e.buf, t)
+		return
+	}
 	switch val := v.(type) {
 	case float64, bool:
 		e.err = fmt.Errorf("not implemented ")
