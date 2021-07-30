@@ -40,11 +40,11 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 					IsNetworkLayerMessage: false,
 					ExpectingReply:        false,
 					Priority:              Normal,
-					Destination: &Address{
+					Destination: &types.Address{
 						Net: 0xffff,
 						Adr: []byte{},
 					},
-					Source:   &Address{},
+					Source:   &types.Address{},
 					HopCount: 255,
 					ADPU: &APDU{
 						DataType:    UnconfirmedServiceRequest,

@@ -16,7 +16,7 @@ func _() {
 	_ = x[BinaryValue-5]
 	_ = x[Calendar-6]
 	_ = x[Command-7]
-	_ = x[Device-8]
+	_ = x[BacnetDevice-8]
 	_ = x[EventEnrollment-9]
 	_ = x[File-10]
 	_ = x[Group-11]
@@ -70,13 +70,13 @@ func _() {
 }
 
 const (
-	_ObjectType_name_0 = "AnalogInputAnalogOutputAnalogValueBinaryInputBinaryOutputBinaryValueCalendarCommandDeviceEventEnrollmentFileGroupLoopMultiStateInputMultiStateOutputNotificationClassProgramScheduleAveragingMultiStateValueTrendlogLifeSafetyPointLifeSafetyZoneAccumulatorPulseConverterEventLogGlobalGroupTrendLogMultipleLoadControlStructuredViewAccessDoorTimerAccessCredentialAccessPointAccessRightsAccessUserAccessZoneCredentialDataInputNetworkSecurityBitstringValueCharacterstringValueDatePatternValueDateValueDatetimePatternValueDatetimeValueIntegerValueLargeAnalogValueOctetstringValuePositiveIntegerValueTimePatternValueTimeValueNotificationForwarderAlertEnrollmentChannelLightingOutputBinaryLightingOutputNetworkPort"
+	_ObjectType_name_0 = "AnalogInputAnalogOutputAnalogValueBinaryInputBinaryOutputBinaryValueCalendarCommandBacnetDeviceEventEnrollmentFileGroupLoopMultiStateInputMultiStateOutputNotificationClassProgramScheduleAveragingMultiStateValueTrendlogLifeSafetyPointLifeSafetyZoneAccumulatorPulseConverterEventLogGlobalGroupTrendLogMultipleLoadControlStructuredViewAccessDoorTimerAccessCredentialAccessPointAccessRightsAccessUserAccessZoneCredentialDataInputNetworkSecurityBitstringValueCharacterstringValueDatePatternValueDateValueDatetimePatternValueDatetimeValueIntegerValueLargeAnalogValueOctetstringValuePositiveIntegerValueTimePatternValueTimeValueNotificationForwarderAlertEnrollmentChannelLightingOutputBinaryLightingOutputNetworkPort"
 	_ObjectType_name_1 = "ProprietaryMin"
 	_ObjectType_name_2 = "Proprietarymax"
 )
 
 var (
-	_ObjectType_index_0 = [...]uint16{0, 11, 23, 34, 45, 57, 68, 76, 83, 89, 104, 108, 113, 117, 132, 148, 165, 172, 180, 189, 204, 212, 227, 241, 252, 266, 274, 285, 301, 312, 326, 336, 341, 357, 368, 380, 390, 400, 419, 434, 448, 468, 484, 493, 513, 526, 538, 554, 570, 590, 606, 615, 636, 651, 658, 672, 692, 703}
+	_ObjectType_index_0 = [...]uint16{0, 11, 23, 34, 45, 57, 68, 76, 83, 95, 110, 114, 119, 123, 138, 154, 171, 178, 186, 195, 210, 218, 233, 247, 258, 272, 280, 291, 307, 318, 332, 342, 347, 363, 374, 386, 396, 406, 425, 440, 454, 474, 490, 499, 519, 532, 544, 560, 576, 596, 612, 621, 642, 657, 664, 678, 698, 709}
 )
 
 func (i ObjectType) String() string {

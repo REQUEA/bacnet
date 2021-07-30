@@ -1,10 +1,10 @@
 package bacnet
 
 import (
+	"bacnet/types"
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"net"
 )
 
 type Version byte
@@ -21,33 +21,6 @@ const (
 	Normal            NPDUPriority = 0
 )
 
-type Address struct {
-	// mac_len = 0 is a broadcast address
-	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
-	Mac []byte
-	// the following are used if the device is behind a router
-	// net = 0 indicates local
-	Net uint16 // BACnet network number
-	Adr []byte // hwaddr (MAC) address
-}
-
-func AddressFromUDP(udp net.UDPAddr) *Address {
-	b := bytes.NewBuffer(udp.IP)
-	port := uint16(udp.Port)
-	_ = binary.Write(b, binary.BigEndian, port)
-	return &Address{
-		Mac: b.Bytes(),
-	}
-}
-
-func UDPFromAddress(addr Address) net.UDPAddr {
-	return net.UDPAddr{
-		IP:   addr.Mac[:4],
-		Port: int(binary.BigEndian.Uint16(addr.Mac[4:])),
-		Zone: "",
-	}
-}
-
 type NPDU struct {
 	Version Version //Always one
 	// This 3 fields are packed in the control byte
@@ -55,8 +28,8 @@ type NPDU struct {
 	ExpectingReply        bool
 	Priority              NPDUPriority
 
-	Destination *Address
-	Source      *Address
+	Destination *types.Address
+	Source      *types.Address
 	HopCount    byte
 	//The two are only significant if IsNetworkLayerMessage is true
 	NetworkMessageType byte
@@ -142,7 +115,7 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 	npdu.Priority = NPDUPriority(control & 0x3)
 
 	if control&(1<<5) > 0 {
-		npdu.Destination = &Address{}
+		npdu.Destination = &types.Address{}
 		err := binary.Read(buf, binary.BigEndian, &npdu.Destination.Net)
 		if err != nil {
 			return fmt.Errorf("read NPDU dest Address.Net: %w", err)
@@ -160,7 +133,7 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 	}
 
 	if control&(1<<3) > 0 {
-		npdu.Source = &Address{}
+		npdu.Source = &types.Address{}
 		err := binary.Read(buf, binary.BigEndian, &npdu.Source.Net)
 		if err != nil {
 			return fmt.Errorf("read NPDU src Address.Net: %w", err)

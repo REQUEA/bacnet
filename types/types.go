@@ -1,7 +1,10 @@
 package types
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
+	"net"
 )
 
 const (
@@ -23,7 +26,7 @@ const (
 	BinaryValue           ObjectType = 0x05
 	Calendar              ObjectType = 0x06
 	Command               ObjectType = 0x07
-	Device                ObjectType = 0x08
+	BacnetDevice          ObjectType = 0x08
 	EventEnrollment       ObjectType = 0x09
 	File                  ObjectType = 0x0A
 	Group                 ObjectType = 0x0B
@@ -98,6 +101,41 @@ func ObjectIDFromUint32(v uint32) ObjectID {
 	return ObjectID{
 		Type:     ObjectType(v >> instanceBits),
 		Instance: ObjectInstance(v & MaxInstance),
+	}
+}
+
+type Device struct {
+	ID           ObjectID
+	MaxApdu      uint32
+	Segmentation SegmentationSupport
+	Vendor       uint32
+	Addr         Address
+}
+
+type Address struct {
+	// mac_len = 0 is a broadcast address
+	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
+	Mac []byte
+	// the following are used if the device is behind a router
+	// net = 0 indicates local
+	Net uint16 // BACnet network number
+	Adr []byte // hwaddr (MAC) address
+}
+
+func AddressFromUDP(udp net.UDPAddr) *Address {
+	b := bytes.NewBuffer(udp.IP)
+	port := uint16(udp.Port)
+	_ = binary.Write(b, binary.BigEndian, port)
+	return &Address{
+		Mac: b.Bytes(),
+	}
+}
+
+func UDPFromAddress(addr Address) net.UDPAddr {
+	return net.UDPAddr{
+		IP:   addr.Mac[:4],
+		Port: int(binary.BigEndian.Uint16(addr.Mac[4:])),
+		Zone: "",
 	}
 }
 
