@@ -104,6 +104,8 @@ func ObjectIDFromUint32(v uint32) ObjectID {
 	}
 }
 
+//Device represent a bacnet device. Note: A bacnet device is different
+//from a bacnet object. A device "contains" several object. Only the device as a bacnet address
 type Device struct {
 	ID           ObjectID
 	MaxApdu      uint32

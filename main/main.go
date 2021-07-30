@@ -44,7 +44,7 @@ func main() {
 	*prop.ArrayIndex = 0
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	d, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
-		ObjectID: d2[0].ObjectID,
+		ObjectID: d2[0].ID,
 		Property: prop,
 	})
 	cancel()

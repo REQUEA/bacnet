@@ -148,13 +148,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	return nil
 }
 
-type IamAddress struct {
-	Iam
-	Address types.Address
-}
-
-//should we return a device object ?
-func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) {
+func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]types.Device, error) {
 	npdu := NPDU{
 		Version:               Version1,
 		IsNetworkLayerMessage: false,
@@ -199,9 +193,15 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 	for {
 		select {
 		case <-timer.C:
-			result := []IamAddress{}
+			result := []types.Device{}
 			for iam, addr := range set {
-				result = append(result, IamAddress{Iam: iam, Address: addr})
+				result = append(result, types.Device{
+					ID:           iam.ObjectID,
+					MaxApdu:      iam.MaxApduLength,
+					Segmentation: iam.SegmentationSupport,
+					Vendor:       iam.VendorID,
+					Addr:         addr,
+				})
 			}
 			return result, nil
 		case r := <-rChan:
@@ -222,7 +222,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 	}
 }
 
-func (c *Client) ReadProperty(ctx context.Context, device IamAddress, readProp ReadProperty) (interface{}, error) {
+func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp ReadProperty) (interface{}, error) {
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
@@ -230,7 +230,7 @@ func (c *Client) ReadProperty(ctx context.Context, device IamAddress, readProp R
 		IsNetworkLayerMessage: false,
 		ExpectingReply:        true,
 		Priority:              Normal,
-		Destination:           &device.Address,
+		Destination:           &device.Addr,
 		Source: types.AddressFromUDP(net.UDPAddr{
 			IP:   c.ipAdress,
 			Port: c.udpPort,
