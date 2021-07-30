@@ -301,6 +301,7 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 			return err
 		}
 	}
+	//Todo refactor
 	err = binary.Read(buf, binary.BigEndian, &apdu.ServiceType)
 	if err != nil {
 		return fmt.Errorf("read APDU ServiceType: %w", err)
