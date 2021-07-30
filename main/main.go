@@ -35,7 +35,7 @@ func main() {
 		log.Fatal("whois: ", err)
 	}
 	fmt.Printf("%+v\n", devices)
-	//err = listObjects(c, devices[0])
+	err = listObjects(c, devices[0])
 	// err = readValue(c, devices[0], types.ObjectID{
 	// 	Type:     types.Schedule,
 	// 	Instance: 1,

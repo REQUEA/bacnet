@@ -4,6 +4,7 @@ import (
 	"bacnet/types"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -190,7 +191,6 @@ const (
 	Abort                     PDUType = 0x70
 )
 
-//TODO: implement stringer, make different types
 type ServiceType byte
 
 const (
@@ -350,7 +350,6 @@ const TypeBacnetIP BVLCType = 0x81
 //go:generate stringer -type=Function
 type Function byte
 
-// List of possible BACnet functions
 const (
 	BacFuncResult                          Function = 0
 	BacFuncWriteBroadcastDistributionTable Function = 1
@@ -381,11 +380,17 @@ func (bvlc BVLC) MarshalBinary() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+var ErrNotBAcnetIP = errors.New("packet isn't a bacnet/IP payload ")
+
 func (bvlc *BVLC) UnmarshalBinary(data []byte) error {
 	buf := bytes.NewBuffer(data)
 	bvlcType, err := buf.ReadByte()
 	if err != nil {
 		return fmt.Errorf("read bvlc type: %w", err)
+	}
+	bvlc.Type = BVLCType(bvlcType)
+	if bvlc.Type != TypeBacnetIP {
+		return ErrNotBAcnetIP
 	}
 	bvlcFunc, err := buf.ReadByte()
 	if err != nil {
@@ -398,7 +403,6 @@ func (bvlc *BVLC) UnmarshalBinary(data []byte) error {
 	}
 	remaining := buf.Bytes()
 
-	bvlc.Type = BVLCType(bvlcType)
 	bvlc.Function = Function(bvlcFunc)
 	if len(remaining) != int(length)-4 {
 		return fmt.Errorf("incoherent Length field in BVCL. Advertized payload size is %d, real size  %d", length-4, len(remaining))

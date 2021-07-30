@@ -1,17 +1,24 @@
 package bacnet
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
+type Tx struct {
+	Bvlc chan<- BVLC
+	Ctx  context.Context
+}
 type Transactions struct {
 	sync.Mutex
 	//TODO: maybe chan of apdu ?
-	current      map[byte]chan<- BVLC
+	currents     map[byte]Tx
 	freeInvokeID chan byte
 }
 
 func NewTransactions() *Transactions {
 	t := Transactions{
-		current:      map[byte]chan<- BVLC{},
+		currents:     map[byte]Tx{},
 		freeInvokeID: make(chan byte, 256), //The chan should be able to handle all possible values
 	}
 	for x := 0; x < 256; x++ {
@@ -31,21 +38,27 @@ func (t *Transactions) FreeID(id byte) {
 	t.freeInvokeID <- id
 }
 
-func (t *Transactions) SetTransaction(id byte, channel chan<- BVLC) {
+//nolint: revive
+//SetTransaction set up the channel passed as parameter as a callback for the bacnet response.
+//All call to SetTransaction must be followed by a StopTransaction to prevent leaks
+func (t *Transactions) SetTransaction(id byte, bvlc chan<- BVLC, ctx context.Context) {
 	t.Lock()
 	defer t.Unlock()
-	t.current[id] = channel
+	t.currents[id] = Tx{
+		Bvlc: bvlc,
+		Ctx:  ctx,
+	}
 }
 
 func (t *Transactions) StopTransaction(id byte) {
 	t.Lock()
 	defer t.Unlock()
-	delete(t.current, id)
+	delete(t.currents, id)
 }
 
-func (t *Transactions) GetTransaction(id byte) (chan<- BVLC, bool) {
+func (t *Transactions) GetTransaction(id byte) (Tx, bool) {
 	t.Lock()
 	defer t.Unlock()
-	c, ok := t.current[id]
+	c, ok := t.currents[id]
 	return c, ok
 }

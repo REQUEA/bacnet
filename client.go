@@ -125,25 +125,33 @@ func (c *Client) listen() {
 
 func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	var bvlc BVLC
-	//Todo: support if we received and udp packet that is not bacnet
 	err := bvlc.UnmarshalBinary(b)
-	if err != nil {
+	if err != nil && errors.Is(err, ErrNotBAcnetIP) {
 		return err
+	}
+	apdu := bvlc.NPDU.ADPU
+	if apdu == nil {
+		c.Logger.Info(fmt.Sprintf("Received network packet %+v", bvlc.NPDU))
+		return nil
 	}
 	//Todo: not race safe here: lock
 	if c.subscriptions.f != nil {
 		c.subscriptions.f(bvlc, *src)
 	}
 
-	apdu := bvlc.NPDU.ADPU
-	if apdu != nil && (apdu.DataType == ComplexAck || apdu.DataType == Error) {
+	if apdu.DataType == ComplexAck || apdu.DataType == Error {
 		invokeID := bvlc.NPDU.ADPU.InvokeID
-		ch, ok := c.transactions.GetTransaction(invokeID)
+		tx, ok := c.transactions.GetTransaction(invokeID)
 		if !ok {
-			return errors.New("no transaction found")
+			return fmt.Errorf("no transaction found for id %d", invokeID)
 		}
-		// Todo: can we block here ? Maybe pass context to cancel if needed
-		ch <- bvlc
+		select {
+		case tx.Bvlc <- bvlc:
+			return nil
+		case <-tx.Ctx.Done():
+			return fmt.Errorf("handler for tx %d: %w", invokeID, tx.Ctx.Err())
+		}
+
 	}
 	return nil
 }
@@ -243,9 +251,8 @@ func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp
 			Payload:     &readProp,
 		},
 	}
-	//Todo: pass context to cancel
 	rChan := make(chan BVLC)
-	c.transactions.SetTransaction(invokeID, rChan)
+	c.transactions.SetTransaction(invokeID, rChan, ctx)
 	defer c.transactions.StopTransaction(invokeID)
 	_, err := c.send(npdu)
 	if err != nil {
