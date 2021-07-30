@@ -164,3 +164,24 @@ type PropertyIdentifier struct {
 type Unit uint16
 type ErrorClass uint16
 type ErrorCode uint32
+
+type PriorityList uint8
+
+const (
+	ManualLifeSafety1          PriorityList = 1
+	ManualLifeSafety2          PriorityList = 2
+	Available3                 PriorityList = 3
+	Available4                 PriorityList = 4
+	CriticalEquipementControl5 PriorityList = 5
+	MinimumOnOff6              PriorityList = 6
+	Available7                 PriorityList = 7
+	ManualOperator8            PriorityList = 8
+	Available9                 PriorityList = 9
+	Available10                PriorityList = 10
+	Available11                PriorityList = 11
+	Available12                PriorityList = 12
+	Available13                PriorityList = 13
+	Available14                PriorityList = 14
+	Available15                PriorityList = 15
+	Available16                PriorityList = 16
+)
