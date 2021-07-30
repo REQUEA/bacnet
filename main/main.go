@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -24,6 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
+	c2.Logger = logrus.New()
 	fmt.Printf("%+v\n", c2)
 	data := bacnet.WhoIs{
 		Low:  new(uint32),
