@@ -4,6 +4,7 @@ import (
 	"bacnet"
 	"bacnet/types"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -23,95 +24,32 @@ func main() {
 	// }
 	// fmt.Printf("%+v\n", d)
 	// c.Close()
-	c2, err := bacnet.NewClient("en0", 47808)
+	c, err := bacnet.NewClient("en0", 47808)
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
-	c2.Logger = logrus.New()
-	fmt.Printf("%+v\n", c2)
-	data := bacnet.WhoIs{
-		Low:  new(uint32),
-		High: new(uint32),
-	}
-	*data.Low = 0
-	*data.High = 65535
-	d2, err := c2.WhoIs(data, time.Second)
+	c.Logger = logrus.New()
+	fmt.Printf("%+v\n", c)
+	devices, err := c.WhoIs(bacnet.WhoIs{}, time.Second)
 	if err != nil {
 		log.Fatal("whois: ", err)
 	}
-	fmt.Printf("%+v\n", d2)
-	prop := types.PropertyIdentifier{Type: types.ObjectList, ArrayIndex: new(uint32)}
-	*prop.ArrayIndex = 0
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	d, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
-		ObjectID: d2[0].ID,
-		Property: prop,
+	fmt.Printf("%+v\n", devices)
+	//err = listObjects(c, devices[0])
+	err = readValue(c, devices[0], types.ObjectID{
+		Type:     types.Schedule,
+		Instance: 1,
 	})
-	cancel()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%d %+v\n", 0, d) // output for debug
-
-	// for i := 1; i < 343; i++ {
-	// 	*prop.ArrayIndex = uint32(i)
-	// 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	// 	d, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
-	// 		ObjectID: d2[0].ObjectID,
-	// 		Property: prop,
-	// 	})
-	// 	cancel()
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	fmt.Printf("%d %+v:\t", i, d) // output for debug
-	// 	objID := d.(types.ObjectID)
-	// 	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
-	// 	data1, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
-	// 		ObjectID: objID,
-	// 		Property: types.PropertyIdentifier{
-	// 			Type: types.ObjectName,
-	// 		},
-	// 	})
-	// 	cancel()
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	fmt.Printf("%+v\t\t", data1) // output for debug
-	// 	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
-	// 	data2, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
-	// 		ObjectID: objID,
-	// 		Property: types.PropertyIdentifier{
-	// 			Type: types.Description,
-	// 		},
-	// 	})
-	// 	cancel()
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	fmt.Printf("%+v\n", data2) // output for debug
-
+	// err = readValue(c, devices[0], types.ObjectID{
+	// 	Type:     types.AnalogOutput,
+	// 	Instance: 1,
+	// })
+	// if err != nil {
+	// 	log.Fatal(err)
 	// }
-
-	rp := bacnet.ReadProperty{
-		ObjectID: types.ObjectID{
-			Type:     types.AnalogValue,
-			Instance: 8121,
-		},
-		Property: types.PropertyIdentifier{
-			//Type: uint32(types.PROP_PRESENT_VALUE),
-			Type: types.Units,
-		},
-	}
-	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
-	d, err = c2.ReadProperty(ctx, d2[0], rp)
-	if err != nil {
-		log.Fatal(err)
-	}
-	cancel()
-	r := types.Unit(d.(uint32))
-	fmt.Printf("%+v (%T)\n", d, d) // output for debug
-	fmt.Printf("%+v (%T)\n", r, r) // output for debug
 	//var selectObjet = types.Device{}
 	// for _, objet := range d {
 	// 	fmt.Printf("%+v\n",objet)
@@ -180,4 +118,101 @@ func main() {
 	// 		fmt.Printf("%+v\n", rp2)
 	// 	}
 	// }
+}
+
+func listObjects(c *bacnet.Client, device types.Device) error {
+	prop := types.PropertyIdentifier{Type: types.ObjectList, ArrayIndex: new(uint32)}
+	*prop.ArrayIndex = 0
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	d, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+		ObjectID: device.ID,
+		Property: prop,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+	for i := 1; i < int(d.(uint32)); i++ {
+		*prop.ArrayIndex = uint32(i)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		d, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+			ObjectID: device.ID,
+			Property: prop,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%d %+v:\t", i, d) // output for debug
+		objID := d.(types.ObjectID)
+		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+		data1, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+			ObjectID: objID,
+			Property: types.PropertyIdentifier{
+				Type: types.ObjectName,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%+v\t\t", data1) // output for debug
+		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+		data2, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+			ObjectID: objID,
+			Property: types.PropertyIdentifier{
+				Type: types.Description,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%+v\t", data2) // output for debug
+		err = readValue(c, device, objID)
+		var e *bacnet.ApduError
+		if err != nil {
+			if errors.As(err, &e) { //Don't print error, device just don't have value
+				fmt.Println()
+			} else {
+				fmt.Println(err) // output for debug
+			}
+		}
+	}
+	return nil
+}
+
+func readValue(c *bacnet.Client, device types.Device, object types.ObjectID) error {
+	rp := bacnet.ReadProperty{
+		ObjectID: object,
+		Property: types.PropertyIdentifier{
+			Type: types.PresentValue,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	d, err := c.ReadProperty(ctx, device, rp)
+	if err != nil {
+		return err
+	}
+	value := d
+
+	rp = bacnet.ReadProperty{
+		ObjectID: object,
+		Property: types.PropertyIdentifier{
+			//Type: uint32(types.PROP_PRESENT_VALUE),
+			Type: types.Units,
+		},
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	d, err = c.ReadProperty(ctx, device, rp)
+	if err != nil {
+		return err
+	}
+	unit := types.Unit(d.(uint32))
+	fmt.Printf("%v %v \n", value, unit)
+	return nil
 }
