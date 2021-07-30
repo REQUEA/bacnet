@@ -101,6 +101,27 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 	return decoder.Error()
 }
 
+type WriteProperty struct {
+	ObjectID      types.ObjectID
+	Property      types.PropertyIdentifier
+	PropertyValue interface{}
+	Priority      types.PriorityList
+}
+
+func (wp WriteProperty) MarshalBinary() ([]byte, error) {
+	encoder := encoding.NewEncoder()
+	encoder.ContextObjectID(0, wp.ObjectID)
+	encoder.ContextUnsigned(1, uint32(wp.Property.Type))
+	if wp.Property.ArrayIndex != nil {
+		encoder.ContextUnsigned(2, *wp.Property.ArrayIndex)
+	}
+	//encoder.ContextAsbtractType(3, &wp.PropertyValue)
+	if wp.Priority != 0 {
+		encoder.ContextUnsigned(4, uint32(wp.Priority))
+	}
+	return encoder.Bytes(), encoder.Error()
+}
+
 type ApduError struct {
 	Class types.ErrorClass
 	Code  types.ErrorCode
