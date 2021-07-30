@@ -20,14 +20,14 @@ type Client struct {
 }
 
 type Logger interface {
-	Info(msg string)
-	Error(msg string)
+	Info(...interface{})
+	Error(...interface{})
 }
 
 type NoOpLogger struct{}
 
-func (NoOpLogger) Info(msg string)  {}
-func (NoOpLogger) Error(msg string) {}
+func (NoOpLogger) Info(...interface{})  {}
+func (NoOpLogger) Error(...interface{}) {}
 
 type Subscriptions struct {
 	sync.Mutex
@@ -103,12 +103,12 @@ func (c *Client) listen() {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					c.Logger.Error("panic in handle message: " + r.(error).Error())
+					c.Logger.Error("panic in handle message: ", r)
 				}
 			}()
 			err := c.handleMessage(addr, b[:i])
 			if err != nil {
-				c.Logger.Error("handle msg: " + err.Error())
+				c.Logger.Error("handle msg: ", err)
 			}
 		}()
 	}
