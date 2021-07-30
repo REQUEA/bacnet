@@ -120,3 +120,5 @@ type PropertyIdentifier struct {
 	//this array
 	ArrayIndex *uint32
 }
+
+type Unit uint16

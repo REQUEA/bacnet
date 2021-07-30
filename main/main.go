@@ -63,7 +63,7 @@ func main() {
 		fmt.Printf("%d %+v\n", i, d) // output for debug
 	}
 
-	d, err = c2.ReadProperty(d2[0], bacnet.ReadProperty{
+	rp := bacnet.ReadProperty{
 		ObjectID: types.ObjectID{
 			Type:     1,
 			Instance: 8121,
@@ -72,12 +72,14 @@ func main() {
 			//Type: uint32(types.PROP_PRESENT_VALUE),
 			Type: types.Units,
 		},
-		Data: new(float32),
-	})
+	}
+	d, err = c2.ReadProperty(d2[0], rp)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%+v\n", d) // output for debug
+	r := types.Unit(d.(uint32))
+	fmt.Printf("%+v (%T)\n", d, d) // output for debug
+	fmt.Printf("%+v (%T)\n", r, r) // output for debug
 	//var selectObjet = types.Device{}
 	// for _, objet := range d {
 	// 	fmt.Printf("%+v\n",objet)

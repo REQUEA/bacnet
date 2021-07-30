@@ -82,7 +82,7 @@ func NewClient(netInterface string, port int) (*Client, error) {
 		}
 	}
 	if c.ipAdress == nil {
-		return nil, fmt.Errorf("No IPv4 address assigned to interface: %s", netInterface)
+		return nil, fmt.Errorf("no IPv4 address assigned to interface %s", netInterface)
 	}
 
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
@@ -122,6 +122,7 @@ func (c *Client) listen() {
 
 func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	var bvlc BVLC
+	//Todo: support if we received and udp packet that is not bacnet
 	err := bvlc.UnmarshalBinary(b)
 	if err != nil {
 		return err
@@ -132,8 +133,8 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	}
 
 	apdu := bvlc.NPDU.ADPU
+	//todo: handle apdu error response
 	if apdu != nil && apdu.DataType == ComplexAck {
-		//todo: allow failure
 		invokeID := bvlc.NPDU.ADPU.InvokeID
 		ch, ok := c.transactions.GetTransaction(invokeID)
 		if !ok {
@@ -250,10 +251,11 @@ func (c *Client) ReadProperty(device IamAddress, readProp ReadProperty) (interfa
 	}
 	bvlc := <-rChan
 
-	return bvlc.NPDU.ADPU.Payload.(*ReadProperty).Data, nil
+	//Todo: ensure response validity
+	data := bvlc.NPDU.ADPU.Payload.(*ReadProperty).Data
+	return data, nil
 }
 
-//Todo: unify these two by observing dest addr ?
 func (c *Client) send(npdu NPDU) (int, error) {
 	bytes, err := BVLC{
 		Type:     TypeBacnetIP,
