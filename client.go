@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -220,7 +221,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]IamAddress, error) 
 	}
 }
 
-func (c *Client) ReadProperty(device IamAddress, readProp ReadProperty) (interface{}, error) {
+func (c *Client) ReadProperty(ctx context.Context, device IamAddress, readProp ReadProperty) (interface{}, error) {
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
@@ -249,11 +250,14 @@ func (c *Client) ReadProperty(device IamAddress, readProp ReadProperty) (interfa
 	if err != nil {
 		return nil, err
 	}
-	bvlc := <-rChan
-
-	//Todo: ensure response validity
-	data := bvlc.NPDU.ADPU.Payload.(*ReadProperty).Data
-	return data, nil
+	select {
+	case bvlc := <-rChan:
+		//Todo: ensure response validity
+		data := bvlc.NPDU.ADPU.Payload.(*ReadProperty).Data
+		return data, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (c *Client) send(npdu NPDU) (int, error) {

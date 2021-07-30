@@ -3,6 +3,7 @@ package main
 import (
 	"bacnet"
 	"bacnet/types"
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -41,10 +42,12 @@ func main() {
 	fmt.Printf("%+v\n", d2)
 	prop := types.PropertyIdentifier{Type: types.ObjectList, ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
-	d, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	d, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
 		ObjectID: d2[0].ObjectID,
 		Property: prop,
 	})
+	cancel()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,32 +55,37 @@ func main() {
 
 	for i := 1; i < 343; i++ {
 		*prop.ArrayIndex = uint32(i)
-		d, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		d, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
 			ObjectID: d2[0].ObjectID,
 			Property: prop,
 		})
+		cancel()
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("%d %+v:\t", i, d) // output for debug
 		objID := d.(types.ObjectID)
-		data1, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+		data1, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
 			ObjectID: objID,
 			Property: types.PropertyIdentifier{
 				Type: types.ObjectName,
 			},
 		})
+		cancel()
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("%+v\t\t", data1) // output for debug
-
-		data2, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+		data2, err := c2.ReadProperty(ctx, d2[0], bacnet.ReadProperty{
 			ObjectID: objID,
 			Property: types.PropertyIdentifier{
 				Type: types.Description,
 			},
 		})
+		cancel()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -95,10 +103,12 @@ func main() {
 			Type: types.Units,
 		},
 	}
-	d, err = c2.ReadProperty(d2[0], rp)
+	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+	d, err = c2.ReadProperty(ctx, d2[0], rp)
 	if err != nil {
 		log.Fatal(err)
 	}
+	cancel()
 	r := types.Unit(d.(uint32))
 	fmt.Printf("%+v (%T)\n", d, d) // output for debug
 	fmt.Printf("%+v (%T)\n", r, r) // output for debug
