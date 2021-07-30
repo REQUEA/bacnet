@@ -256,7 +256,7 @@ func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp
 		//Todo: ensure response validity, ensure conversion cannot panic
 		apdu := bvlc.NPDU.ADPU
 		if apdu.DataType == Error {
-			return nil, apdu.Payload.(*ApduError)
+			return nil, *apdu.Payload.(*ApduError)
 		}
 		if apdu.DataType == ComplexAck && apdu.ServiceType == ServiceConfirmedReadProperty {
 			data := apdu.Payload.(*ReadProperty).Data

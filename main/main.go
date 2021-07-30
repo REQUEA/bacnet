@@ -36,11 +36,11 @@ func main() {
 		log.Fatal("whois: ", err)
 	}
 	fmt.Printf("%+v\n", devices)
-	//err = listObjects(c, devices[0])
-	err = readValue(c, devices[0], types.ObjectID{
-		Type:     types.Schedule,
-		Instance: 1,
-	})
+	err = listObjects(c, devices[0])
+	// err = readValue(c, devices[0], types.ObjectID{
+	// 	Type:     types.Schedule,
+	// 	Instance: 1,
+	// })
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func listObjects(c *bacnet.Client, device types.Device) error {
 		}
 		fmt.Printf("%+v\t", data2) // output for debug
 		err = readValue(c, device, objID)
-		var e *bacnet.ApduError
+		var e bacnet.ApduError
 		if err != nil {
 			if errors.As(err, &e) { //Don't print error, device just don't have value
 				fmt.Println()
