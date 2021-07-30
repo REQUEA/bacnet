@@ -39,7 +39,6 @@ func main() {
 		log.Fatal("whois: ", err)
 	}
 	fmt.Printf("%+v\n", d2)
-	time.Sleep(time.Second)
 	prop := types.PropertyIdentifier{Type: types.ObjectList, ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
 	d, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
@@ -60,7 +59,30 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("%d %+v\n", i, d) // output for debug
+		fmt.Printf("%d %+v:\t", i, d) // output for debug
+		objID := d.(types.ObjectID)
+		data1, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+			ObjectID: objID,
+			Property: types.PropertyIdentifier{
+				Type: types.ObjectName,
+			},
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%+v\t\t", data1) // output for debug
+
+		data2, err := c2.ReadProperty(d2[0], bacnet.ReadProperty{
+			ObjectID: objID,
+			Property: types.PropertyIdentifier{
+				Type: types.Description,
+			},
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%+v\n", data2) // output for debug
+
 	}
 
 	rp := bacnet.ReadProperty{
