@@ -146,7 +146,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 			return fmt.Errorf("no transaction found for id %d", invokeID)
 		}
 		select {
-		case tx.Bvlc <- bvlc:
+		case tx.APDU <- *apdu:
 			return nil
 		case <-tx.Ctx.Done():
 			return fmt.Errorf("handler for tx %d: %w", invokeID, tx.Ctx.Err())
@@ -251,7 +251,7 @@ func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp
 			Payload:     &readProp,
 		},
 	}
-	rChan := make(chan BVLC)
+	rChan := make(chan APDU)
 	c.transactions.SetTransaction(invokeID, rChan, ctx)
 	defer c.transactions.StopTransaction(invokeID)
 	_, err := c.send(npdu)
@@ -259,9 +259,8 @@ func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp
 		return nil, err
 	}
 	select {
-	case bvlc := <-rChan:
+	case apdu := <-rChan:
 		//Todo: ensure response validity, ensure conversion cannot panic
-		apdu := bvlc.NPDU.ADPU
 		if apdu.DataType == Error {
 			return nil, *apdu.Payload.(*ApduError)
 		}

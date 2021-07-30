@@ -6,12 +6,11 @@ import (
 )
 
 type Tx struct {
-	Bvlc chan<- BVLC
+	APDU chan<- APDU
 	Ctx  context.Context
 }
 type Transactions struct {
 	sync.Mutex
-	//TODO: maybe chan of apdu ?
 	currents     map[byte]Tx
 	freeInvokeID chan byte
 }
@@ -41,11 +40,11 @@ func (t *Transactions) FreeID(id byte) {
 //nolint: revive
 //SetTransaction set up the channel passed as parameter as a callback for the bacnet response.
 //All call to SetTransaction must be followed by a StopTransaction to prevent leaks
-func (t *Transactions) SetTransaction(id byte, bvlc chan<- BVLC, ctx context.Context) {
+func (t *Transactions) SetTransaction(id byte, apdu chan<- APDU, ctx context.Context) {
 	t.Lock()
 	defer t.Unlock()
 	t.currents[id] = Tx{
-		Bvlc: bvlc,
+		APDU: apdu,
 		Ctx:  ctx,
 	}
 }
