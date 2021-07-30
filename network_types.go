@@ -342,7 +342,7 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 		apdu.Payload = &ReadProperty{}
 
 	} else if apdu.DataType == Error {
-		apdu.Payload = &ErrorData{}
+		apdu.Payload = &ApduError{}
 	} else {
 		// Just pass raw data, decoding is not yet ready
 		apdu.Payload = &DataPayload{}

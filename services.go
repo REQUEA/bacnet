@@ -101,19 +101,19 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 	return decoder.Error()
 }
 
-type ErrorData struct {
+type ApduError struct {
 	Class types.ErrorClass
 	Code  types.ErrorCode
 }
 
-func (e ErrorData) Error() string {
+func (e ApduError) Error() string {
 	return fmt.Sprintf("apdu error class %v code %v", e.Class, e.Code)
 }
-func (e ErrorData) MarshalBinary() ([]byte, error) {
+func (e ApduError) MarshalBinary() ([]byte, error) {
 	panic("not implemented")
 }
 
-func (e *ErrorData) UnmarshalBinary(data []byte) error {
+func (e *ApduError) UnmarshalBinary(data []byte) error {
 	decoder := encoding.NewDecoder(data)
 	decoder.AppData(&e.Class)
 	decoder.AppData(&e.Code)
