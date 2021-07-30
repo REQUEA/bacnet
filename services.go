@@ -83,9 +83,6 @@ func (rp ReadProperty) MarshalBinary() ([]byte, error) {
 }
 
 func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
-	if len(data) < 7 {
-		return fmt.Errorf("unmarshall readPropertyData: payload too short: %d bytes", len(data))
-	}
 	decoder := encoding.NewDecoder(data)
 	decoder.ContextObjectID(0, &rp.ObjectID)
 	var val uint32
@@ -101,5 +98,24 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 		decoder.ResetError()
 	}
 	decoder.ContextAbstractType(3, &rp.Data)
+	return decoder.Error()
+}
+
+type ErrorData struct {
+	Class types.ErrorClass
+	Code  types.ErrorCode
+}
+
+func (e ErrorData) Error() string {
+	return fmt.Sprintf("apdu error class %v code %v", e.Class, e.Code)
+}
+func (e ErrorData) MarshalBinary() ([]byte, error) {
+	panic("not implemented")
+}
+
+func (e *ErrorData) UnmarshalBinary(data []byte) error {
+	decoder := encoding.NewDecoder(data)
+	decoder.AppData(&e.Class)
+	decoder.AppData(&e.Code)
 	return decoder.Error()
 }

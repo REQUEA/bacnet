@@ -4,6 +4,7 @@ import "sync"
 
 type Transactions struct {
 	sync.Mutex
+	//TODO: maybe chan of apdu ?
 	current      map[byte]chan<- BVLC
 	freeInvokeID chan byte
 }

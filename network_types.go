@@ -299,10 +299,6 @@ type APDU struct {
 	// MaxApdu int
 	// Sequence                  uint8
 	// WindowNumber              uint8
-	// Error                     struct {
-	// 	Class uint32
-	// 	Code  uint32
-	// }
 }
 
 func (apdu APDU) MarshalBinary() ([]byte, error) {
@@ -326,7 +322,7 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("read APDU DataType: %w", err)
 	}
-	if apdu.DataType == ComplexAck {
+	if apdu.DataType == ComplexAck || apdu.DataType == Error {
 		apdu.InvokeID, err = buf.ReadByte()
 		if err != nil {
 			return err
@@ -345,6 +341,8 @@ func (apdu *APDU) UnmarshalBinary(data []byte) error {
 	} else if apdu.DataType == ComplexAck && apdu.ServiceType == ServiceConfirmedReadProperty {
 		apdu.Payload = &ReadProperty{}
 
+	} else if apdu.DataType == Error {
+		apdu.Payload = &ErrorData{}
 	} else {
 		// Just pass raw data, decoding is not yet ready
 		apdu.Payload = &DataPayload{}

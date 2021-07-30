@@ -198,11 +198,15 @@ func (d *Decoder) AppData(v interface{}) {
 		switch rv.Type() {
 		case reflect.TypeOf(types.SegmentationSupport(0)):
 			rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
+		case reflect.TypeOf(types.ErrorClass(0)):
+			rv.Set(reflect.ValueOf(types.ErrorClass(val)))
+		case reflect.TypeOf(types.ErrorCode(0)):
+			rv.Set(reflect.ValueOf(types.ErrorCode(val)))
 		default:
 			if isEmptyInterface(rv) {
 				rv.Set(reflect.ValueOf(val))
 			} else {
-				d.err = AppDataTypeMismatch{wanted: "Enumetared", got: rv.Type()}
+				d.err = AppDataTypeMismatch{wanted: "Enumerated", got: rv.Type()}
 				return
 			}
 		}

@@ -122,3 +122,5 @@ type PropertyIdentifier struct {
 }
 
 type Unit uint16
+type ErrorClass uint16
+type ErrorCode uint32

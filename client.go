@@ -134,8 +134,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	}
 
 	apdu := bvlc.NPDU.ADPU
-	//todo: handle apdu error response
-	if apdu != nil && apdu.DataType == ComplexAck {
+	if apdu != nil && (apdu.DataType == ComplexAck || apdu.DataType == Error) {
 		invokeID := bvlc.NPDU.ADPU.InvokeID
 		ch, ok := c.transactions.GetTransaction(invokeID)
 		if !ok {
@@ -252,9 +251,16 @@ func (c *Client) ReadProperty(ctx context.Context, device IamAddress, readProp R
 	}
 	select {
 	case bvlc := <-rChan:
-		//Todo: ensure response validity
-		data := bvlc.NPDU.ADPU.Payload.(*ReadProperty).Data
-		return data, nil
+		//Todo: ensure response validity, ensure conversion cannot panic
+		apdu := bvlc.NPDU.ADPU
+		if apdu.DataType == Error {
+			return nil, apdu.Payload.(*ErrorData)
+		}
+		if apdu.DataType == ComplexAck && apdu.ServiceType == ServiceConfirmedReadProperty {
+			data := apdu.Payload.(*ReadProperty).Data
+			return data, nil
+		}
+		return nil, errors.New("invalid answer")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
