@@ -124,6 +124,13 @@ func (e *Encoder) AppData(v interface{}) {
 	}
 }
 
+func (e *Encoder) ContextAsbtractType(tabNumber byte, v interface{}) {
+	encodeTag(e.buf, tag{ID: tabNumber, Opening: true})
+	// Todo
+	e.AppData(v)
+	encodeTag(e.buf, tag{ID: tabNumber, Closing: true})
+}
+
 // valueLength caclulates how large the necessary value needs to be to fit in the appropriate
 // packet length
 func valueLength(value uint32) int {
