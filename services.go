@@ -104,7 +104,7 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 type WriteProperty struct {
 	ObjectID      types.ObjectID
 	Property      types.PropertyIdentifier
-	PropertyValue interface{}
+	PropertyValue types.PropertyValue
 	Priority      types.PriorityList
 }
 
@@ -115,11 +115,37 @@ func (wp WriteProperty) MarshalBinary() ([]byte, error) {
 	if wp.Property.ArrayIndex != nil {
 		encoder.ContextUnsigned(2, *wp.Property.ArrayIndex)
 	}
-	//encoder.ContextAsbtractType(3, &wp.PropertyValue)
+	encoder.ContextAsbtractType(3, wp.PropertyValue)
 	if wp.Priority != 0 {
 		encoder.ContextUnsigned(4, uint32(wp.Priority))
 	}
 	return encoder.Bytes(), encoder.Error()
+}
+
+func (wp *WriteProperty) UnmarshalBinary(data []byte) error {
+	decoder := encoding.NewDecoder(data)
+	decoder.ContextObjectID(0, &wp.ObjectID)
+	var val uint32
+	decoder.ContextValue(1, &val)
+	wp.Property.Type = types.PropertyType(val)
+	wp.Property.ArrayIndex = new(uint32)
+	decoder.ContextValue(2, wp.Property.ArrayIndex)
+	err := decoder.Error()
+	var e encoding.ErrorIncorrectTagID
+	//This tag is optional, maybe it doesn't exist
+	if err != nil && errors.As(err, &e) {
+		wp.Property.ArrayIndex = nil
+		decoder.ResetError()
+	}
+	decoder.ContextAbstractType(3, &wp.PropertyValue)
+	decoder.ContextValue(4, &val)
+	if err != nil && errors.As(err, &e) {
+		wp.Priority = 0
+		decoder.ResetError()
+	} else {
+		wp.Priority = types.PriorityList(val)
+	}
+	return decoder.Error()
 }
 
 type ApduError struct {

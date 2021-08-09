@@ -165,3 +165,36 @@ func TestReadPropertyResp(t *testing.T) {
 		})
 	}
 }
+
+func TestWritePropertyReq(t *testing.T) {
+	ttc := []struct {
+		data string
+		wp   WriteProperty
+	}{
+		{
+			data: "0c0100000119553e91003f",
+			wp: WriteProperty{
+				ObjectID: types.ObjectID{
+					Type:     types.BinaryOutput,
+					Instance: 1,
+				},
+				Property: types.PropertyIdentifier{
+					Type: types.PresentValue,
+				},
+				PropertyValue: types.PropertyValue{
+					Type:  0x09,
+					Value: 0,
+				},
+				Priority: 0,
+			},
+		},
+	}
+	for _, tc := range ttc {
+		t.Run(tc.data, func(t *testing.T) {
+			is := is.New(t)
+			result, err := tc.wp.MarshalBinary()
+			is.NoErr(err)
+			is.Equal(hex.EncodeToString(result), tc.data)
+		})
+	}
+}

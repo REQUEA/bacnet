@@ -185,3 +185,8 @@ const (
 	Available15                PriorityList = 15
 	Available16                PriorityList = 16
 )
+
+type PropertyValue struct {
+	Type  byte
+	Value uint32
+}

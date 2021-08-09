@@ -124,11 +124,14 @@ func (e *Encoder) AppData(v interface{}) {
 	}
 }
 
-func (e *Encoder) ContextAsbtractType(tabNumber byte, v interface{}) {
-	encodeTag(e.buf, tag{ID: tabNumber, Opening: true})
+func (e *Encoder) ContextAsbtractType(tabNumber byte, v types.PropertyValue) {
+	encodeTag(e.buf, tag{ID: tabNumber, Context: true, Opening: true})
 	// Todo
-	e.AppData(v)
-	encodeTag(e.buf, tag{ID: tabNumber, Closing: true})
+	length := valueLength(v.Value)
+	t := tag{ID: v.Type, Value: uint32(length)}
+	encodeTag(e.buf, t)
+	unsigned(e.buf, v.Value)
+	encodeTag(e.buf, tag{ID: tabNumber, Context: true, Closing: true})
 }
 
 // valueLength caclulates how large the necessary value needs to be to fit in the appropriate
