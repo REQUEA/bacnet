@@ -124,27 +124,6 @@ func (wp WriteProperty) MarshalBinary() ([]byte, error) {
 
 func (wp *WriteProperty) UnmarshalBinary(data []byte) error {
 	decoder := encoding.NewDecoder(data)
-	decoder.ContextObjectID(0, &wp.ObjectID)
-	var val uint32
-	decoder.ContextValue(1, &val)
-	wp.Property.Type = types.PropertyType(val)
-	wp.Property.ArrayIndex = new(uint32)
-	decoder.ContextValue(2, wp.Property.ArrayIndex)
-	err := decoder.Error()
-	var e encoding.ErrorIncorrectTagID
-	//This tag is optional, maybe it doesn't exist
-	if err != nil && errors.As(err, &e) {
-		wp.Property.ArrayIndex = nil
-		decoder.ResetError()
-	}
-	decoder.ContextAbstractType(3, &wp.PropertyValue)
-	decoder.ContextValue(4, &val)
-	if err != nil && errors.As(err, &e) {
-		wp.Priority = 0
-		decoder.ResetError()
-	} else {
-		wp.Priority = types.PriorityList(val)
-	}
 	return decoder.Error()
 }
 
