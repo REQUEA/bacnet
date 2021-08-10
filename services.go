@@ -145,3 +145,5 @@ func (e *ApduError) UnmarshalBinary(data []byte) error {
 	decoder.AppData(&e.Code)
 	return decoder.Error()
 }
+
+// Todo http://kargs.net/BACnet/BACnet_Essential_Objects_Services.pdf -> Time synchro, Reinitialize device, DeviceCommunicationControl
