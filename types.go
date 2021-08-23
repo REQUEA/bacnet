@@ -1,3 +1,4 @@
+//Package bacnet provides various types to represent Bacnet related concepts
 package bacnet
 
 import (

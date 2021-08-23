@@ -1,3 +1,4 @@
+//Package bacip implements a Bacnet/IP client
 package bacip
 
 import (
