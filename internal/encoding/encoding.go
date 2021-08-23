@@ -77,6 +77,8 @@ func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
 	_ = binary.Write(e.buf, binary.BigEndian, v)
 }
 
+//AppData writes a tag and value of any standard bacnet application
+//data type. Returns an error if v if of a invalid type
 func (e *Encoder) AppData(v interface{}) {
 	if e.err != nil {
 		return
