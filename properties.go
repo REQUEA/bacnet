@@ -1,5 +1,8 @@
 package bacnet
 
+//PropertyType is the type of an object property
+type PropertyType uint32
+
 //go:generate stringer -type=PropertyType
 const (
 	AckedTransitions                 PropertyType = 0x00

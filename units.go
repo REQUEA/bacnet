@@ -1,5 +1,7 @@
 package bacnet
 
+type Unit uint16
+
 //go:generate stringer -type=Unit
 const (
 	MetersPerSecondPerSecond        Unit = 0xA6

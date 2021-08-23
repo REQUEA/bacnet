@@ -14,7 +14,10 @@ const (
 	maxObjectType = 0x400
 )
 
+//ObjectType is the category of an object
 type ObjectType uint16
+
+//ObjectInstance is a unique identifier of an bacnet object
 type ObjectInstance uint32
 
 //go:generate stringer -type=ObjectType
@@ -80,6 +83,7 @@ const (
 	Proprietarymax        ObjectType = 0x3ff
 )
 
+//ObjectID represent the type of a bacnet object and it's instance number
 type ObjectID struct {
 	Type     ObjectType
 	Instance ObjectInstance
@@ -106,7 +110,7 @@ func ObjectIDFromUint32(v uint32) ObjectID {
 }
 
 //Device represent a bacnet device. Note: A bacnet device is different
-//from a bacnet object. A device "contains" several object. Only the device as a bacnet address
+//from a bacnet object. A device "contains" several object. Only the device has a bacnet address
 type Device struct {
 	ID           ObjectID
 	MaxApdu      uint32
@@ -115,6 +119,7 @@ type Device struct {
 	Addr         Address
 }
 
+//Address is the bacnet address of an device.
 type Address struct {
 	// mac_len = 0 is a broadcast address
 	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
@@ -152,8 +157,6 @@ const (
 	SegmentationSupportNone     SegmentationSupport = 0x03
 )
 
-type PropertyType uint32
-
 //PropertyIdentifier is used to control a ReadProperty request
 type PropertyIdentifier struct {
 	Type PropertyType
@@ -161,10 +164,6 @@ type PropertyIdentifier struct {
 	//this array
 	ArrayIndex *uint32
 }
-
-type Unit uint16
-type ErrorClass uint16
-type ErrorCode uint32
 
 type PriorityList uint8
 

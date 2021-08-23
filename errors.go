@@ -1,5 +1,11 @@
 package bacnet
 
+//ErrorClass is the type of error send by an object after a request
+type ErrorClass uint16
+
+//ErrorCode identifies precisely the error
+type ErrorCode uint32
+
 //go:generate stringer -type=ErrorClass
 const (
 	DeviceError        ErrorClass = 0x00
