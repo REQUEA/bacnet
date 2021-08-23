@@ -1,7 +1,7 @@
-package bacnet
+package bacip
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"encoding/hex"
 	"testing"
 
@@ -40,22 +40,22 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 					IsNetworkLayerMessage: false,
 					ExpectingReply:        false,
 					Priority:              Normal,
-					Destination: &types.Address{
+					Destination: &bacnet.Address{
 						Net: 0xffff,
 						Adr: []byte{},
 					},
-					Source:   &types.Address{},
+					Source:   &bacnet.Address{},
 					HopCount: 255,
 					ADPU: &APDU{
 						DataType:    UnconfirmedServiceRequest,
 						ServiceType: ServiceUnconfirmedIAm,
 						Payload: &Iam{
-							ObjectID: types.ObjectID{
+							ObjectID: bacnet.ObjectID{
 								Type:     8,
 								Instance: 30185,
 							},
 							MaxApduLength:       1476,
-							SegmentationSupport: types.SegmentationSupportBoth,
+							SegmentationSupport: bacnet.SegmentationSupportBoth,
 							VendorID:            364,
 						},
 					},

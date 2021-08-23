@@ -1,7 +1,7 @@
-package bacnet
+package bacip
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -156,7 +156,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	return nil
 }
 
-func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]types.Device, error) {
+func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, error) {
 	npdu := NPDU{
 		Version:               Version1,
 		IsNetworkLayerMessage: false,
@@ -197,13 +197,13 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]types.Device, error
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	//Use a set to deduplicate results
-	set := map[Iam]types.Address{}
+	set := map[Iam]bacnet.Address{}
 	for {
 		select {
 		case <-timer.C:
-			result := []types.Device{}
+			result := []bacnet.Device{}
 			for iam, addr := range set {
-				result = append(result, types.Device{
+				result = append(result, bacnet.Device{
 					ID:           iam.ObjectID,
 					MaxApdu:      iam.MaxApduLength,
 					Segmentation: iam.SegmentationSupport,
@@ -222,7 +222,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]types.Device, error
 					if !ok {
 						return nil, fmt.Errorf("unexpected payload type %T", apdu.Payload)
 					}
-					addr := types.AddressFromUDP(r.src)
+					addr := bacnet.AddressFromUDP(r.src)
 					set[*iam] = *addr
 				}
 			}
@@ -230,7 +230,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]types.Device, error
 	}
 }
 
-func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp ReadProperty) (interface{}, error) {
+func (c *Client) ReadProperty(ctx context.Context, device bacnet.Device, readProp ReadProperty) (interface{}, error) {
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
@@ -239,7 +239,7 @@ func (c *Client) ReadProperty(ctx context.Context, device types.Device, readProp
 		ExpectingReply:        true,
 		Priority:              Normal,
 		Destination:           &device.Addr,
-		Source: types.AddressFromUDP(net.UDPAddr{
+		Source: bacnet.AddressFromUDP(net.UDPAddr{
 			IP:   c.ipAdress,
 			Port: c.udpPort,
 		}),
@@ -286,7 +286,7 @@ func (c *Client) send(npdu NPDU) (int, error) {
 	if npdu.Destination == nil {
 		return 0, fmt.Errorf("destination bacnet address should be not nil to send unicast")
 	}
-	addr := types.UDPFromAddress(*npdu.Destination)
+	addr := bacnet.UDPFromAddress(*npdu.Destination)
 	return c.udp.WriteToUDP(bytes, &addr)
 
 }

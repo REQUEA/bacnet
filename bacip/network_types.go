@@ -1,7 +1,7 @@
-package bacnet
+package bacip
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -29,8 +29,8 @@ type NPDU struct {
 	ExpectingReply        bool
 	Priority              NPDUPriority
 
-	Destination *types.Address
-	Source      *types.Address
+	Destination *bacnet.Address
+	Source      *bacnet.Address
 	HopCount    byte
 	//The two are only significant if IsNetworkLayerMessage is true
 	NetworkMessageType byte
@@ -116,7 +116,7 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 	npdu.Priority = NPDUPriority(control & 0x3)
 
 	if control&(1<<5) > 0 {
-		npdu.Destination = &types.Address{}
+		npdu.Destination = &bacnet.Address{}
 		err := binary.Read(buf, binary.BigEndian, &npdu.Destination.Net)
 		if err != nil {
 			return fmt.Errorf("read NPDU dest Address.Net: %w", err)
@@ -134,7 +134,7 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 	}
 
 	if control&(1<<3) > 0 {
-		npdu.Source = &types.Address{}
+		npdu.Source = &bacnet.Address{}
 		err := binary.Read(buf, binary.BigEndian, &npdu.Source.Net)
 		if err != nil {
 			return fmt.Errorf("read NPDU src Address.Net: %w", err)

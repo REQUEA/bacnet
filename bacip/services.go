@@ -1,8 +1,8 @@
-package bacnet
+package bacip
 
 import (
+	"bacnet"
 	"bacnet/internal/encoding"
-	"bacnet/types"
 	"errors"
 	"fmt"
 )
@@ -14,8 +14,8 @@ type WhoIs struct {
 func (w WhoIs) MarshalBinary() ([]byte, error) {
 	encoder := encoding.NewEncoder()
 	if w.Low != nil && w.High != nil {
-		if *w.Low > types.MaxInstance || *w.High > types.MaxInstance {
-			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, types.MaxInstance)
+		if *w.Low > bacnet.MaxInstance || *w.High > bacnet.MaxInstance {
+			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, bacnet.MaxInstance)
 		}
 		if *w.Low > *w.High {
 			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
@@ -41,9 +41,9 @@ func (w *WhoIs) UnmarshalBinary(data []byte) error {
 }
 
 type Iam struct {
-	ObjectID            types.ObjectID
+	ObjectID            bacnet.ObjectID
 	MaxApduLength       uint32
-	SegmentationSupport types.SegmentationSupport
+	SegmentationSupport bacnet.SegmentationSupport
 	VendorID            uint32
 }
 
@@ -66,8 +66,8 @@ func (iam *Iam) UnmarshalBinary(data []byte) error {
 }
 
 type ReadProperty struct {
-	ObjectID types.ObjectID
-	Property types.PropertyIdentifier
+	ObjectID bacnet.ObjectID
+	Property bacnet.PropertyIdentifier
 	//Data is here to contains the response
 	Data interface{}
 }
@@ -87,7 +87,7 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 	decoder.ContextObjectID(0, &rp.ObjectID)
 	var val uint32
 	decoder.ContextValue(1, &val)
-	rp.Property.Type = types.PropertyType(val)
+	rp.Property.Type = bacnet.PropertyType(val)
 	rp.Property.ArrayIndex = new(uint32)
 	decoder.ContextValue(2, rp.Property.ArrayIndex)
 	err := decoder.Error()
@@ -102,10 +102,10 @@ func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
 }
 
 type WriteProperty struct {
-	ObjectID      types.ObjectID
-	Property      types.PropertyIdentifier
-	PropertyValue types.PropertyValue
-	Priority      types.PriorityList
+	ObjectID      bacnet.ObjectID
+	Property      bacnet.PropertyIdentifier
+	PropertyValue bacnet.PropertyValue
+	Priority      bacnet.PriorityList
 }
 
 func (wp WriteProperty) MarshalBinary() ([]byte, error) {
@@ -128,8 +128,8 @@ func (wp *WriteProperty) UnmarshalBinary(data []byte) error {
 }
 
 type ApduError struct {
-	Class types.ErrorClass
-	Code  types.ErrorCode
+	Class bacnet.ErrorClass
+	Code  bacnet.ErrorCode
 }
 
 func (e ApduError) Error() string {

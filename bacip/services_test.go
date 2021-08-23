@@ -1,7 +1,7 @@
-package bacnet
+package bacip
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"encoding/hex"
 	"testing"
 
@@ -83,12 +83,12 @@ func TestIamEncodingAndCoherency(t *testing.T) {
 		{
 			data: "c4020075e92205c4910022016c",
 			iam: Iam{
-				ObjectID: types.ObjectID{
+				ObjectID: bacnet.ObjectID{
 					Type:     8,
 					Instance: 30185,
 				},
 				MaxApduLength:       1476,
-				SegmentationSupport: types.SegmentationSupportBoth,
+				SegmentationSupport: bacnet.SegmentationSupportBoth,
 				VendorID:            364,
 			},
 		},
@@ -116,12 +116,12 @@ func TestReadPropertyReq(t *testing.T) {
 		{
 			data: "0c00401fb91975",
 			rp: ReadProperty{
-				ObjectID: types.ObjectID{
-					Type:     types.AnalogOutput,
+				ObjectID: bacnet.ObjectID{
+					Type:     bacnet.AnalogOutput,
 					Instance: 8121,
 				},
-				Property: types.PropertyIdentifier{
-					Type: types.Units,
+				Property: bacnet.PropertyIdentifier{
+					Type: bacnet.Units,
 				},
 			},
 		},
@@ -144,12 +144,12 @@ func TestReadPropertyResp(t *testing.T) {
 		{
 			data: "0c00401fb919753e91623f",
 			rp: ReadProperty{
-				ObjectID: types.ObjectID{
-					Type:     types.AnalogOutput,
+				ObjectID: bacnet.ObjectID{
+					Type:     bacnet.AnalogOutput,
 					Instance: 8121,
 				},
-				Property: types.PropertyIdentifier{
-					Type: types.Units,
+				Property: bacnet.PropertyIdentifier{
+					Type: bacnet.Units,
 				},
 				Data: uint32(98),
 			},
@@ -174,14 +174,14 @@ func TestWritePropertyReq(t *testing.T) {
 		{
 			data: "0c0100000119553e91003f",
 			wp: WriteProperty{
-				ObjectID: types.ObjectID{
-					Type:     types.BinaryOutput,
+				ObjectID: bacnet.ObjectID{
+					Type:     bacnet.BinaryOutput,
 					Instance: 1,
 				},
-				Property: types.PropertyIdentifier{
-					Type: types.PresentValue,
+				Property: bacnet.PropertyIdentifier{
+					Type: bacnet.PresentValue,
 				},
-				PropertyValue: types.PropertyValue{
+				PropertyValue: bacnet.PropertyValue{
 					Type:  0x09,
 					Value: 0,
 				},

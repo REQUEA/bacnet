@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"encoding/hex"
 	"fmt"
 	"testing"
@@ -17,7 +17,7 @@ func TestValidAppData(t *testing.T) {
 	}{
 		{
 			data: "c4020075e9",
-			expected: types.ObjectID{
+			expected: bacnet.ObjectID{
 				Type:     8,
 				Instance: 30185,
 			},
@@ -28,7 +28,7 @@ func TestValidAppData(t *testing.T) {
 		},
 		{
 			data:        "9100",
-			expected:    types.SegmentationSupportBoth,
+			expected:    bacnet.SegmentationSupportBoth,
 			expectedBis: uint32(0),
 		},
 		{
@@ -56,8 +56,8 @@ func TestValidAppData(t *testing.T) {
 			decoder := NewDecoder(b)
 			//Ensure that it work when passed the concrete type
 			switch tc.expected.(type) {
-			case types.ObjectID:
-				x := types.ObjectID{}
+			case bacnet.ObjectID:
+				x := bacnet.ObjectID{}
 				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
@@ -66,8 +66,8 @@ func TestValidAppData(t *testing.T) {
 				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)
-			case types.SegmentationSupport:
-				var x types.SegmentationSupport
+			case bacnet.SegmentationSupport:
+				var x bacnet.SegmentationSupport
 				decoder.AppData(&x)
 				is.NoErr(decoder.err)
 				is.Equal(x, tc.expected)

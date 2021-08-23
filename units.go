@@ -1,4 +1,4 @@
-package types
+package bacnet
 
 //go:generate stringer -type=Unit
 const (

@@ -2,7 +2,7 @@ package main
 
 import (
 	"bacnet"
-	"bacnet/types"
+	"bacnet/bacip"
 	"context"
 	"errors"
 	"fmt"
@@ -24,13 +24,13 @@ func main() {
 	// }
 	// fmt.Printf("%+v\n", d)
 	// c.Close()
-	c, err := bacnet.NewClient("en0", 47808)
+	c, err := bacip.NewClient("en0", 47808)
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
 	c.Logger = logrus.New()
 	fmt.Printf("%+v\n", c)
-	devices, err := c.WhoIs(bacnet.WhoIs{}, time.Second)
+	devices, err := c.WhoIs(bacip.WhoIs{}, time.Second)
 	if err != nil {
 		log.Fatal("whois: ", err)
 	}
@@ -120,11 +120,11 @@ func main() {
 	// }
 }
 
-func listObjects(c *bacnet.Client, device types.Device) error {
-	prop := types.PropertyIdentifier{Type: types.ObjectList, ArrayIndex: new(uint32)}
+func listObjects(c *bacip.Client, device bacnet.Device) error {
+	prop := bacnet.PropertyIdentifier{Type: bacnet.ObjectList, ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	d, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+	d, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 		ObjectID: device.ID,
 		Property: prop,
 	})
@@ -135,7 +135,7 @@ func listObjects(c *bacnet.Client, device types.Device) error {
 	for i := 1; i < int(d.(uint32)); i++ {
 		*prop.ArrayIndex = uint32(i)
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		d, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+		d, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 			ObjectID: device.ID,
 			Property: prop,
 		})
@@ -144,12 +144,12 @@ func listObjects(c *bacnet.Client, device types.Device) error {
 			return err
 		}
 		fmt.Printf("%d %+v:\t", i, d) // output for debug
-		objID := d.(types.ObjectID)
+		objID := d.(bacnet.ObjectID)
 		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
-		data1, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+		data1, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 			ObjectID: objID,
-			Property: types.PropertyIdentifier{
-				Type: types.ObjectName,
+			Property: bacnet.PropertyIdentifier{
+				Type: bacnet.ObjectName,
 			},
 		})
 		cancel()
@@ -158,10 +158,10 @@ func listObjects(c *bacnet.Client, device types.Device) error {
 		}
 		fmt.Printf("%+v\t\t", data1) // output for debug
 		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
-		data2, err := c.ReadProperty(ctx, device, bacnet.ReadProperty{
+		data2, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 			ObjectID: objID,
-			Property: types.PropertyIdentifier{
-				Type: types.Description,
+			Property: bacnet.PropertyIdentifier{
+				Type: bacnet.Description,
 			},
 		})
 		cancel()
@@ -170,7 +170,7 @@ func listObjects(c *bacnet.Client, device types.Device) error {
 		}
 		fmt.Printf("%+v\t", data2) // output for debug
 		err = readValue(c, device, objID)
-		var e bacnet.ApduError
+		var e bacip.ApduError
 		if err != nil {
 			if errors.As(err, &e) { //Don't print error, device just don't have value
 				fmt.Println()
@@ -182,11 +182,11 @@ func listObjects(c *bacnet.Client, device types.Device) error {
 	return nil
 }
 
-func readValue(c *bacnet.Client, device types.Device, object types.ObjectID) error {
-	rp := bacnet.ReadProperty{
+func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) error {
+	rp := bacip.ReadProperty{
 		ObjectID: object,
-		Property: types.PropertyIdentifier{
-			Type: types.PresentValue,
+		Property: bacnet.PropertyIdentifier{
+			Type: bacnet.PresentValue,
 		},
 	}
 
@@ -198,11 +198,11 @@ func readValue(c *bacnet.Client, device types.Device, object types.ObjectID) err
 	}
 	value := d
 
-	rp = bacnet.ReadProperty{
+	rp = bacip.ReadProperty{
 		ObjectID: object,
-		Property: types.PropertyIdentifier{
+		Property: bacnet.PropertyIdentifier{
 			//Type: uint32(types.PROP_PRESENT_VALUE),
-			Type: types.Units,
+			Type: bacnet.Units,
 		},
 	}
 
@@ -212,7 +212,7 @@ func readValue(c *bacnet.Client, device types.Device, object types.ObjectID) err
 	if err != nil {
 		return err
 	}
-	unit := types.Unit(d.(uint32))
+	unit := bacnet.Unit(d.(uint32))
 	fmt.Printf("%v %v \n", value, unit)
 	return nil
 }

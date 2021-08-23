@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -78,7 +78,7 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 //ContextObjectID read a (context)tag / value pair where the value
 //type is an unsigned int
 //If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
-func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) {
+func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *bacnet.ObjectID) {
 	if d.err != nil {
 		return
 	}
@@ -103,7 +103,7 @@ func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *types.ObjectID) 
 	//Todo: check is tag size is ok
 	var val uint32
 	_ = binary.Read(d.buf, binary.BigEndian, &val)
-	*objectID = types.ObjectIDFromUint32(val)
+	*objectID = bacnet.ObjectIDFromUint32(val)
 }
 
 type AppDataTypeMismatch struct {
@@ -198,12 +198,12 @@ func (d *Decoder) AppData(v interface{}) {
 			return
 		}
 		switch rv.Type() {
-		case reflect.TypeOf(types.SegmentationSupport(0)):
-			rv.Set(reflect.ValueOf(types.SegmentationSupport(val)))
-		case reflect.TypeOf(types.ErrorClass(0)):
-			rv.Set(reflect.ValueOf(types.ErrorClass(val)))
-		case reflect.TypeOf(types.ErrorCode(0)):
-			rv.Set(reflect.ValueOf(types.ErrorCode(val)))
+		case reflect.TypeOf(bacnet.SegmentationSupport(0)):
+			rv.Set(reflect.ValueOf(bacnet.SegmentationSupport(val)))
+		case reflect.TypeOf(bacnet.ErrorClass(0)):
+			rv.Set(reflect.ValueOf(bacnet.ErrorClass(val)))
+		case reflect.TypeOf(bacnet.ErrorCode(0)):
+			rv.Set(reflect.ValueOf(bacnet.ErrorCode(val)))
 		default:
 			if isEmptyInterface(rv) {
 				rv.Set(reflect.ValueOf(val))
@@ -213,14 +213,14 @@ func (d *Decoder) AppData(v interface{}) {
 			}
 		}
 	case applicationTagObjectID:
-		var obj types.ObjectID
+		var obj bacnet.ObjectID
 		var val uint32
 		err := binary.Read(d.buf, binary.BigEndian, &val)
 		if err != nil {
 			d.err = fmt.Errorf("decodeAppData: read ObjectID: %w", err)
 			return
 		}
-		obj = types.ObjectIDFromUint32(val)
+		obj = bacnet.ObjectIDFromUint32(val)
 		if rv.Type() != reflect.TypeOf(obj) && !isEmptyInterface(rv) {
 			d.err = AppDataTypeMismatch{wanted: "ObjectID", got: rv.Type()}
 			return

@@ -1,7 +1,7 @@
 package encoding
 
 import (
-	"bacnet/types"
+	"bacnet"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -57,7 +57,7 @@ func (e *Encoder) ContextUnsigned(tabNumber byte, value uint32) {
 
 //ContextObjectID write a (context)tag / value pair where the value
 //type is an unsigned int
-func (e *Encoder) ContextObjectID(tabNumber byte, objectID types.ObjectID) {
+func (e *Encoder) ContextObjectID(tabNumber byte, objectID bacnet.ObjectID) {
 	if e.err != nil {
 		return
 	}
@@ -106,13 +106,13 @@ func (e *Encoder) AppData(v interface{}) {
 		t := tag{ID: applicationTagUnsignedInt, Value: uint32(length)}
 		encodeTag(e.buf, t)
 		unsigned(e.buf, val)
-	case types.SegmentationSupport:
+	case bacnet.SegmentationSupport:
 		v := uint32(val)
 		length := valueLength(v)
 		t := tag{ID: applicationTagEnumerated, Value: uint32(length)}
 		encodeTag(e.buf, t)
 		unsigned(e.buf, v)
-	case types.ObjectID:
+	case bacnet.ObjectID:
 		t := tag{ID: applicationTagObjectID, Value: 4}
 		encodeTag(e.buf, t)
 		v, err := val.Encode()
@@ -126,7 +126,7 @@ func (e *Encoder) AppData(v interface{}) {
 	}
 }
 
-func (e *Encoder) ContextAsbtractType(tabNumber byte, v types.PropertyValue) {
+func (e *Encoder) ContextAsbtractType(tabNumber byte, v bacnet.PropertyValue) {
 	encodeTag(e.buf, tag{ID: tabNumber, Context: true, Opening: true})
 	// Todo
 	length := valueLength(v.Value)
