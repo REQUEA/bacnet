@@ -165,6 +165,7 @@ type PropertyIdentifier struct {
 	ArrayIndex *uint32
 }
 
+//go:generate stringer -type=PriorityList
 type PriorityList uint8
 
 const (

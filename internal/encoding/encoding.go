@@ -128,7 +128,6 @@ func (e *Encoder) AppData(v interface{}) {
 
 func (e *Encoder) ContextAsbtractType(tabNumber byte, v bacnet.PropertyValue) {
 	encodeTag(e.buf, tag{ID: tabNumber, Context: true, Opening: true})
-	// Todo
 	length := valueLength(v.Value)
 	t := tag{ID: v.Type, Value: uint32(length)}
 	encodeTag(e.buf, t)
