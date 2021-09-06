@@ -2,7 +2,6 @@
 package bacip
 
 import (
-	"bacnet"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -10,6 +9,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/REQUEA/bacnet"
 )
 
 type Client struct {

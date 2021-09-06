@@ -1,10 +1,11 @@
 package encoding
 
 import (
-	"bacnet"
 	"bytes"
 	"encoding/binary"
 	"fmt"
+
+	"github.com/REQUEA/bacnet"
 )
 
 const (

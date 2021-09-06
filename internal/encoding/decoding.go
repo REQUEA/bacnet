@@ -1,12 +1,13 @@
 package encoding
 
 import (
-	"bacnet"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"reflect"
+
+	"github.com/REQUEA/bacnet"
 )
 
 //Decoder is the struct used to turn byte arrays to bacnet types. All

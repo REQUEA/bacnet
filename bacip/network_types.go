@@ -1,11 +1,12 @@
 package bacip
 
 import (
-	"bacnet"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+
+	"github.com/REQUEA/bacnet"
 )
 
 type Version byte

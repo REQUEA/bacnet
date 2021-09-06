@@ -1,13 +1,14 @@
 package main
 
 import (
-	"bacnet"
-	"bacnet/bacip"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/bacip"
 
 	"github.com/sirupsen/logrus"
 )

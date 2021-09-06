@@ -1,10 +1,11 @@
 package bacip
 
 import (
-	"bacnet"
-	"bacnet/internal/encoding"
 	"errors"
 	"fmt"
+
+	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/internal/encoding"
 )
 
 type WhoIs struct {

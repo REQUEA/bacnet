@@ -1,10 +1,11 @@
 package encoding
 
 import (
-	"bacnet"
 	"encoding/hex"
 	"fmt"
 	"testing"
+
+	"github.com/REQUEA/bacnet"
 
 	"github.com/matryer/is"
 )

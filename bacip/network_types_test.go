@@ -1,9 +1,10 @@
 package bacip
 
 import (
-	"bacnet"
 	"encoding/hex"
 	"testing"
+
+	"github.com/REQUEA/bacnet"
 
 	"github.com/matryer/is"
 )
