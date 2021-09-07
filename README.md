@@ -11,6 +11,16 @@ This library is still experimental. No API compatibility promise is made.
 - [x] Read Property
 - [x] Write Property
 
+# Example
+
+The `main` directory contains a small example that scan the network
+for bacnet devices, list all objects in this device then try to query
+the current value and unit from them. To run it do:
+```sh
+go run ./main
+```
+
+
 
 # License
 This library is heavily based on the gobacnet library from @alextran
