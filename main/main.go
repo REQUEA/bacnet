@@ -14,17 +14,6 @@ import (
 )
 
 func main() {
-	// c, err := gobacnet.NewClient("en0", 47808)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// fmt.Printf("%+v\n", c)
-	// d, err := c.WhoIs(0, 65535)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// fmt.Printf("%+v\n", d)
-	// c.Close()
 	c, err := bacip.NewClient("en0", 47808)
 	if err != nil {
 		log.Fatal("newclient: ", err)
@@ -37,88 +26,9 @@ func main() {
 	}
 	fmt.Printf("%+v\n", devices)
 	err = listObjects(c, devices[0])
-	// err = readValue(c, devices[0], types.ObjectID{
-	// 	Type:     types.Schedule,
-	// 	Instance: 1,
-	// })
 	if err != nil {
 		log.Fatal(err)
 	}
-	// err = readValue(c, devices[0], types.ObjectID{
-	// 	Type:     types.AnalogOutput,
-	// 	Instance: 1,
-	// })
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	//var selectObjet = types.Device{}
-	// for _, objet := range d {
-	// 	fmt.Printf("%+v\n",objet)
-	// 	rp := types.ReadMultipleProperty{
-	// 		Objects: []types.Object{
-	// 			{
-	// 				ID: types.ObjectID{
-	// 					Type:     types.DeviceType,
-	// 					Instance: 30185,
-	// 				},
-	// 				Properties: []types.Property{
-	// 					{
-	// 						Type:       property.ObjectName,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 					//{
-	// 					//	Type:       property.ObjectList,
-	// 					//	ArrayIndex: types.ArrayAll,
-	// 					//},
-	// 				},
-	// 			},
-	// 			{ID: types.ObjectID{
-	// 				Type:     types.AnalogInput,
-	// 				Instance: 9011,
-	// 			},
-	// 				Properties: []types.Property{
-	// 					{
-	// 						Type:       property.ObjectName,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 					{
-	// 						Type:       property.PresentValue,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 					{
-	// 						Type:       property.Units,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 				},
-	// 			},
-	// 			{ID: types.ObjectID{
-	// 				Type:     types.AnalogInput,
-	// 				Instance: 9013,
-	// 			},
-	// 				Properties: []types.Property{
-	// 					{
-	// 						Type:       property.ObjectName,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 					{
-	// 						Type:       property.PresentValue,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 					{
-	// 						Type:       property.Units,
-	// 						ArrayIndex: types.ArrayAll,
-	// 					},
-	// 				},
-	// 			},
-	// 		},
-	// 	}
-	// 	rp2, err := c.ReadMultiProperty(objet,rp)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 	} else {
-	// 		fmt.Printf("%+v\n", rp2)
-	// 	}
-	// }
 }
 
 func listObjects(c *bacip.Client, device bacnet.Device) error {
@@ -169,14 +79,14 @@ func listObjects(c *bacip.Client, device bacnet.Device) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%+v\t", data2) // output for debug
+		fmt.Printf("%+v\t", data2)
 		err = readValue(c, device, objID)
 		var e bacip.ApduError
 		if err != nil {
 			if errors.As(err, &e) { //Don't print error, device just don't have value
 				fmt.Println()
 			} else {
-				fmt.Println(err) // output for debug
+				fmt.Println(err)
 			}
 		}
 	}
@@ -190,7 +100,6 @@ func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) er
 			Type: bacnet.PresentValue,
 		},
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	d, err := c.ReadProperty(ctx, device, rp)
@@ -202,7 +111,6 @@ func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) er
 	rp = bacip.ReadProperty{
 		ObjectID: object,
 		Property: bacnet.PropertyIdentifier{
-			//Type: uint32(types.PROP_PRESENT_VALUE),
 			Type: bacnet.Units,
 		},
 	}
