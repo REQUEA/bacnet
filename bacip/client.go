@@ -57,7 +57,7 @@ func NewClient(netInterface string, port int) (*Client, error) {
 	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions(), Logger: NoOpLogger{}}
 	i, err := net.InterfaceByName(netInterface)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("interface %s: %w", netInterface, err)
 	}
 	if port == 0 {
 		port = DefaultUDPPort

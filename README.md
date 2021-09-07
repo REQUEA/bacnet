@@ -17,9 +17,9 @@ The `main` directory contains a small example that scan the network
 for bacnet devices, list all objects in this device then try to query
 the current value and unit from them. To run it do:
 ```sh
-go run ./main
+go run ./main eth0
 ```
-
+(Replace `eth0` by the interface name you want to scan)
 
 
 # License

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/REQUEA/bacnet"
@@ -14,7 +15,11 @@ import (
 )
 
 func main() {
-	c, err := bacip.NewClient("en0", 47808)
+	networkInterface := "en0"
+	if len(os.Args) > 1 {
+		networkInterface = os.Args[1]
+	}
+	c, err := bacip.NewClient(networkInterface, 47808)
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
@@ -25,7 +30,9 @@ func main() {
 		log.Fatal("whois: ", err)
 	}
 	fmt.Printf("%+v\n", devices)
-	err = listObjects(c, devices[0])
+	for _, device := range devices {
+		err = listObjects(c, device)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
