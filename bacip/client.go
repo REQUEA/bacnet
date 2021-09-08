@@ -81,7 +81,7 @@ func NewClient(netInterface string, port int) (*Client, error) {
 			if err != nil {
 				return nil, err
 			}
-			c.ipAdress = ip
+			c.ipAdress = ip.To4()
 			c.broadcastAddress = broadcast
 			break
 		}

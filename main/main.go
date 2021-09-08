@@ -19,13 +19,13 @@ func main() {
 	if len(os.Args) > 1 {
 		networkInterface = os.Args[1]
 	}
-	c, err := bacip.NewClient(networkInterface, 47808)
+	c, err := bacip.NewClient(networkInterface, bacip.DefaultUDPPort)
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
 	c.Logger = logrus.New()
 	fmt.Printf("%+v\n", c)
-	devices, err := c.WhoIs(bacip.WhoIs{}, time.Second)
+	devices, err := c.WhoIs(bacip.WhoIs{}, 2*time.Second)
 	if err != nil {
 		log.Fatal("whois: ", err)
 	}
