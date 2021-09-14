@@ -35,7 +35,7 @@ func (NoOpLogger) Info(...interface{})  {}
 func (NoOpLogger) Error(...interface{}) {}
 
 type Subscriptions struct {
-	sync.Mutex
+	sync.RWMutex
 	f func(BVLC, net.UDPAddr)
 }
 
@@ -136,11 +136,12 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 		c.Logger.Info(fmt.Sprintf("Received network packet %+v", bvlc.NPDU))
 		return nil
 	}
-	//Todo: not race safe here: lock
+	c.subscriptions.RLock()
 	if c.subscriptions.f != nil {
+		//If f block, there is a deadlock here
 		c.subscriptions.f(bvlc, *src)
 	}
-
+	c.subscriptions.RUnlock()
 	if apdu.DataType == ComplexAck || apdu.DataType == Error {
 		invokeID := bvlc.NPDU.ADPU.InvokeID
 		tx, ok := c.transactions.GetTransaction(invokeID)
@@ -224,8 +225,22 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, erro
 					if !ok {
 						return nil, fmt.Errorf("unexpected payload type %T", apdu.Payload)
 					}
-					addr := bacnet.AddressFromUDP(r.src)
-					set[*iam] = *addr
+					//Only add result that we are interested in. Well
+					//behaved devices should not answer if their
+					//InstanceID isn't in the given range. But because
+					//the IAM response is in broadcast mode, we might
+					//receive an answer triggered by an other whois
+					if data.High != nil && data.Low != nil {
+						if iam.ObjectID.Instance >= bacnet.ObjectInstance(*data.Low) &&
+							iam.ObjectID.Instance <= bacnet.ObjectInstance(*data.High) {
+							addr := bacnet.AddressFromUDP(r.src)
+							set[*iam] = *addr
+						}
+					} else {
+						addr := bacnet.AddressFromUDP(r.src)
+						set[*iam] = *addr
+					}
+
 				}
 			}
 		}
