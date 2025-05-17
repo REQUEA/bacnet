@@ -6,8 +6,8 @@ import (
 	"fmt"
 )
 
-//ErrorIncorrectTagID is the error return when the decoded tag doesn't
-//have the expected ID
+// ErrorIncorrectTagID is the error return when the decoded tag doesn't
+// have the expected ID
 type ErrorIncorrectTagID struct {
 	Expected byte
 	Got      byte
@@ -17,7 +17,7 @@ func (e ErrorIncorrectTagID) Error() string {
 	return fmt.Sprintf("incorrect tagID %d, expected %d.", e.Got, e.Expected)
 }
 
-//nolint: deadcode, varcheck
+// nolint: deadcode, varcheck
 const (
 	applicationTagNull            byte = 0x00
 	applicationTagBoolean         byte = 0x01
@@ -81,12 +81,10 @@ func encodeTag(buf *bytes.Buffer, t tag) {
 	} else {
 		tagMeta |= 5
 	}
-
 	if t.ID <= 14 {
-		tagMeta |= (t.ID << 4)
+		tagMeta |= t.ID << 4
 		buf.WriteByte(tagMeta)
-
-		// We don't have enough space so make it in a new byte
+		// We need more space so make it in a new byte
 	} else {
 		tagMeta |= byte(0xF0)
 		buf.WriteByte(tagMeta)

@@ -1,4 +1,4 @@
-//Package bacip implements a Bacnet/IP client
+// Package bacip implements a Bacnet/IP client
 package bacip
 
 import (
@@ -46,13 +46,14 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 		return net.IP{}, errors.New("does not support IPv6 addresses")
 	}
 	ip := make(net.IP, len(n.IP.To4()))
+
 	binary.BigEndian.PutUint32(ip, binary.BigEndian.Uint32(n.IP.To4())|^binary.BigEndian.Uint32(net.IP(n.Mask).To4()))
 	return ip, nil
 }
 
-//NewClient creates a new bacnet client. It binds on the given port
-//and network interface (eth0 for example). If Port if 0, the default
-//bacnet port is used
+// NewClient creates a new bacnet client. It binds on the given port
+// and network interface (eth0 for example). If Port if 0, the default
+// bacnet port is used
 func NewClient(netInterface string, port int) (*Client, error) {
 	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions(), Logger: NoOpLogger{}}
 	i, err := net.InterfaceByName(netInterface)
@@ -288,6 +289,49 @@ func (c *Client) ReadProperty(ctx context.Context, device bacnet.Device, readPro
 		return nil, errors.New("invalid answer")
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+}
+
+func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeProp WriteProperty) error {
+	invokeID := c.transactions.GetID()
+	defer c.transactions.FreeID(invokeID)
+	npdu := NPDU{
+		Version:               Version1,
+		IsNetworkLayerMessage: false,
+		ExpectingReply:        true,
+		Priority:              Normal,
+		Destination:           &device.Addr,
+		Source: bacnet.AddressFromUDP(net.UDPAddr{
+			IP:   c.ipAdress,
+			Port: c.udpPort,
+		}),
+		HopCount: 255,
+		ADPU: &APDU{
+			DataType:    ConfirmedServiceRequest,
+			ServiceType: ServiceConfirmedWriteProperty,
+			InvokeID:    invokeID,
+			Payload:     &writeProp,
+		},
+	}
+	rChan := make(chan APDU)
+	c.transactions.SetTransaction(invokeID, rChan, ctx)
+	defer c.transactions.StopTransaction(invokeID)
+	_, err := c.send(npdu)
+	if err != nil {
+		return err
+	}
+	select {
+	case apdu := <-rChan:
+		//Todo: ensure response validity, ensure conversion cannot panic
+		if apdu.DataType == Error {
+			return *apdu.Payload.(*ApduError)
+		}
+		if apdu.DataType == SimpleAck && apdu.ServiceType == ServiceConfirmedWriteProperty {
+			return nil
+		}
+		return errors.New("invalid answer")
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

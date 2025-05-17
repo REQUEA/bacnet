@@ -116,7 +116,7 @@ func (wp WriteProperty) MarshalBinary() ([]byte, error) {
 	if wp.Property.ArrayIndex != nil {
 		encoder.ContextUnsigned(2, *wp.Property.ArrayIndex)
 	}
-	encoder.ContextAsbtractType(3, wp.PropertyValue)
+	encoder.ContextAbstractType(3, wp.PropertyValue)
 	if wp.Priority != 0 {
 		encoder.ContextUnsigned(4, uint32(wp.Priority))
 	}

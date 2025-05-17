@@ -10,10 +10,10 @@ import (
 	"github.com/REQUEA/bacnet"
 )
 
-//Decoder is the struct used to turn byte arrays to bacnet types. All
-//public methods of decoder can set the internal error value. If such
-//error is set, all decoding methods will be no-ops. This allows to
-//defer error checking after several decoding operations
+// Decoder is the struct used to turn byte arrays to bacnet types. All
+// public methods of decoder can set the internal error value. If such
+// error is set, all decoding methods will be no-ops. This allows to
+// defer error checking after several decoding operations
 type Decoder struct {
 	buf *bytes.Buffer
 	err error
@@ -34,7 +34,7 @@ func (d *Decoder) ResetError() {
 	d.err = nil
 }
 
-//unread unread the last n bytes read from the decoder. This allows to retry decoding of the same data
+// unread unread the last n bytes read from the decoder. This allows to retry decoding of the same data
 func (d *Decoder) unread(n int) error {
 	for x := 0; x < n; x++ {
 		err := d.buf.UnreadByte()
@@ -45,9 +45,9 @@ func (d *Decoder) unread(n int) error {
 	return nil
 }
 
-//ContextValue reads the next context tag/value couple and set val accordingly.
-//Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
-//If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
+// ContextValue reads the next context tag/value couple and set val accordingly.
+// Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
+// If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
 func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if d.err != nil {
 		return
@@ -76,9 +76,9 @@ func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	*val = v
 }
 
-//ContextObjectID read a (context)tag / value pair where the value
-//type is an unsigned int
-//If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
+// ContextObjectID read a (context)tag / value pair where the value
+// type is an writeValue int
+// If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
 func (d *Decoder) ContextObjectID(expectedTagID byte, objectID *bacnet.ObjectID) {
 	if d.err != nil {
 		return
@@ -116,10 +116,10 @@ func (e AppDataTypeMismatch) Error() string {
 	return fmt.Sprintf("decode AppData: mismatched type, cannot decode %s in type %s", e.wanted, e.got.String())
 }
 
-//AppData read the next tag and value. The value type advertised
-//in tag must be a standard bacnet application data type and must
-//match the type passed in the v parameter. If no error is
-//returned, v will contain the data read
+// AppData read the next tag and value. The value type advertised
+// in tag must be a standard bacnet application data type and must
+// match the type passed in the v parameter. If no error is
+// returned, v will contain the data read
 func (d *Decoder) AppData(v interface{}) {
 	if d.err != nil {
 		return
@@ -294,14 +294,14 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 	case size8:
 		val, err := buf.ReadByte()
 		if err != nil {
-			return 0, fmt.Errorf("read unsigned with length 1 : %w", err)
+			return 0, fmt.Errorf("read writeValue with length 1 : %w", err)
 		}
 		return uint32(val), nil
 	case size16:
 		var val uint16
 		err := binary.Read(buf, binary.BigEndian, &val)
 		if err != nil {
-			return 0, fmt.Errorf("read unsigned with length 2 : %w", err)
+			return 0, fmt.Errorf("read writeValue with length 2 : %w", err)
 		}
 		return uint32(val), nil
 	case size24:
@@ -310,18 +310,18 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		var val uint16
 		msb, err := buf.ReadByte()
 		if err != nil {
-			return 0, fmt.Errorf("read unsigned with length 3 : %w", err)
+			return 0, fmt.Errorf("read writeValue with length 3 : %w", err)
 		}
 		err = binary.Read(buf, binary.BigEndian, &val)
 		if err != nil {
-			return 0, fmt.Errorf("read unsigned with length 3 : %w", err)
+			return 0, fmt.Errorf("read writeValue with length 3 : %w", err)
 		}
 		return uint32(msb)<<16 + uint32(val), nil
 	case size32:
 		var val uint32
 		err := binary.Read(buf, binary.BigEndian, &val)
 		if err != nil {
-			return 0, fmt.Errorf("read unsigned with length 4 : %w", err)
+			return 0, fmt.Errorf("read writeValue with length 4 : %w", err)
 		}
 		return val, nil
 	default:

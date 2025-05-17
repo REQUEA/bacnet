@@ -1,4 +1,4 @@
-//Package bacnet provides various types to represent Bacnet related concepts
+// Package bacnet provides various types to represent Bacnet related concepts
 package bacnet
 
 import (
@@ -14,10 +14,10 @@ const (
 	maxObjectType = 0x400
 )
 
-//ObjectType is the category of an object
+// ObjectType is the category of an object
 type ObjectType uint16
 
-//ObjectInstance is a unique identifier of an bacnet object
+// ObjectInstance is a unique identifier of an bacnet object
 type ObjectInstance uint32
 
 //go:generate stringer -type=ObjectType
@@ -83,14 +83,14 @@ const (
 	Proprietarymax        ObjectType = 0x3ff
 )
 
-//ObjectID represent the type of a bacnet object and it's instance number
+// ObjectID represent the type of a bacnet object and it's instance number
 type ObjectID struct {
 	Type     ObjectType
 	Instance ObjectInstance
 }
 
-//Encode turns the object ID into a uint32 for encoding.  Returns an
-//error if the ObjectID is invalid
+// Encode turns the object ID into a uint32 for encoding.  Returns an
+// error if the ObjectID is invalid
 func (o ObjectID) Encode() (uint32, error) {
 	if o.Instance > MaxInstance {
 		return 0, errors.New("invalid ObjectID: instance too high")
@@ -109,8 +109,8 @@ func ObjectIDFromUint32(v uint32) ObjectID {
 	}
 }
 
-//Device represent a bacnet device. Note: A bacnet device is different
-//from a bacnet object. A device "contains" several object. Only the device has a bacnet address
+// Device represent a bacnet device. Note: A bacnet device is different
+// from a bacnet object. A device "contains" several object. Only the device has a bacnet address
 type Device struct {
 	ID           ObjectID
 	MaxApdu      uint32
@@ -119,7 +119,7 @@ type Device struct {
 	Addr         Address
 }
 
-//Address is the bacnet address of an device.
+// Address is the bacnet address of an device.
 type Address struct {
 	// mac_len = 0 is a broadcast address
 	// note: MAC for IP addresses uses 4 bytes for addr, 2 bytes for port
@@ -131,19 +131,48 @@ type Address struct {
 }
 
 func AddressFromUDP(udp net.UDPAddr) *Address {
-	b := bytes.NewBuffer(udp.IP)
+	b := bytes.NewBuffer(nil)
+
+	// 写入地址类型标识 (4字节表示IPv4, 16字节表示IPv6)
+	if len(udp.IP) == net.IPv4len {
+		b.WriteByte(4)
+		b.Write(udp.IP.To4()) // 确保使用IPv4格式
+	} else {
+		b.WriteByte(16)
+		b.Write(udp.IP.To16()) // 确保使用IPv6格式
+	}
+	// 写入端口号
 	port := uint16(udp.Port)
 	_ = binary.Write(b, binary.BigEndian, port)
+
 	return &Address{
 		Mac: b.Bytes(),
 	}
 }
 
 func UDPFromAddress(addr Address) net.UDPAddr {
+	if len(addr.Mac) < 2 { // 至少需要类型标识和端口号
+		return net.UDPAddr{}
+	}
+
+	// 读取地址类型
+	ipLen := int(addr.Mac[0])
+	if ipLen != 4 && ipLen != 16 {
+		return net.UDPAddr{}
+	}
+
+	// 验证数据长度
+	if len(addr.Mac) < 1+ipLen+2 { // 类型标识 + IP地址 + 端口号
+		return net.UDPAddr{}
+	}
+
+	// 解析IP地址和端口号
+	ip := addr.Mac[1 : 1+ipLen]
+	port := int(binary.BigEndian.Uint16(addr.Mac[1+ipLen : 1+ipLen+2]))
+
 	return net.UDPAddr{
-		IP:   addr.Mac[:4],
-		Port: int(binary.BigEndian.Uint16(addr.Mac[4:])),
-		Zone: "",
+		IP:   ip,
+		Port: port,
 	}
 }
 
@@ -157,7 +186,7 @@ const (
 	SegmentationSupportNone     SegmentationSupport = 0x03
 )
 
-//PropertyIdentifier is used to control a ReadProperty request
+// PropertyIdentifier is used to control a ReadProperty request
 type PropertyIdentifier struct {
 	Type PropertyType
 	//Not null if it's an array property and we want only one index of
@@ -189,5 +218,5 @@ const (
 
 type PropertyValue struct {
 	Type  byte
-	Value uint32
+	Value any
 }
