@@ -133,15 +133,13 @@ type Address struct {
 func AddressFromUDP(udp net.UDPAddr) *Address {
 	b := bytes.NewBuffer(nil)
 
-	// 写入地址类型标识 (4字节表示IPv4, 16字节表示IPv6)
 	if len(udp.IP) == net.IPv4len {
 		b.WriteByte(4)
-		b.Write(udp.IP.To4()) // 确保使用IPv4格式
+		b.Write(udp.IP.To4())
 	} else {
 		b.WriteByte(16)
-		b.Write(udp.IP.To16()) // 确保使用IPv6格式
+		b.Write(udp.IP.To16())
 	}
-	// 写入端口号
 	port := uint16(udp.Port)
 	_ = binary.Write(b, binary.BigEndian, port)
 
@@ -155,18 +153,15 @@ func UDPFromAddress(addr Address) net.UDPAddr {
 		return net.UDPAddr{}
 	}
 
-	// 读取地址类型
 	ipLen := int(addr.Mac[0])
 	if ipLen != 4 && ipLen != 16 {
 		return net.UDPAddr{}
 	}
 
-	// 验证数据长度
 	if len(addr.Mac) < 1+ipLen+2 { // 类型标识 + IP地址 + 端口号
 		return net.UDPAddr{}
 	}
 
-	// 解析IP地址和端口号
 	ip := addr.Mac[1 : 1+ipLen]
 	port := int(binary.BigEndian.Uint16(addr.Mac[1+ipLen : 1+ipLen+2]))
 
