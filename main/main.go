@@ -6,25 +6,17 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"time"
 
 	"github.com/REQUEA/bacnet"
 	"github.com/REQUEA/bacnet/bacip"
-
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	networkInterface := "en0"
-	if len(os.Args) > 1 {
-		networkInterface = os.Args[1]
-	}
-	c, err := bacip.NewClient(networkInterface, 47809)
+	c, err := bacip.NewClient("192.168.3.6/24", 0, bacip.NoOpLogger{})
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
-	c.Logger = logrus.New()
 	d := bacnet.Device{
 		ID: bacnet.ObjectID{
 			Type:     bacnet.BacnetDevice,
@@ -35,6 +27,14 @@ func main() {
 			Port: 47808,
 		}),
 	}
+	min := uint32(0)
+	max := uint32(bacnet.MaxInstance)
+	ds, err := c.WhoIs(bacip.WhoIs{
+		Low:  &min,
+		High: &max,
+	}, 10*time.Second)
+	fmt.Printf("WhoIs: %+v\n", ds)
+	listObjects(c, d)
 	e := writeValue(c, d, bacnet.ObjectID{
 		Type:     bacnet.BinaryOutput,
 		Instance: 1,

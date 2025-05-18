@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/REQUEA/bacnet"
@@ -15,13 +17,15 @@ import (
 
 type Client struct {
 	//Maybe change to bacnet address
-	ipAdress         net.IP
+	ipAddress        net.IP
 	broadcastAddress net.IP
 	udpPort          int
 	udp              *net.UDPConn
 	subscriptions    *Subscriptions
 	transactions     *Transactions
-	Logger           Logger
+	logger           Logger
+	runFlag          atomic.Bool
+	wg               sync.WaitGroup
 }
 
 type Logger interface {
@@ -52,78 +56,97 @@ func broadcastAddr(n *net.IPNet) (net.IP, error) {
 }
 
 // NewClient creates a new bacnet client. It binds on the given port
-// and network interface (eth0 for example). If Port if 0, the default
-// bacnet port is used
-func NewClient(netInterface string, port int) (*Client, error) {
-	c := &Client{subscriptions: &Subscriptions{}, transactions: NewTransactions(), Logger: NoOpLogger{}}
-	i, err := net.InterfaceByName(netInterface)
-	if err != nil {
-		return nil, fmt.Errorf("interface %s: %w", netInterface, err)
+// and network interface or cidr addr. If Port is 0, a random port is used
+func NewClient(netInterface string, port int, logger Logger) (*Client, error) {
+	c := &Client{subscriptions: &Subscriptions{},
+		transactions: NewTransactions(),
+		logger:       logger,
+		runFlag:      atomic.Bool{},
+		wg:           sync.WaitGroup{},
 	}
-	if port == 0 {
-		port = DefaultUDPPort
-	}
-	c.udpPort = port
-	addrs, err := i.Addrs()
-	if err != nil {
-		return nil, err
-	}
-	if len(addrs) == 0 {
-		return nil, fmt.Errorf("interface %s has no addresses", netInterface)
-	}
-	for _, adr := range addrs {
-		ip, ipnet, err := net.ParseCIDR(adr.String())
+	if strings.Contains(netInterface, "/") {
+		c.tryParse(netInterface)
+	} else {
+		i, err := net.InterfaceByName(netInterface)
+		if err != nil {
+			return nil, fmt.Errorf("interface %s: %w", netInterface, err)
+		}
+		addrs, err := i.Addrs()
 		if err != nil {
 			return nil, err
 		}
-		// To4 is nil when type is ip6
-		if ip.To4() != nil {
-			broadcast, err := broadcastAddr(ipnet)
-			if err != nil {
-				return nil, err
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("interface %s has no addresses", netInterface)
+		}
+		for _, adr := range addrs {
+			if c.tryParse(adr.String()) {
+				break
 			}
-			c.ipAdress = ip.To4()
-			c.broadcastAddress = broadcast
-			break
 		}
 	}
-	if c.ipAdress == nil {
+	if c.ipAddress == nil {
 		return nil, fmt.Errorf("no IPv4 address assigned to interface %s", netInterface)
 	}
-
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 		IP:   net.IPv4zero,
-		Port: c.udpPort,
+		Port: port,
 	})
 	if err != nil {
 		return nil, err
 	}
+	c.runFlag.Store(true)
+	c.udpPort = conn.LocalAddr().(*net.UDPAddr).Port
 	c.udp = conn
+	c.wg.Add(1)
 	go c.listen()
 	return c, nil
 }
 
+func (c *Client) tryParse(cidr string) bool {
+	ip, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false
+	}
+	// To4 is nil when type is ip6
+	if ip.To4() != nil {
+		broadcast, err := broadcastAddr(ipnet)
+		if err != nil {
+			return false
+		}
+		c.ipAddress = ip.To4()
+		c.broadcastAddress = broadcast
+		return true
+	}
+	return false
+}
+
 // listen for incoming bacnet packets.
 func (c *Client) listen() {
-	//Todo: allow close client
-	for {
+	defer c.wg.Done()
+	for c.runFlag.Load() {
 		b := make([]byte, 2048)
 		i, addr, err := c.udp.ReadFromUDP(b)
 		if err != nil {
-			c.Logger.Error(err.Error())
+			c.logger.Error(err.Error())
 		}
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					c.Logger.Error("panic in handle message: ", r)
+					c.logger.Error("panic in handle message: ", r)
 				}
 			}()
 			err := c.handleMessage(addr, b[:i])
 			if err != nil {
-				c.Logger.Error("handle msg: ", err)
+				c.logger.Error("handle msg: ", err)
 			}
 		}()
 	}
+}
+
+func (c *Client) Close() error {
+	c.runFlag.Store(false)
+	c.wg.Wait()
+	return c.udp.Close()
 }
 
 func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
@@ -134,7 +157,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	}
 	apdu := bvlc.NPDU.ADPU
 	if apdu == nil {
-		c.Logger.Info(fmt.Sprintf("Received network packet %+v", bvlc.NPDU))
+		c.logger.Info(fmt.Sprintf("Received network packet %+v", bvlc.NPDU))
 		return nil
 	}
 	c.subscriptions.RLock()
@@ -225,11 +248,11 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, erro
 					if !ok {
 						return nil, fmt.Errorf("unexpected payload type %T", apdu.Payload)
 					}
-					//Only add result that we are interested in. Well
+					//Only add a result that we are interested in. Well-
 					//behaved devices should not answer if their
 					//InstanceID isn't in the given range. But because
 					//the IAM response is in broadcast mode, we might
-					//receive an answer triggered by an other whois
+					//receive an answer triggered by another whois
 					if data.High != nil && data.Low != nil {
 						if iam.ObjectID.Instance >= bacnet.ObjectInstance(*data.Low) &&
 							iam.ObjectID.Instance <= bacnet.ObjectInstance(*data.High) {
@@ -257,7 +280,7 @@ func (c *Client) ReadProperty(ctx context.Context, device bacnet.Device, readPro
 		Priority:              Normal,
 		Destination:           &device.Addr,
 		Source: bacnet.AddressFromUDP(net.UDPAddr{
-			IP:   c.ipAdress,
+			IP:   c.ipAddress,
 			Port: c.udpPort,
 		}),
 		HopCount: 255,
@@ -301,7 +324,7 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 		Priority:              Normal,
 		Destination:           &device.Addr,
 		Source: bacnet.AddressFromUDP(net.UDPAddr{
-			IP:   c.ipAdress,
+			IP:   c.ipAddress,
 			Port: c.udpPort,
 		}),
 		HopCount: 255,
