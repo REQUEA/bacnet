@@ -27,24 +27,24 @@ func main() {
 			Port: 47808,
 		}),
 	}
-	min := uint32(0)
-	max := uint32(bacnet.MaxInstance)
-	ds, err := c.WhoIs(bacip.WhoIs{
-		Low:  &min,
-		High: &max,
-	}, 10*time.Second)
-	fmt.Printf("WhoIs: %+v\n", ds)
-	listObjects(c, d)
+	//min := uint32(0)
+	//max := uint32(bacnet.MaxInstance)
+	//ds, err := c.WhoIs(bacip.WhoIs{
+	//	Low:  &min,
+	//	High: &max,
+	//}, 10*time.Second)
+	//fmt.Printf("WhoIs: %+v\n", ds)
+	//listObjects(c, d)
 	e := writeValue(c, d, bacnet.ObjectID{
-		Type:     bacnet.BinaryOutput,
+		Type:     bacnet.AnalogOutput,
 		Instance: 1,
-	}, false)
+	}, float32(-3.25))
 	if e != nil {
 		fmt.Printf("Error: %v\n", e)
 		return
 	}
 	readValue(c, d, bacnet.ObjectID{
-		Type:     bacnet.BinaryOutput,
+		Type:     bacnet.AnalogOutput,
 		Instance: 1,
 	})
 }
