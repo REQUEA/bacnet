@@ -38,13 +38,13 @@ func main() {
 	e := writeValue(c, d, bacnet.ObjectID{
 		Type:     bacnet.AnalogOutput,
 		Instance: 1,
-	}, float32(-3.25))
+	}, float32(3.2))
 	if e != nil {
 		fmt.Printf("Error: %v\n", e)
 		return
 	}
 	readValue(c, d, bacnet.ObjectID{
-		Type:     bacnet.AnalogOutput,
+		Type:     bacnet.MultiStateInput,
 		Instance: 1,
 	})
 }

@@ -46,7 +46,7 @@ func (d *Decoder) unread(n int) error {
 }
 
 // ContextValue reads the next context tag/value couple and set val accordingly.
-// Sets the decoder error  if the tagID isn't the expected or if the tag isn't contextual.
+// Sets the decoder error if the tagID isn't expected or if the tag isn't contextual.
 // If ErrorIncorrectTag is set, the internal buffer cursor is ready to read again the same tag.
 func (d *Decoder) ContextValue(expectedTagID byte, val *uint32) {
 	if d.err != nil {
@@ -294,14 +294,14 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 	case size8:
 		val, err := buf.ReadByte()
 		if err != nil {
-			return 0, fmt.Errorf("read writeValue with length 1 : %w", err)
+			return 0, fmt.Errorf("read unsigned with length 1 : %w", err)
 		}
 		return uint32(val), nil
 	case size16:
 		var val uint16
 		err := binary.Read(buf, binary.BigEndian, &val)
 		if err != nil {
-			return 0, fmt.Errorf("read writeValue with length 2 : %w", err)
+			return 0, fmt.Errorf("read unsigned with length 2 : %w", err)
 		}
 		return uint32(val), nil
 	case size24:
@@ -310,18 +310,18 @@ func decodeUnsignedWithLen(buf *bytes.Buffer, length int) (uint32, error) {
 		var val uint16
 		msb, err := buf.ReadByte()
 		if err != nil {
-			return 0, fmt.Errorf("read writeValue with length 3 : %w", err)
+			return 0, fmt.Errorf("read unsigned with length 3 : %w", err)
 		}
 		err = binary.Read(buf, binary.BigEndian, &val)
 		if err != nil {
-			return 0, fmt.Errorf("read writeValue with length 3 : %w", err)
+			return 0, fmt.Errorf("read unsigned with length 3 : %w", err)
 		}
 		return uint32(msb)<<16 + uint32(val), nil
 	case size32:
 		var val uint32
 		err := binary.Read(buf, binary.BigEndian, &val)
 		if err != nil {
-			return 0, fmt.Errorf("read writeValue with length 4 : %w", err)
+			return 0, fmt.Errorf("read unsigned with length 4 : %w", err)
 		}
 		return val, nil
 	default:
