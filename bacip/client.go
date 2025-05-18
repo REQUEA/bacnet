@@ -143,7 +143,7 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 		c.subscriptions.f(bvlc, *src)
 	}
 	c.subscriptions.RUnlock()
-	if apdu.DataType == ComplexAck || apdu.DataType == Error {
+	if apdu.DataType == ComplexAck || apdu.DataType == SimpleAck || apdu.DataType == Error {
 		invokeID := bvlc.NPDU.ADPU.InvokeID
 		tx, ok := c.transactions.GetTransaction(invokeID)
 		if !ok {
@@ -155,7 +155,6 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 		case <-tx.Ctx.Done():
 			return fmt.Errorf("handler for tx %d: %w", invokeID, tx.Ctx.Err())
 		}
-
 	}
 	return nil
 }
@@ -326,7 +325,7 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 		if apdu.DataType == Error {
 			return *apdu.Payload.(*ApduError)
 		}
-		if apdu.DataType == SimpleAck && apdu.ServiceType == ServiceConfirmedWriteProperty {
+		if apdu.DataType == SimpleAck {
 			return nil
 		}
 		return errors.New("invalid answer")

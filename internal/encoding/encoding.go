@@ -92,20 +92,21 @@ func (e *Encoder) AppData(v any) {
 		}
 		_ = binary.Write(e.buf, binary.BigEndian, v)
 	default:
-		writeValue(e.buf, v)
+		writeValue(e.buf, bacnet.PropertyValue{Value: v})
 	}
 }
 
 func (e *Encoder) ContextAbstractType(tabNumber byte, v bacnet.PropertyValue) {
 	encodeTag(e.buf, tag{ID: tabNumber, Context: true, Opening: true})
-	writeValue(e.buf, v.Value)
+	writeValue(e.buf, v)
 	encodeTag(e.buf, tag{ID: tabNumber, Context: true, Closing: true})
 }
 
 // writeValue writes the value in the buffer using a variabled-sized encoding
 // current not support 64bit integers
-func writeValue(buf *bytes.Buffer, value any) {
-	t := tag{}
+func writeValue(buf *bytes.Buffer, pv bacnet.PropertyValue) {
+	t := tag{ID: pv.Type}
+	value := pv.Value
 	if value == nil {
 		t.ID = applicationTagNull
 		encodeTag(buf, t)
@@ -113,41 +114,71 @@ func writeValue(buf *bytes.Buffer, value any) {
 	}
 	switch value.(type) {
 	case bool:
-		t.ID = applicationTagBoolean
-		v := value.(bool)
-		if v {
-			t.Value = 1
+		if pv.Type == applicationTagBoolean {
+			v := value.(bool)
+			if v {
+				t.Value = 1
+			}
+			encodeTag(buf, t)
+		} else {
+			if pv.Type == 0 {
+				//for BI/BO/BV, use enum but not bool
+				t.ID = applicationTagEnumerated
+			}
+			v := value.(bool)
+			if v {
+				writeUint(buf, t, 1)
+			} else {
+				writeUint(buf, t, 0)
+			}
 		}
-		encodeTag(buf, t)
 	case uint8:
-		t.ID = applicationTagUnsignedInt
+		if pv.Type == 0 {
+			t.ID = applicationTagUnsignedInt
+		}
 		writeUint(buf, t, uint32(value.(uint8)))
 	case uint16:
-		t.ID = applicationTagUnsignedInt
+		if pv.Type == 0 {
+			t.ID = applicationTagUnsignedInt
+		}
 		writeUint(buf, t, uint32(value.(uint16)))
 	case uint32:
-		t.ID = applicationTagUnsignedInt
+		if pv.Type == 0 {
+			t.ID = applicationTagUnsignedInt
+		}
 		writeUint(buf, t, value.(uint32))
 	case int8:
-		t.ID = applicationTagSignedInt
+		if pv.Type == 0 {
+			t.ID = applicationTagSignedInt
+		}
 		writeInt(buf, t, int32(value.(int8)))
 	case int16:
-		t.ID = applicationTagSignedInt
+		if pv.Type == 0 {
+			t.ID = applicationTagSignedInt
+		}
 		writeInt(buf, t, int32(value.(int16)))
 	case int32:
-		t.ID = applicationTagSignedInt
+		if pv.Type == 0 {
+			t.ID = applicationTagSignedInt
+		}
 		writeInt(buf, t, value.(int32))
 	case float32:
-		t.ID = applicationTagReal
+		if pv.Type == 0 {
+			t.ID = applicationTagReal
+		}
 		t.Value = 4
 		writeFloat(buf, t, float64(value.(float32)))
 	case float64:
-		t.ID = applicationTagDouble
+		if pv.Type == 0 {
+			t.ID = applicationTagDouble
+		}
 		t.Value = 8
 		writeFloat(buf, t, value.(float64))
 	case string:
 		v := value.(string)
-		t.ID = applicationTagCharacterString
+		if pv.Type == 0 {
+			t.ID = applicationTagCharacterString
+		}
 		t.Value = uint32(len(v) + 1)
 		encodeTag(buf, t)
 		_ = buf.WriteByte(utf8Encoding)

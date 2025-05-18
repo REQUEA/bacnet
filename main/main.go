@@ -27,16 +27,24 @@ func main() {
 	c.Logger = logrus.New()
 	d := bacnet.Device{
 		ID: bacnet.ObjectID{
-			Type:     8,
+			Type:     bacnet.BacnetDevice,
 			Instance: 1234,
 		},
 		Addr: *bacnet.AddressFromUDP(net.UDPAddr{
-			IP:   net.ParseIP("192.168.43.135"),
+			IP:   net.ParseIP("192.168.3.6"),
 			Port: 47808,
 		}),
 	}
+	e := writeValue(c, d, bacnet.ObjectID{
+		Type:     bacnet.BinaryOutput,
+		Instance: 1,
+	}, false)
+	if e != nil {
+		fmt.Printf("Error: %v\n", e)
+		return
+	}
 	readValue(c, d, bacnet.ObjectID{
-		Type:     bacnet.AnalogValue,
+		Type:     bacnet.BinaryOutput,
 		Instance: 1,
 	})
 }
@@ -117,21 +125,7 @@ func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) er
 		return err
 	}
 	value := d
-
-	rp = bacip.ReadProperty{
-		ObjectID: object,
-		Property: bacnet.PropertyIdentifier{
-			Type: bacnet.Units,
-		},
-	}
-	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	d, err = c.ReadProperty(ctx, device, rp)
-	if err != nil {
-		return err
-	}
-	unit := bacnet.Unit(d.(uint32))
-	fmt.Printf("%v %v \n", value, unit)
+	fmt.Printf("%v\n", value)
 	return nil
 }
 
@@ -145,7 +139,7 @@ func writeValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID, v
 			Value: value,
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return c.WriteProperty(ctx, device, wp)
 }
