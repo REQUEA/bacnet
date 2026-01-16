@@ -149,7 +149,7 @@ func AddressFromUDP(udp net.UDPAddr) *Address {
 }
 
 func UDPFromAddress(addr Address) net.UDPAddr {
-	if len(addr.Mac) < 2 { // 至少需要类型标识和端口号
+	if len(addr.Mac) < 2 { // At least a type identifier and port number are required.
 		return net.UDPAddr{}
 	}
 
@@ -158,7 +158,7 @@ func UDPFromAddress(addr Address) net.UDPAddr {
 		return net.UDPAddr{}
 	}
 
-	if len(addr.Mac) < 1+ipLen+2 { // 类型标识 + IP地址 + 端口号
+	if len(addr.Mac) < 1+ipLen+2 { // Type identifier + IP address + port number
 		return net.UDPAddr{}
 	}
 
