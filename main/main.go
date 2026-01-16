@@ -5,43 +5,54 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
+	"net"
 	"time"
 
 	"github.com/REQUEA/bacnet"
 	"github.com/REQUEA/bacnet/bacip"
-
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	networkInterface := "en0"
-	if len(os.Args) > 1 {
-		networkInterface = os.Args[1]
-	}
-	c, err := bacip.NewClient(networkInterface, bacip.DefaultUDPPort)
+	c, err := bacip.NewClient("192.168.3.6/24", 0, bacip.NoOpLogger{})
 	if err != nil {
 		log.Fatal("newclient: ", err)
 	}
-	c.Logger = logrus.New()
-	fmt.Printf("%+v\n", c)
-	devices, err := c.WhoIs(bacip.WhoIs{}, 2*time.Second)
-	if err != nil {
-		log.Fatal("whois: ", err)
+	d := bacnet.Device{
+		ID: bacnet.ObjectID{
+			Type:     bacnet.BacnetDevice,
+			Instance: 1234,
+		},
+		Addr: *bacnet.AddressFromUDP(net.UDPAddr{
+			IP:   net.ParseIP("192.168.3.6"),
+			Port: 47808,
+		}),
 	}
-	fmt.Printf("%+v\n", devices)
-	for _, device := range devices {
-		err = listObjects(c, device)
+	//min := uint32(0)
+	//max := uint32(bacnet.MaxInstance)
+	//ds, err := c.WhoIs(bacip.WhoIs{
+	//	Low:  &min,
+	//	High: &max,
+	//}, 10*time.Second)
+	//fmt.Printf("WhoIs: %+v\n", ds)
+	//listObjects(c, d)
+	e := writeValue(c, d, bacnet.ObjectID{
+		Type:     bacnet.AnalogOutput,
+		Instance: 1,
+	}, float32(3.2))
+	if e != nil {
+		fmt.Printf("Error: %v\n", e)
+		return
 	}
-	if err != nil {
-		log.Fatal(err)
-	}
+	readValue(c, d, bacnet.ObjectID{
+		Type:     bacnet.MultiStateInput,
+		Instance: 1,
+	})
 }
 
 func listObjects(c *bacip.Client, device bacnet.Device) error {
 	prop := bacnet.PropertyIdentifier{Type: bacnet.ObjectList, ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	d, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 		ObjectID: device.ID,
 		Property: prop,
@@ -114,21 +125,21 @@ func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) er
 		return err
 	}
 	value := d
+	fmt.Printf("%v\n", value)
+	return nil
+}
 
-	rp = bacip.ReadProperty{
+func writeValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID, value any) error {
+	wp := bacip.WriteProperty{
 		ObjectID: object,
 		Property: bacnet.PropertyIdentifier{
-			Type: bacnet.Units,
+			Type: bacnet.PresentValue,
+		},
+		PropertyValue: bacnet.PropertyValue{
+			Value: value,
 		},
 	}
-
-	ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	d, err = c.ReadProperty(ctx, device, rp)
-	if err != nil {
-		return err
-	}
-	unit := bacnet.Unit(d.(uint32))
-	fmt.Printf("%v %v \n", value, unit)
-	return nil
+	return c.WriteProperty(ctx, device, wp)
 }

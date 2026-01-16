@@ -178,13 +178,14 @@ func (npdu *NPDU) UnmarshallBinary(data []byte) error {
 	return nil
 }
 
-////go:generate stringer -type=PDUType
+// //go:generate stringer -type=PDUType
 type PDUType byte
 
-//TODO: Maybe do from 0 to 7
+// TODO: Maybe do from 0 to 7
 const (
 	ConfirmedServiceRequest   PDUType = 0
 	UnconfirmedServiceRequest PDUType = 0x10
+	SimpleAck                 PDUType = 0x20
 	ComplexAck                PDUType = 0x30
 	SegmentAck                PDUType = 0x40
 	Error                     PDUType = 0x50
@@ -259,12 +260,12 @@ const (
 	//MaxBACnetConfirmedService ServiceType = 30
 )
 
-//Todo: support more complex APDU
+// Todo: support more complex APDU
 type APDU struct {
 	DataType    PDUType
 	ServiceType ServiceType
 	Payload     Payload
-	//Only meaningfully for confirmed  and ack
+	//Only meaningfully for confirmed and ack
 	InvokeID byte
 	// MaxSegs
 	// Segmented message

@@ -9,7 +9,7 @@ This library is still experimental. No API compatibility promise is made.
 # Features
 - [x] Who Is
 - [x] Read Property
-- [x] Write Property
+- [x] Write Property. 64Bit Integer not support yet.
 
 # Example
 

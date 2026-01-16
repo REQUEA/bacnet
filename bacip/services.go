@@ -69,7 +69,7 @@ func (iam *Iam) UnmarshalBinary(data []byte) error {
 type ReadProperty struct {
 	ObjectID bacnet.ObjectID
 	Property bacnet.PropertyIdentifier
-	//Data is here to contains the response
+	//Data contains the response
 	Data interface{}
 }
 
@@ -116,7 +116,7 @@ func (wp WriteProperty) MarshalBinary() ([]byte, error) {
 	if wp.Property.ArrayIndex != nil {
 		encoder.ContextUnsigned(2, *wp.Property.ArrayIndex)
 	}
-	encoder.ContextAsbtractType(3, wp.PropertyValue)
+	encoder.ContextAbstractType(3, wp.PropertyValue)
 	if wp.Priority != 0 {
 		encoder.ContextUnsigned(4, uint32(wp.Priority))
 	}
@@ -146,5 +146,3 @@ func (e *ApduError) UnmarshalBinary(data []byte) error {
 	decoder.AppData(&e.Code)
 	return decoder.Error()
 }
-
-// Todo http://kargs.net/BACnet/BACnet_Essential_Objects_Services.pdf -> Time synchro, Reinitialize device, DeviceCommunicationControl
