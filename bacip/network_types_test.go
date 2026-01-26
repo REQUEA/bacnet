@@ -18,11 +18,9 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 			bvlc: BVLC{
 				Type:     TypeBacnetIP,
 				Function: BacFuncBroadcast,
-				NPDU: NPDU{
-					Version:               Version1,
-					IsNetworkLayerMessage: false,
-					ExpectingReply:        false,
-					Priority:              Normal,
+				NPDU: &NPDU{
+					Version: Version1,
+					Control: 0b00000000,
 					ADPU: &APDU{
 						DataType:    UnconfirmedServiceRequest,
 						ServiceType: ServiceUnconfirmedWhoIs,
@@ -36,11 +34,9 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 			bvlc: BVLC{
 				Type:     TypeBacnetIP,
 				Function: BacFuncBroadcast,
-				NPDU: NPDU{
-					Version:               Version1,
-					IsNetworkLayerMessage: false,
-					ExpectingReply:        false,
-					Priority:              Normal,
+				NPDU: &NPDU{
+					Version: Version1,
+					Control: 0b00000000,
 					Destination: &bacnet.Address{
 						Net: 0xffff,
 						Adr: []byte{},
@@ -73,7 +69,8 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 			is.NoErr(err)
 			is.Equal(tc.encoded, hex.EncodeToString(result))
 			w := BVLC{}
-			is.NoErr(w.UnmarshalBinary(result))
+			_, err = w.UnmarshalBinary(result)
+			is.NoErr(err)
 			result2, err := w.MarshalBinary()
 			is.NoErr(err)
 			is.Equal(tc.encoded, hex.EncodeToString(result2))

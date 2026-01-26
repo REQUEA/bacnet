@@ -28,16 +28,6 @@ type Client struct {
 	wg               sync.WaitGroup
 }
 
-type Logger interface {
-	Info(...interface{})
-	Error(...interface{})
-}
-
-type NoOpLogger struct{}
-
-func (NoOpLogger) Info(...interface{})  {}
-func (NoOpLogger) Error(...interface{}) {}
-
 type Subscriptions struct {
 	sync.RWMutex
 	f func(BVLC, net.UDPAddr)
@@ -151,7 +141,7 @@ func (c *Client) Close() error {
 
 func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 	var bvlc BVLC
-	err := bvlc.UnmarshalBinary(b)
+	_, err := bvlc.UnmarshalBinary(b)
 	if err != nil && errors.Is(err, ErrNotBAcnetIP) {
 		return err
 	}
@@ -184,12 +174,10 @@ func (c *Client) handleMessage(src *net.UDPAddr, b []byte) error {
 
 func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, error) {
 	npdu := NPDU{
-		Version:               Version1,
-		IsNetworkLayerMessage: false,
-		ExpectingReply:        false,
-		Priority:              Normal,
-		Destination:           nil,
-		Source:                nil,
+		Version:     Version1,
+		Control:     0b00000000,
+		Destination: nil,
+		Source:      nil,
 		ADPU: &APDU{
 			DataType:    UnconfirmedServiceRequest,
 			ServiceType: ServiceUnconfirmedWhoIs,
@@ -216,7 +204,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, erro
 	defer func() {
 		c.subscriptions.f = nil
 	}()
-	_, err := c.broadcast(npdu)
+	_, err := c.broadcast(&npdu)
 	if err != nil {
 		return nil, err
 	}
@@ -274,11 +262,9 @@ func (c *Client) ReadProperty(ctx context.Context, device bacnet.Device, readPro
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
-		Version:               Version1,
-		IsNetworkLayerMessage: false,
-		ExpectingReply:        true,
-		Priority:              Normal,
-		Destination:           &device.Addr,
+		Version:     Version1,
+		Control:     0b00000100,
+		Destination: &device.Addr,
 		Source: bacnet.AddressFromUDP(net.UDPAddr{
 			IP:   c.ipAddress,
 			Port: c.udpPort,
@@ -294,7 +280,7 @@ func (c *Client) ReadProperty(ctx context.Context, device bacnet.Device, readPro
 	rChan := make(chan APDU)
 	c.transactions.SetTransaction(invokeID, rChan, ctx)
 	defer c.transactions.StopTransaction(invokeID)
-	_, err := c.send(npdu)
+	_, err := c.send(&npdu)
 	if err != nil {
 		return nil, err
 	}
@@ -318,11 +304,9 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 	invokeID := c.transactions.GetID()
 	defer c.transactions.FreeID(invokeID)
 	npdu := NPDU{
-		Version:               Version1,
-		IsNetworkLayerMessage: false,
-		ExpectingReply:        true,
-		Priority:              Normal,
-		Destination:           &device.Addr,
+		Version:     Version1,
+		Control:     0b00000100,
+		Destination: &device.Addr,
 		Source: bacnet.AddressFromUDP(net.UDPAddr{
 			IP:   c.ipAddress,
 			Port: c.udpPort,
@@ -338,7 +322,7 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 	rChan := make(chan APDU)
 	c.transactions.SetTransaction(invokeID, rChan, ctx)
 	defer c.transactions.StopTransaction(invokeID)
-	_, err := c.send(npdu)
+	_, err := c.send(&npdu)
 	if err != nil {
 		return err
 	}
@@ -357,12 +341,13 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 	}
 }
 
-func (c *Client) send(npdu NPDU) (int, error) {
-	bytes, err := BVLC{
+func (c *Client) send(npdu *NPDU) (int, error) {
+	bvlc := &BVLC{
 		Type:     TypeBacnetIP,
 		Function: BacFuncUnicast,
 		NPDU:     npdu,
-	}.MarshalBinary()
+	}
+	bytes, err := bvlc.MarshalBinary()
 	if err != nil {
 		return 0, err
 	}
@@ -374,12 +359,13 @@ func (c *Client) send(npdu NPDU) (int, error) {
 
 }
 
-func (c *Client) broadcast(npdu NPDU) (int, error) {
-	bytes, err := BVLC{
+func (c *Client) broadcast(npdu *NPDU) (int, error) {
+	bvlc := &BVLC{
 		Type:     TypeBacnetIP,
 		Function: BacFuncBroadcast,
 		NPDU:     npdu,
-	}.MarshalBinary()
+	}
+	bytes, err := bvlc.MarshalBinary()
 	if err != nil {
 		return 0, err
 	}
