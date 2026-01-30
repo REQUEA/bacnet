@@ -395,7 +395,7 @@ var (
 	_PropertyType_index_8 = [...]uint16{0, 16, 40, 63, 72, 79, 92, 121, 138, 156, 174, 200, 219, 240, 261, 282, 304, 311, 318, 323, 335, 351, 368, 391, 401, 415, 432, 455, 475, 496, 520, 535, 563, 578, 587, 606, 629, 649, 659, 682, 704, 717, 730, 744, 756, 767, 779, 791, 806, 821, 836, 856, 866, 876, 894, 909, 939, 953, 967, 972, 982, 994}
 )
 
-func (i PropertyType) String() string {
+func (i PropertyIdentifier) String() string {
 	switch {
 	case i <= 17:
 		return _PropertyType_name_0[_PropertyType_index_0[i]:_PropertyType_index_0[i+1]]

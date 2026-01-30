@@ -2,10 +2,9 @@
 package bacnet
 
 import (
-	"bytes"
-	"encoding/binary"
+	"container/list"
 	"errors"
-	"net"
+	"fmt"
 )
 
 const (
@@ -17,8 +16,8 @@ const (
 // ObjectType is the category of an object
 type ObjectType uint16
 
-// ObjectInstance is a unique identifier of an bacnet object
-type ObjectInstance uint32
+// BACnetObjectIdentifier is a unique identifier of an bacnet object
+type BACnetObjectIdentifier uint32
 
 //go:generate stringer -type=ObjectType
 const (
@@ -83,10 +82,218 @@ const (
 	Proprietarymax        ObjectType = 0x3ff
 )
 
+type BACnetDeviceStatus uint16
+
+const (
+	DeviceStatusOperational         BACnetDeviceStatus = 0
+	DeviceStatusOperationalReadOnly BACnetDeviceStatus = 1
+	DeviceStatusDownloadRequired    BACnetDeviceStatus = 2
+	DeviceStatusDownloadInProgress  BACnetDeviceStatus = 3
+	DeviceStatusNonOperational      BACnetDeviceStatus = 4
+	DeviceStatusBackupInProgress    BACnetDeviceStatus = 5
+)
+
+type BACnetServicesSupported uint
+
+const (
+	ServicesSupportedAcknowledgeAlaram                  BACnetServicesSupported = 0
+	ServicesSupportedConfirmedCovNotification           BACnetServicesSupported = 1
+	ServicesSupportedConfirmedCovNotificationMultiple   BACnetServicesSupported = 42
+	ServicesSupportedConfirmedEventNotification         BACnetServicesSupported = 2
+	ServicesSupportedGetAlarmSummary                    BACnetServicesSupported = 3
+	ServicesSupportedGetEnrollmentSummary               BACnetServicesSupported = 4
+	ServicesSupportedGetEventInformation                BACnetServicesSupported = 39
+	ServicesSupportedLifeSafetyOperation                BACnetServicesSupported = 37
+	ServicesSupportedSubscribeCov                       BACnetServicesSupported = 5
+	ServicesSupportedSubscribeCovProperty               BACnetServicesSupported = 38
+	ServicesSupportedSubscribeCovPropertyMultiple       BACnetServicesSupported = 41
+	ServicesSupportedConfirmedAuditNotification         BACnetServicesSupported = 44
+	ServicesSupportedAtomicReadFile                     BACnetServicesSupported = 6
+	ServicesSupportedAtomicWriteFile                    BACnetServicesSupported = 7
+	ServicesSupportedAddListElement                     BACnetServicesSupported = 8
+	ServicesSupportedRemoveListElement                  BACnetServicesSupported = 9
+	ServicesSupportedCreateObject                       BACnetServicesSupported = 10
+	ServicesSupportedDeleteObject                       BACnetServicesSupported = 11
+	ServicesSupportedReadProperty                       BACnetServicesSupported = 12
+	ServicesSupportedReadPropertyMultiple               BACnetServicesSupported = 14
+	ServicesSupportedReadRange                          BACnetServicesSupported = 35
+	ServicesSupportedWriteGroup                         BACnetServicesSupported = 40
+	ServicesSupportedWriteProperty                      BACnetServicesSupported = 15
+	ServicesSupportedWritePropertyMultiple              BACnetServicesSupported = 16
+	ServicesSupportedAuditLogQuery                      BACnetServicesSupported = 45
+	ServicesSupportedDeviceCommunicationControl         BACnetServicesSupported = 17
+	ServicesSupportedConfirmedPrivateTransfer           BACnetServicesSupported = 18
+	ServicesSupportedConfirmedTextMessage               BACnetServicesSupported = 19
+	ServicesSupportedReinitializeDevice                 BACnetServicesSupported = 20
+	ServicesSupportedWhoAmI                             BACnetServicesSupported = 47
+	ServicesSupportedYouAre                             BACnetServicesSupported = 48
+	ServicesSupportedAuthRequest                        BACnetServicesSupported = 49
+	ServicesSupportedVtOpen                             BACnetServicesSupported = 21
+	ServicesSupportedVtClose                            BACnetServicesSupported = 22
+	ServicesSupportedVtData                             BACnetServicesSupported = 23
+	ServicesSupportedIAm                                BACnetServicesSupported = 26
+	ServicesSupportedIHave                              BACnetServicesSupported = 27
+	ServicesSupportedUnconfirmedCovNotification         BACnetServicesSupported = 28
+	ServicesSupportedUnconfirmedCovNotificationMultiple BACnetServicesSupported = 43
+	ServicesSupportedUnconfirmedEventNotification       BACnetServicesSupported = 29
+	ServicesSupportedUnconfirmedPrivateTransfer         BACnetServicesSupported = 30
+	ServicesSupportedUnconfirmedTextMessage             BACnetServicesSupported = 31
+	ServicesSupportedTimeSynchronization                BACnetServicesSupported = 32
+	ServicesSupportedUtcTimeSynchronization             BACnetServicesSupported = 36
+	ServicesSupportedWhoHas                             BACnetServicesSupported = 33
+	ServicesSupportedWhoIs                              BACnetServicesSupported = 34
+	ServicesSupportedUnconfirmedAuditNotification       BACnetServicesSupported = 46
+	// Removed services
+	ServicesSupportedReadPropertyConditional BACnetServicesSupported = 13
+	ServicesSupportedAuthenticate            BACnetServicesSupported = 24
+	ServicesSupportedRequestKey              BACnetServicesSupported = 25
+)
+
+type BACnetObjectTypesSupported uint
+
+const (
+	ObjectTypesSupportedAnalogInput           BACnetObjectTypesSupported = 0
+	ObjectTypesSupportedAnalogOutput          BACnetObjectTypesSupported = 1
+	ObjectTypesSupportedAnalogValue           BACnetObjectTypesSupported = 2
+	ObjectTypesSupportedBinaryInput           BACnetObjectTypesSupported = 3
+	ObjectTypesSupportedBinaryOutput          BACnetObjectTypesSupported = 4
+	ObjectTypesSupportedBinaryValue           BACnetObjectTypesSupported = 5
+	ObjectTypesSupportedCalendar              BACnetObjectTypesSupported = 6
+	ObjectTypesSupportedCommand               BACnetObjectTypesSupported = 7
+	ObjectTypesSupportedDevice                BACnetObjectTypesSupported = 8
+	ObjectTypesSupportedEventEnrollment       BACnetObjectTypesSupported = 9
+	ObjectTypesSupportedFile                  BACnetObjectTypesSupported = 10
+	ObjectTypesSupportedGroup                 BACnetObjectTypesSupported = 11
+	ObjectTypesSupportedLoop                  BACnetObjectTypesSupported = 12
+	ObjectTypesSupportedMultiStateInput       BACnetObjectTypesSupported = 13
+	ObjectTypesSupportedMultiStateOutput      BACnetObjectTypesSupported = 14
+	ObjectTypesSupportedNotificationClass     BACnetObjectTypesSupported = 15
+	ObjectTypesSupportedProgram               BACnetObjectTypesSupported = 16
+	ObjectTypesSupportedSchedule              BACnetObjectTypesSupported = 17
+	ObjectTypesSupportedAveraging             BACnetObjectTypesSupported = 18
+	ObjectTypesSupportedMultiStateValue       BACnetObjectTypesSupported = 19
+	ObjectTypesSupportedTrendLog              BACnetObjectTypesSupported = 20
+	ObjectTypesSupportedLifeSafetyPoint       BACnetObjectTypesSupported = 21
+	ObjectTypesSupportedLifeSafetyZone        BACnetObjectTypesSupported = 22
+	ObjectTypesSupportedAccumulator           BACnetObjectTypesSupported = 23
+	ObjectTypesSupportedPulseConverter        BACnetObjectTypesSupported = 24
+	ObjectTypesSupportedEventLog              BACnetObjectTypesSupported = 25
+	ObjectTypesSupportedGlobalGroup           BACnetObjectTypesSupported = 26
+	ObjectTypesSupportedTrendLogMultiple      BACnetObjectTypesSupported = 27
+	ObjectTypesSupportedLoadControl           BACnetObjectTypesSupported = 28
+	ObjectTypesSupportedStructuredView        BACnetObjectTypesSupported = 29
+	ObjectTypesSupportedAccessDoor            BACnetObjectTypesSupported = 30
+	ObjectTypesSupportedTimer                 BACnetObjectTypesSupported = 31
+	ObjectTypesSupportedAccessCredential      BACnetObjectTypesSupported = 33
+	ObjectTypesSupportedAccessPoint           BACnetObjectTypesSupported = 34
+	ObjectTypesSupportedAccessRights          BACnetObjectTypesSupported = 34
+	ObjectTypesSupportedAccessUser            BACnetObjectTypesSupported = 35
+	ObjectTypesSupportedAccessZone            BACnetObjectTypesSupported = 36
+	ObjectTypesSupportedCredentialInput       BACnetObjectTypesSupported = 37
+	ObjectTypesSupportedBitstringValue        BACnetObjectTypesSupported = 39 // 38 removed
+	ObjectTypesSupportedCharacterstringValue  BACnetObjectTypesSupported = 40
+	ObjectTypesSupportedDatePatternValue      BACnetObjectTypesSupported = 41
+	ObjectTypesSupportedDateValue             BACnetObjectTypesSupported = 42
+	ObjectTypesSupportedDatetimePatternValue  BACnetObjectTypesSupported = 43
+	ObjectTypesSupportedDatetimeValue         BACnetObjectTypesSupported = 44
+	ObjectTypesSupportedIntegerValue          BACnetObjectTypesSupported = 45
+	ObjectTypesSupportedLargeAnalogValue      BACnetObjectTypesSupported = 46
+	ObjectTypesSupportedOctetStringValue      BACnetObjectTypesSupported = 47
+	ObjectTypesSupportedPositiveIntegerValue  BACnetObjectTypesSupported = 48
+	ObjectTypesSupportedTimePatternValue      BACnetObjectTypesSupported = 49
+	ObjectTypesSupportedTimeValue             BACnetObjectTypesSupported = 50
+	ObjectTypesSupportedNotificationForwarder BACnetObjectTypesSupported = 51
+	ObjectTypesSupportedAlertEnrollment       BACnetObjectTypesSupported = 52
+	ObjectTypesSupportedChannel               BACnetObjectTypesSupported = 53
+	ObjectTypesSupportedLightingOutput        BACnetObjectTypesSupported = 54
+	ObjectTypesSupportedBinaryLightingOutput  BACnetObjectTypesSupported = 55
+	ObjectTypesSupportedNetworkPort           BACnetObjectTypesSupported = 56
+	ObjectTypesSupportedElevatorGroup         BACnetObjectTypesSupported = 57
+	ObjectTypesSupportedEscalator             BACnetObjectTypesSupported = 58
+	ObjectTypesSupportedLift                  BACnetObjectTypesSupported = 59
+	ObjectTypesSupportedStaging               BACnetObjectTypesSupported = 60
+	ObjectTypesSupportedAuditLog              BACnetObjectTypesSupported = 61
+	ObjectTypesSupportedAuditReporter         BACnetObjectTypesSupported = 62
+	ObjectTypesSupportedColor                 BACnetObjectTypesSupported = 63
+	ObjectTypesSupportedColorTemperature      BACnetObjectTypesSupported = 64
+)
+
+type BACnetConfirmedServiceChoice uint
+
+const (
+	ConfirmedServiceChoiceAcknowledgeAlaram                BACnetConfirmedServiceChoice = 0
+	ConfirmedServiceChoiceConfimedAuditNotification        BACnetConfirmedServiceChoice = 32
+	ConfirmedServiceChoiceConfirmedCovNotification         BACnetConfirmedServiceChoice = 1
+	ConfirmedServiceChoiceConfirmedCovNotificaitonMultiple BACnetConfirmedServiceChoice = 31
+	ConfirmedServiceChoiceConfirmedEventNotification       BACnetConfirmedServiceChoice = 2
+	ConfirmedServiceChoiceGetAlramSummary                  BACnetConfirmedServiceChoice = 3
+	ConfirmedServiceChoiceGetEnrollmentSummary             BACnetConfirmedServiceChoice = 4
+	ConfirmedServiceChoiceGetEventInformation              BACnetConfirmedServiceChoice = 29
+	ConfirmedServiceChoiceLifeSafetyOperation              BACnetConfirmedServiceChoice = 27
+	ConfirmedServiceChoiceSubscribeCov                     BACnetConfirmedServiceChoice = 5
+	ConfirmedServiceChoiceSubscribeCovProperty             BACnetConfirmedServiceChoice = 28
+	ConfirmedServiceChoiceSubscribeCovPropertyMultiple     BACnetConfirmedServiceChoice = 30
+	ConfirmedServiceChoiceAtomicReadFile                   BACnetConfirmedServiceChoice = 6
+	ConfirmedServiceChoiceAtomicWriteFile                  BACnetConfirmedServiceChoice = 7
+	ConfirmedServiceChoiceAddListElement                   BACnetConfirmedServiceChoice = 8
+	ConfirmedServiceChoiceRemoveListElement                BACnetConfirmedServiceChoice = 9
+	ConfirmedServiceChoiceCreateObject                     BACnetConfirmedServiceChoice = 10
+	ConfirmedServiceChoiceDeleteObject                     BACnetConfirmedServiceChoice = 11
+	ConfirmedServiceChoiceReadProperty                     BACnetConfirmedServiceChoice = 12
+	ConfirmedServiceChoiceReadPropertyMultiple             BACnetConfirmedServiceChoice = 14
+	ConfirmedServiceChoiceReadRange                        BACnetConfirmedServiceChoice = 26
+	ConfirmedServiceChoiceWriteProperty                    BACnetConfirmedServiceChoice = 15
+	ConfirmedServiceChoiceWritePropertyMultiple            BACnetConfirmedServiceChoice = 16
+	ConfirmedServiceChoiceAuditLogQuery                    BACnetConfirmedServiceChoice = 33
+	ConfirmedServiceChoiceDeviceCommunicationControl       BACnetConfirmedServiceChoice = 17
+	ConfirmedServiceChoiceConfirmedPrivateTransfer         BACnetConfirmedServiceChoice = 18
+	ConfirmedServiceChoiceConfirmedTextMessage             BACnetConfirmedServiceChoice = 19
+	ConfirmedServiceChoiceReinitializeDevice               BACnetConfirmedServiceChoice = 20
+	ConfirmedServiceChoiceAuthRequest                      BACnetConfirmedServiceChoice = 34
+	ConfirmedServiceChoiceVtOpen                           BACnetConfirmedServiceChoice = 21
+	ConfirmedServiceChoiceVtClose                          BACnetConfirmedServiceChoice = 22
+	ConfirmedServiceChoiceVtData                           BACnetConfirmedServiceChoice = 23
+)
+
+type BACUnconfirmedServiceChoice uint
+
+const (
+	UnconfirmedServiceChoiceIAm                                BACUnconfirmedServiceChoice = 0
+	UnconfirmedServiceChoiceIHave                              BACUnconfirmedServiceChoice = 1
+	UnconfirmedServiceChoiceUnconfirmedCovNotification         BACUnconfirmedServiceChoice = 2
+	UnconfirmedServiceChoiceUnconfirmedEventNotification       BACUnconfirmedServiceChoice = 3
+	UnconfirmedServiceChoiceUnconfirmedPrivateTransfer         BACUnconfirmedServiceChoice = 4
+	UnconfirmedServiceChoiceUnconfirmedTextMessage             BACUnconfirmedServiceChoice = 5
+	UnconfirmedServiceChoiceTimeSynchronization                BACUnconfirmedServiceChoice = 6
+	UnconfirmedServiceChoiceWhoHas                             BACUnconfirmedServiceChoice = 7
+	UnconfirmedServiceChoiceWhoIs                              BACUnconfirmedServiceChoice = 8
+	UnconfirmedServiceChoiceUtcTimeSynchronization             BACUnconfirmedServiceChoice = 9
+	UnconfirmedServiceChoiceWriteGroup                         BACUnconfirmedServiceChoice = 10
+	UnconfirmedServiceChoiceUnconfirmedCovNotificationMultiple BACUnconfirmedServiceChoice = 11
+	UnconfirmedServiceChoiceUnconfirmedAuditNotification       BACUnconfirmedServiceChoice = 12
+	UnconfirmedServiceChoiceWhoAmI                             BACUnconfirmedServiceChoice = 13
+	UnconfirmedServiceChoiceYouAre                             BACUnconfirmedServiceChoice = 14
+)
+
+const (
+	LocalDNET     = 0x0
+	BroadcastDNET = 0xffff
+)
+
+type NetworkNumber uint16
+
+type MAC interface {
+	GetBytes() []byte
+	FromBytes([]byte)
+	String() string
+	IsBroadcast() bool
+	Equal(MAC) bool
+}
+
 // ObjectID represent the type of a bacnet object and it's instance number
 type ObjectID struct {
 	Type     ObjectType
-	Instance ObjectInstance
+	Instance BACnetObjectIdentifier
 }
 
 // Encode turns the object ID into a uint32 for encoding.  Returns an
@@ -105,7 +312,7 @@ func (o ObjectID) Encode() (uint32, error) {
 func ObjectIDFromUint32(v uint32) ObjectID {
 	return ObjectID{
 		Type:     ObjectType(v >> instanceBits),
-		Instance: ObjectInstance(v & MaxInstance),
+		Instance: BACnetObjectIdentifier(v & MaxInstance),
 	}
 }
 
@@ -116,7 +323,7 @@ type Device struct {
 	MaxApdu      uint32
 	Segmentation SegmentationSupport
 	Vendor       uint32
-	Addr         Address
+	Addr         BACnetAddress
 }
 
 // Address is the bacnet address of an device.
@@ -130,47 +337,6 @@ type Address struct {
 	Adr []byte // hwaddr (MAC) address
 }
 
-func AddressFromUDP(udp net.UDPAddr) *Address {
-	b := bytes.NewBuffer(nil)
-
-	if len(udp.IP) == net.IPv4len {
-		b.WriteByte(4)
-		b.Write(udp.IP.To4())
-	} else {
-		b.WriteByte(16)
-		b.Write(udp.IP.To16())
-	}
-	port := uint16(udp.Port)
-	_ = binary.Write(b, binary.BigEndian, port)
-
-	return &Address{
-		Mac: b.Bytes(),
-	}
-}
-
-func UDPFromAddress(addr Address) net.UDPAddr {
-	if len(addr.Mac) < 2 { // At least a type identifier and port number are required.
-		return net.UDPAddr{}
-	}
-
-	ipLen := int(addr.Mac[0])
-	if ipLen != 4 && ipLen != 16 {
-		return net.UDPAddr{}
-	}
-
-	if len(addr.Mac) < 1+ipLen+2 { // Type identifier + IP address + port number
-		return net.UDPAddr{}
-	}
-
-	ip := addr.Mac[1 : 1+ipLen]
-	port := int(binary.BigEndian.Uint16(addr.Mac[1+ipLen : 1+ipLen+2]))
-
-	return net.UDPAddr{
-		IP:   ip,
-		Port: port,
-	}
-}
-
 //go:generate stringer -type=SegmentationSupport
 type SegmentationSupport byte
 
@@ -181,9 +347,9 @@ const (
 	SegmentationSupportNone     SegmentationSupport = 0x03
 )
 
-// PropertyIdentifier is used to control a ReadProperty request
-type PropertyIdentifier struct {
-	Type PropertyType
+// PropertyIdentifierComplex is used to control a ReadProperty request
+type PropertyIdentifierComplex struct {
+	Type PropertyIdentifier
 	//Not null if it's an array property and we want only one index of
 	//this array
 	ArrayIndex *uint32
@@ -214,4 +380,162 @@ const (
 type PropertyValue struct {
 	Type  byte
 	Value any
+}
+
+type BitString struct {
+	unusedBits uint
+	octets     []byte
+}
+
+func NewBitString() *BitString {
+	return &BitString{
+		unusedBits: 0,
+		octets:     make([]byte, 0),
+	}
+}
+
+func (s *BitString) SetBit(position uint) *BitString {
+	octetIndex := position / 8
+	bitIndex := 7 - (position % 8)
+	if octetIndex >= uint(len(s.octets)) {
+		// need to grow octets
+		fill := make([]byte, int(octetIndex)-len(s.octets)+1)
+		s.octets = append(s.octets, fill...)
+		s.unusedBits = 8
+	}
+	s.octets[len(s.octets)-1] |= (1 << bitIndex)
+	if s.unusedBits > bitIndex {
+		s.unusedBits = bitIndex
+	}
+	return s
+}
+
+func (s *BitString) UnsetBit(position uint) *BitString {
+	octetIndex := position / 8
+	bitIndex := 7 - (position % 8)
+	if octetIndex >= uint(len(s.octets)) {
+		// the bit is out of s.octets. Nothing to do
+		return s
+	}
+	mask := byte(^(1 << bitIndex))
+	s.octets[len(s.octets)-1] &= mask
+	var idx int
+	for idx = len(s.octets) - 1; idx >= 0; idx-- {
+		if s.octets[idx] != 0 {
+			break
+		}
+	}
+	s.unusedBits = 0
+	s.octets = s.octets[:idx+1]
+	if len(s.octets) != 0 {
+		for i := 0; i < 8; i++ {
+			mask := byte(1 << i)
+			if s.octets[idx]&mask != 0 {
+				s.unusedBits = uint(i)
+			}
+		}
+	}
+	return s
+}
+
+func (s *BitString) IsBitSet(position uint) bool {
+	octetIndex := position / 8
+	if octetIndex >= uint(len(s.octets)) {
+		return false
+	}
+	bitIndex := 7 - (position % 8)
+	mask := byte((1 << bitIndex))
+	return s.octets[octetIndex]&mask != 0
+}
+
+type BACnetArray[T any] struct {
+	array     []T
+	resizable bool
+}
+
+func NewBACnetArray[T any](size int, resizable bool) BACnetArray[T] {
+	return BACnetArray[T]{
+		array:     make([]T, size),
+		resizable: resizable,
+	}
+}
+
+func (a *BACnetArray[T]) Set(values ...T) error {
+	if !a.resizable && len(values) != len(a.array) {
+		return fmt.Errorf("array is not resizable")
+	}
+	a.array = make([]T, 0)
+	a.array = append(a.array, values...)
+	return nil
+}
+
+func (a *BACnetArray[T]) SetAt(position uint, v any) error {
+	if position == 0 {
+		if !a.resizable {
+			return fmt.Errorf("array not resizable")
+		}
+		newSize, ok := v.(uint)
+		if !ok {
+			return fmt.Errorf("new size should be an unsigned int")
+		}
+		if int(newSize) < len(a.array) {
+			a.array = a.array[:newSize]
+		} else if int(newSize) > len(a.array) {
+			arrayCopy := make([]T, newSize)
+			copy(arrayCopy, a.array)
+			a.array = arrayCopy
+		}
+		return nil
+	}
+	index := position - 1
+	if int(index) >= len(a.array) {
+		return fmt.Errorf("out of bound")
+	}
+	newValue, ok := v.(T)
+	if !ok {
+		return fmt.Errorf("wrong value type")
+	}
+	a.array[index] = newValue
+	return nil
+}
+
+func (a *BACnetArray[T]) Get(position uint) (any, error) {
+	if position == 0 {
+		return uint(len(a.array)), nil
+	}
+	index := int(position - 1)
+	if index >= len(a.array) {
+		return nil, fmt.Errorf("out of bound")
+	}
+	return a.array[index], nil
+}
+
+// TODO: replace any with a comparable type
+type BACnetList[T any] struct {
+	list *list.List
+}
+
+func NewBACnetList[T any]() BACnetList[T] {
+	return BACnetList[T]{
+		list: list.New(),
+	}
+}
+
+type BACnetAddress struct {
+	Mac     MAC
+	Network NetworkNumber
+}
+
+func (a *BACnetAddress) Equal(o *BACnetAddress) bool {
+	return a.Mac.Equal(o.Mac) && a.Network == o.Network
+}
+
+func (a *BACnetAddress) String() string {
+	return fmt.Sprintf("{ Net: %d, Mac: %s }", a.Network, a.Mac.String())
+
+}
+
+type BACnetAddresBinding struct {
+	DeviceIdentifer BACnetObjectIdentifier
+	DeviceAddress   BACnetAddress
 }

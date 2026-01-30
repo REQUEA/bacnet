@@ -30,9 +30,9 @@ func _() {
 	_ = x[NetworkNumberIs-19]
 }
 
-const _NetworkMessageType_name = "WHO_IS_ROUTER_TO_NETWORKI_AM_ROUTER_TO_NETWORKI_COULD_BE_ROUTER_TO_NETWORKREJECT_MESSAGE_TO_NETWORKROUTER_BUSY_TO_NETWORKROUTER_AVAILABLE_TO_NETWORKINITIALIZE_ROUTING_TABLEINITIALIZE_ROUTING_TABLE_ACKESTABLISH_CONNECTION_TO_NETWORKDISCONNECT_CONNECTION_TO_NETWORKCHALLENGE_REQUESTSECURITY_PAYLOADSECURITY_RESPONSEREQUEST_KEY_UPDATEUPDATE_KEY_SETUPDATE_DISTRIBUTION_KEYREQUEST_MASTER_KEYSET_MASTER_KEYWHAT_IS_NETWORK_NUMBERNETWORK_NUMBER_IS"
+const _NetworkMessageType_name = "WhoIsRouterToNetworkIAmRouterToNetworkICouldBeRouterToNetworkRejectMessageToNetworkRouterBusyToNewtorkRouterAvailableToNetworkInitializeRoutingTableInitializeRoutingTableAckEstablishConnectionToNetworkDisconnectConnectionToNetworkChallengeRequestSecurityPayloadSecurityResponseRequestKeyUpdateUpdateKeySetUpdateDistributionKeyRequestMasterKeySetMasterKeyWhatIsNetworkNumberNetworkNumberIs"
 
-var _NetworkMessageType_index = [...]uint16{0, 24, 46, 74, 99, 121, 148, 172, 200, 231, 263, 280, 296, 313, 331, 345, 368, 386, 400, 422, 439}
+var _NetworkMessageType_index = [...]uint16{0, 20, 38, 61, 83, 102, 126, 148, 173, 201, 230, 246, 261, 277, 293, 305, 326, 342, 354, 373, 388}
 
 func (i NetworkMessageType) String() string {
 	if i >= NetworkMessageType(len(_NetworkMessageType_index)-1) {

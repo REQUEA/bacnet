@@ -37,11 +37,11 @@ func TestFullEncodingAndCoherency(t *testing.T) {
 				NPDU: &NPDU{
 					Version: Version1,
 					Control: 0b00000000,
-					Destination: &bacnet.Address{
-						Net: 0xffff,
-						Adr: []byte{},
+					Destination: &bacnet.BACnetAddress{
+						Network: 0xffff,
+						Mac:     nil,
 					},
-					Source:   &bacnet.Address{},
+					Source:   &bacnet.BACnetAddress{},
 					HopCount: 255,
 					ADPU: &APDU{
 						DataType:    UnconfirmedServiceRequest,
