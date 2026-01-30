@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/REQUEA/bacnet"
 	"golang.org/x/net/ipv4"
 )
 
@@ -14,7 +15,11 @@ type DatalinkEntity interface {
 	Send(data []byte, destMAC []byte) error
 }
 
-type BACnetIPMAC net.UDPAddr
+type BACnetIPMAC struct {
+	net.IP
+	Port        int
+	isBroadcast bool
+}
 
 func (m *BACnetIPMAC) GetBytes() []byte {
 	result := &bytes.Buffer{}
@@ -33,23 +38,43 @@ func (m *BACnetIPMAC) String() string {
 	return fmt.Sprintf("%v:%v", m.IP, m.Port)
 }
 
-func NewBACnetIPPort(id, dnet int, addrPort, bcastAddrPort string) *Port {
-	addr, err := net.ResolveUDPAddr("udp", addrPort)
-	if err != nil {
-		return nil
+func (m *BACnetIPMAC) IsBroadcast() bool {
+	return m.isBroadcast
+}
+
+func (m *BACnetIPMAC) Equal(other bacnet.MAC) bool {
+	o, ok := other.(*BACnetIPMAC)
+	if !ok {
+		return false
 	}
-	mac := BACnetIPMAC(*addr)
-	broadcastAddr, err := net.ResolveUDPAddr("udp", bcastAddrPort)
-	if err != nil {
-		return nil
+	return m.IP.Equal(o.IP) && m.Port == o.Port
+}
+
+func NewBACnetIPPort(id, dnet int, addr net.IP, prefixLen int, port int) *Port {
+	mac := BACnetIPMAC{
+		IP:   addr,
+		Port: port,
 	}
-	broadcastMac := BACnetIPMAC(*broadcastAddr)
+	broadcastMac := BACnetIPMAC{
+		IP:          getBroadcastAddress(addr, prefixLen),
+		Port:        port,
+		isBroadcast: true,
+	}
 	return &Port{
 		Id:           id,
 		Mac:          &mac,
 		BroadcastMac: &broadcastMac,
-		Dnet:         NetworkNumber(dnet),
+		Dnet:         bacnet.NetworkNumber(dnet),
 	}
+}
+
+func getBroadcastAddress(ip net.IP, prefixLen int) net.IP {
+	mask := net.CIDRMask(prefixLen, 32)
+	result := make(net.IP, len(ip))
+	for i := range ip {
+		result[i] = ip[i] | ^mask[i]
+	}
+	return result
 }
 
 type BACnetIPDatalink struct {
@@ -73,21 +98,23 @@ func (l *BACnetIPDatalink) Start() error {
 	return nil
 }
 
-func (l *BACnetIPDatalink) getPortFromDest(dst net.IP) *Port {
+func (l *BACnetIPDatalink) getPortFromDest(dst net.IP) (*Port, bool) {
 	for _, p := range l.Port {
 		bcastMac := p.BroadcastMac.(*BACnetIPMAC)
+		if bcastMac.IP.String() == dst.String() {
+			return p, true
+		}
 		mac := p.Mac.(*BACnetIPMAC)
-		if bcastMac.IP.String() == dst.String() || mac.IP.String() == dst.String() {
-			return p
+		if mac.IP.String() == dst.String() {
+			return p, false
 		}
 	}
-
-	return nil
+	return nil, false
 }
 
 func (l *BACnetIPDatalink) listen() {
 	p := ipv4.NewPacketConn(l.Conn)
-	if err := p.SetControlMessage(ipv4.FlagInterface|ipv4.FlagInterface|ipv4.FlagDst, true); err != nil {
+	if err := p.SetControlMessage(ipv4.FlagSrc|ipv4.FlagInterface|ipv4.FlagDst, true); err != nil {
 		panic(err)
 	}
 mainloop:
@@ -108,13 +135,16 @@ mainloop:
 				logger.Error("could not unmarshal bvlc header: ", err)
 				continue
 			}
-			port := l.getPortFromDest(ctrlMsg.Dst)
+			port, isBroadcast := l.getPortFromDest(ctrlMsg.Dst)
 			if port == nil {
 				logger.Trace("could not find a port matching destination ", ctrlMsg.Dst)
 				continue
 			}
 			srcAddr, err := net.ResolveUDPAddr("udp", src.String())
-			sadr := BACnetIPMAC(*srcAddr)
+			sadr := BACnetIPMAC{
+				IP:   srcAddr.IP,
+				Port: srcAddr.Port,
+			}
 			if err != nil {
 				logger.Error("could not parse source address: ", err)
 				continue
@@ -128,12 +158,17 @@ mainloop:
 					continue mainloop
 				}
 			}
+			dadr := BACnetIPMAC{
+				IP:          ctrlMsg.Dst,
+				Port:        int(port.Mac.GetBytes()[4])<<8 | int(port.Mac.GetBytes()[5]),
+				isBroadcast: isBroadcast,
+			}
 			switch bvlc.Function {
 			case BacFuncUnicast:
-				port.ToNetworkEntity(&sadr, payload)
+				port.ToNetworkEntity(&dadr, &sadr, payload)
 			case BacFuncBroadcast:
 				// TODO: check it is really what has to be done
-				port.ToNetworkEntity(&sadr, payload)
+				port.ToNetworkEntity(&dadr, &sadr, payload)
 			default:
 				logger.Error("unsupported BVLC function ", bvlc.Function)
 			}
@@ -164,7 +199,7 @@ func (l *BACnetIPDatalink) Send(data []byte, destMAC []byte) error {
 	dest.FromBytes(destMAC)
 	logger.Trace("BACnetIP datalink: Send to ", dest.String())
 
-	dst := net.UDPAddr(dest)
+	dst := net.UDPAddr{IP: dest.IP, Port: dest.Port}
 
 	n, err := l.Conn.WriteToUDP(b, &dst)
 	if err != nil {

@@ -1,148 +1,286 @@
 package bacip
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/REQUEA/bacnet"
 	"github.com/REQUEA/bacnet/internal/encoding"
 )
 
-type WhoIs struct {
-	Low, High *uint32 //may be null if we want to check all range
+type ServiceLayer struct {
+	devices             []*Device
+	objectIndex         map[bacnet.BACnetObjectIdentifier]*Object
+	confirmedServices   map[uint]ConfirmedService
+	unconfirmedServices []UnconfirmedService
 }
 
-func (w WhoIs) MarshalBinary() ([]byte, error) {
-	encoder := encoding.NewEncoder()
-	if w.Low != nil && w.High != nil {
-		if *w.Low > bacnet.MaxInstance || *w.High > bacnet.MaxInstance {
-			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: max value is %d", *w.Low, *w.High, bacnet.MaxInstance)
-		}
-		if *w.Low > *w.High {
-			return nil, fmt.Errorf("invalid WhoIs range: [%d, %d]: low limit is higher than high limit", *w.Low, *w.High)
-		}
-		encoder.ContextUnsigned(0, *w.Low)
-		encoder.ContextUnsigned(1, *w.High)
-	}
-	return encoder.Bytes(), encoder.Error()
-}
-
-func (w *WhoIs) UnmarshalBinary(data []byte) error {
-	if len(data) == 0 {
-		// If data is empty, the whoIs request is a full range
-		// check. So keep the low and high pointer nil
+func (l *ServiceLayer) GetDevice(serviceChoice uint, request []byte) *Device {
+	service, ok := l.confirmedServices[serviceChoice]
+	if !ok {
 		return nil
 	}
-	w.Low = new(uint32)
-	w.High = new(uint32)
-	decoder := encoding.NewDecoder(data)
-	decoder.ContextValue(byte(0), w.Low)
-	decoder.ContextValue(byte(1), w.High)
-	return decoder.Error()
+	return service.GetDevice(request)
 }
 
-type Iam struct {
-	ObjectID            bacnet.ObjectID
-	MaxApduLength       uint32
-	SegmentationSupport bacnet.SegmentationSupport
-	VendorID            uint32
+type ConfirmedService interface {
+	GetDevice(serviceRequest []byte) *Device
 }
 
-func (iam Iam) MarshalBinary() ([]byte, error) {
-	encoder := encoding.NewEncoder()
-	encoder.AppData(iam.ObjectID)
-	encoder.AppData(iam.MaxApduLength)
-	encoder.AppData(iam.SegmentationSupport)
-	encoder.AppData(iam.VendorID)
-	return encoder.Bytes(), encoder.Error()
+type UnconfirmedService interface {
 }
 
-func (iam *Iam) UnmarshalBinary(data []byte) error {
-	decoder := encoding.NewDecoder(data)
-	decoder.AppData(&iam.ObjectID)
-	decoder.AppData(&iam.MaxApduLength)
-	decoder.AppData(&iam.SegmentationSupport)
-	decoder.AppData(&iam.VendorID)
-	return decoder.Error()
+type WhoIsService struct {
+	serviceLayer *ServiceLayer
 }
 
-type ReadProperty struct {
-	ObjectID bacnet.ObjectID
-	Property bacnet.PropertyIdentifier
-	//Data contains the response
-	Data interface{}
+type WhoIsRequest struct {
+	deviceInstanceRangeLow  encoding.Optional[*encoding.Unsigned]
+	deviceInstanceRangeHigh encoding.Optional[*encoding.Unsigned]
 }
 
-func (rp ReadProperty) MarshalBinary() ([]byte, error) {
-	encoder := encoding.NewEncoder()
-	encoder.ContextObjectID(0, rp.ObjectID)
-	encoder.ContextUnsigned(1, uint32(rp.Property.Type))
-	if rp.Property.ArrayIndex != nil {
-		encoder.ContextUnsigned(2, *rp.Property.ArrayIndex)
+func (r *WhoIsRequest) Unmarshal(buf []byte) ([]byte, error) {
+	remaining := buf
+	eltCount := 0
+	for len(remaining) > 0 {
+		tag, err := encoding.ReadTag(remaining)
+		if err != nil {
+			return remaining, fmt.Errorf("failed to read tag: %v", err)
+		}
+		switch tag {
+		case 0:
+			var low encoding.Unsigned
+			remaining, err = low.Unmarshal(buf)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading low: %v", err)
+			}
+			r.deviceInstanceRangeLow.Set(&low)
+			eltCount++
+		case 1:
+			var high encoding.Unsigned
+			remaining, err = high.Unmarshal(buf)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading low: %v", err)
+			}
+			r.deviceInstanceRangeLow.Set(&high)
+			eltCount++
+		default:
+			return remaining, fmt.Errorf("unexpected tag %v", tag)
+		}
 	}
-	return encoder.Bytes(), encoder.Error()
-}
-
-func (rp *ReadProperty) UnmarshalBinary(data []byte) error {
-	decoder := encoding.NewDecoder(data)
-	decoder.ContextObjectID(0, &rp.ObjectID)
-	var val uint32
-	decoder.ContextValue(1, &val)
-	rp.Property.Type = bacnet.PropertyType(val)
-	rp.Property.ArrayIndex = new(uint32)
-	decoder.ContextValue(2, rp.Property.ArrayIndex)
-	err := decoder.Error()
-	var e encoding.ErrorIncorrectTagID
-	//This tag is optional, maybe it doesn't exist
-	if err != nil && errors.As(err, &e) {
-		rp.Property.ArrayIndex = nil
-		decoder.ResetError()
+	if eltCount != 0 && eltCount != 2 {
+		return remaining, fmt.Errorf("invalid who-is request")
 	}
-	decoder.ContextAbstractType(3, &rp.Data)
-	return decoder.Error()
+	return remaining, nil
 }
 
-type WriteProperty struct {
-	ObjectID      bacnet.ObjectID
-	Property      bacnet.PropertyIdentifier
-	PropertyValue bacnet.PropertyValue
-	Priority      bacnet.PriorityList
-}
-
-func (wp WriteProperty) MarshalBinary() ([]byte, error) {
-	encoder := encoding.NewEncoder()
-	encoder.ContextObjectID(0, wp.ObjectID)
-	encoder.ContextUnsigned(1, uint32(wp.Property.Type))
-	if wp.Property.ArrayIndex != nil {
-		encoder.ContextUnsigned(2, *wp.Property.ArrayIndex)
+func (r *WhoIsRequest) Marshal() ([]byte, error) {
+	if !r.deviceInstanceRangeHigh.Present() || !r.deviceInstanceRangeLow.Present() {
+		return nil, fmt.Errorf("both deviceinstance-range-high and deviceinstance-range-low must be present")
 	}
-	encoder.ContextAbstractType(3, wp.PropertyValue)
-	if wp.Priority != 0 {
-		encoder.ContextUnsigned(4, uint32(wp.Priority))
+	result := make([]byte, 0)
+	tmp, err := r.deviceInstanceRangeLow.Get().MarshalTagged(0)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal deviceinstance-range-low")
 	}
-	return encoder.Bytes(), encoder.Error()
+	result = append(result, tmp...)
+	tmp, err = r.deviceInstanceRangeHigh.Get().MarshalTagged(1)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal deviceinstance-range-low")
+	}
+	result = append(result, tmp...)
+	return result, nil
 }
 
-func (wp *WriteProperty) UnmarshalBinary(data []byte) error {
-	decoder := encoding.NewDecoder(data)
-	return decoder.Error()
+type IAmRequest struct {
+	iAmDeviceIdentifier   encoding.BACnetObjectIdentifier
+	maxApduLengthAccepted encoding.Unsigned
+	segmentationSupported encoding.BACnetSegmentation
+	vendorId              encoding.Unsigned16
 }
 
-type ApduError struct {
-	Class bacnet.ErrorClass
-	Code  bacnet.ErrorCode
+func (r *IAmRequest) Unmarshal(buf []byte) ([]byte, error) {
+	remaining, err := r.iAmDeviceIdentifier.Unmarshal(buf)
+	if err != nil {
+		return remaining, fmt.Errorf("could not read device identifier: %v", err)
+	}
+	remaining, err = r.maxApduLengthAccepted.Unmarshal(remaining)
+	if err != nil {
+		return remaining, fmt.Errorf("could not read max ADPU length: %v", err)
+	}
+	remaining, err = r.segmentationSupported.Unmarshal(remaining)
+	if err != nil {
+		return remaining, fmt.Errorf("could not read segmentation supported: %v", err)
+	}
+	remaining, err = r.vendorId.Unmarshal(remaining)
+	if err != nil {
+		return remaining, fmt.Errorf("could not read vendor ID: %v", err)
+	}
+	return remaining, nil
 }
 
-func (e ApduError) Error() string {
-	return fmt.Sprintf("apdu error class %v code %v", e.Class, e.Code)
-}
-func (e ApduError) MarshalBinary() ([]byte, error) {
-	panic("not implemented")
+func (r *IAmRequest) Marshal() ([]byte, error) {
+	result := make([]byte, 0)
+	tmp, err := r.iAmDeviceIdentifier.MarshalPrimitive()
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	tmp, err = r.maxApduLengthAccepted.MarshalPrimitive()
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	tmp, err = r.segmentationSupported.MarshalPrimitive()
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	tmp, err = r.vendorId.MarshalPrimitive()
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
-func (e *ApduError) UnmarshalBinary(data []byte) error {
-	decoder := encoding.NewDecoder(data)
-	decoder.AppData(&e.Class)
-	decoder.AppData(&e.Code)
-	return decoder.Error()
+type ReadPropertyService struct {
+	serviceLayer *ServiceLayer
+}
+
+func (s *ReadPropertyService) GetDevice(request []byte) *Device {
+	return nil
+}
+
+type ReadPropertyRequest struct {
+	objectIdentifier   encoding.BACnetObjectIdentifier
+	propertyIdentifier encoding.BACnetPropertyIdentifier
+	propertyArrayIndex encoding.Optional[*encoding.Unsigned]
+}
+
+func (r *ReadPropertyRequest) Unmarshal(buf []byte) ([]byte, error) {
+	remaining := buf
+	eltCount := 0
+	for len(remaining) > 0 {
+		tag, err := encoding.ReadTag(remaining)
+		if err != nil {
+			return remaining, fmt.Errorf("failed to read tag: %v", err)
+		}
+		switch tag {
+		case 0:
+			remaining, err = r.objectIdentifier.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading object-identifier: %v", err)
+			}
+		case 1:
+			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
+			}
+			eltCount++
+		case 2:
+			var arrayIndex encoding.Unsigned
+			remaining, err = arrayIndex.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-array-index: %v", err)
+			}
+			r.propertyArrayIndex.Set(&arrayIndex)
+		default:
+			return remaining, fmt.Errorf("unexpected tag %v", tag)
+		}
+	}
+	return remaining, nil
+}
+
+func (r *ReadPropertyRequest) Marshal() ([]byte, error) {
+	result := make([]byte, 0)
+	tmp, err := r.objectIdentifier.MarshalTagged(0)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	tmp, err = r.propertyIdentifier.MarshalTagged(1)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	if r.propertyArrayIndex.Present() {
+		tmp, err = r.propertyArrayIndex.Get().MarshalTagged(2)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, tmp...)
+	}
+	return result, nil
+}
+
+type ReadPropertyAck struct {
+	objectIdentifier   encoding.BACnetObjectIdentifier
+	propertyIdentifier encoding.BACnetPropertyIdentifier
+	propertyArrayIndex encoding.Optional[*encoding.Unsigned]
+	propertyValue      encoding.Abstract
+}
+
+func (r *ReadPropertyAck) Unmarshal(buf []byte) ([]byte, error) {
+	remaining := buf
+	eltCount := 0
+	for len(remaining) > 0 {
+		tag, err := encoding.ReadTag(remaining)
+		if err != nil {
+			return remaining, fmt.Errorf("failed to read tag: %v", err)
+		}
+		switch tag {
+		case 0:
+			remaining, err = r.objectIdentifier.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading object-identifier: %v", err)
+			}
+		case 1:
+			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
+			}
+			eltCount++
+		case 2:
+			var arrayIndex encoding.Unsigned
+			remaining, err = arrayIndex.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-array-index: %v", err)
+			}
+			r.propertyArrayIndex.Set(&arrayIndex)
+		case 3:
+			remaining, err = r.propertyValue.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-value: %v", err)
+			}
+		default:
+			return remaining, fmt.Errorf("unexpected tag %v", tag)
+		}
+	}
+	return remaining, nil
+}
+
+func (a *ReadPropertyAck) Marshal() ([]byte, error) {
+	result := make([]byte, 0)
+	tmp, err := a.objectIdentifier.MarshalTagged(0)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	tmp, err = a.propertyIdentifier.MarshalTagged(1)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	if a.propertyArrayIndex.Present() {
+		tmp, err = a.propertyArrayIndex.Get().MarshalTagged(2)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, tmp...)
+	}
+	tmp, err = a.propertyValue.MarshalTagged(3)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	return result, nil
 }

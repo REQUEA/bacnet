@@ -10,13 +10,13 @@ func _() {
 	var x [1]struct{}
 	_ = x[LifeSafety-3]
 	_ = x[CriticalEquipment-2]
-	_ = x[Urgent-1]
-	_ = x[Normal-0]
+	_ = x[UrgentPriority-1]
+	_ = x[NormalPriority-0]
 }
 
-const _NPDUPriority_name = "NormalUrgentCriticalEquipmentLifeSafety"
+const _NPDUPriority_name = "NormalPriorityUrgentPriorityCriticalEquipmentLifeSafety"
 
-var _NPDUPriority_index = [...]uint8{0, 6, 12, 29, 39}
+var _NPDUPriority_index = [...]uint8{0, 14, 28, 45, 55}
 
 func (i NPDUPriority) String() string {
 	if i >= NPDUPriority(len(_NPDUPriority_index)-1) {

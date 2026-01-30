@@ -22,10 +22,12 @@ func main() {
 			Type:     bacnet.BacnetDevice,
 			Instance: 1234,
 		},
-		Addr: *bacnet.AddressFromUDP(net.UDPAddr{
-			IP:   net.ParseIP("192.168.3.6"),
-			Port: 47808,
-		}),
+		Addr: bacnet.BACnetAddress{
+			Mac: &bacip.BACnetIPMAC{
+				IP:   net.ParseIP("192.168.3.6"),
+				Port: 47808,
+			},
+		},
 	}
 	//min := uint32(0)
 	//max := uint32(bacnet.MaxInstance)
@@ -50,7 +52,7 @@ func main() {
 }
 
 func listObjects(c *bacip.Client, device bacnet.Device) error {
-	prop := bacnet.PropertyIdentifier{Type: bacnet.ObjectList, ArrayIndex: new(uint32)}
+	prop := bacnet.PropertyIdentifierComplex{Type: bacnet.ObjectList, ArrayIndex: new(uint32)}
 	*prop.ArrayIndex = 0
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	d, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
@@ -77,7 +79,7 @@ func listObjects(c *bacip.Client, device bacnet.Device) error {
 		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
 		data1, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 			ObjectID: objID,
-			Property: bacnet.PropertyIdentifier{
+			Property: bacnet.PropertyIdentifierComplex{
 				Type: bacnet.ObjectName,
 			},
 		})
@@ -89,7 +91,7 @@ func listObjects(c *bacip.Client, device bacnet.Device) error {
 		ctx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
 		data2, err := c.ReadProperty(ctx, device, bacip.ReadProperty{
 			ObjectID: objID,
-			Property: bacnet.PropertyIdentifier{
+			Property: bacnet.PropertyIdentifierComplex{
 				Type: bacnet.Description,
 			},
 		})
@@ -114,7 +116,7 @@ func listObjects(c *bacip.Client, device bacnet.Device) error {
 func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) error {
 	rp := bacip.ReadProperty{
 		ObjectID: object,
-		Property: bacnet.PropertyIdentifier{
+		Property: bacnet.PropertyIdentifierComplex{
 			Type: bacnet.PresentValue,
 		},
 	}
@@ -132,7 +134,7 @@ func readValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID) er
 func writeValue(c *bacip.Client, device bacnet.Device, object bacnet.ObjectID, value any) error {
 	wp := bacip.WriteProperty{
 		ObjectID: object,
-		Property: bacnet.PropertyIdentifier{
+		Property: bacnet.PropertyIdentifierComplex{
 			Type: bacnet.PresentValue,
 		},
 		PropertyValue: bacnet.PropertyValue{

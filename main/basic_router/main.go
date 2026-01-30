@@ -41,16 +41,16 @@ func main() {
 		Conn: conn1,
 	}
 
-	addr1 := "10.10.1.3:47808"
-	port1 := bacip.NewBACnetIPPort(1, 10, addr1, "10.10.1.255:47808")
+	addr1 := net.IP{10, 10, 1, 3}
+	port1 := bacip.NewBACnetIPPort(1, 10, addr1, 24, 47808)
 	if port1 == nil {
 		log.Fatal("could not create port 1")
 	}
 	port1.SetDatalink(&datalink1)
 	datalink1.AddPort(port1)
 
-	addr2 := "10.10.2.3:47808"
-	port2 := bacip.NewBACnetIPPort(2, 20, addr2, "10.10.2.255:47808")
+	addr2 := net.IP{10, 10, 2, 3}
+	port2 := bacip.NewBACnetIPPort(2, 20, addr2, 25, 47808)
 	if port2 == nil {
 		log.Fatal("could not create port 2")
 	}

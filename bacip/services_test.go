@@ -121,7 +121,7 @@ func TestReadPropertyReq(t *testing.T) {
 					Type:     bacnet.AnalogOutput,
 					Instance: 8121,
 				},
-				Property: bacnet.PropertyIdentifier{
+				Property: bacnet.PropertyIdentifierComplex{
 					Type: bacnet.Units,
 				},
 			},
@@ -149,7 +149,7 @@ func TestReadPropertyResp(t *testing.T) {
 					Type:     bacnet.AnalogOutput,
 					Instance: 8121,
 				},
-				Property: bacnet.PropertyIdentifier{
+				Property: bacnet.PropertyIdentifierComplex{
 					Type: bacnet.Units,
 				},
 				Data: uint32(98),
@@ -179,7 +179,7 @@ func TestWritePropertyReq(t *testing.T) {
 					Type:     bacnet.BinaryOutput,
 					Instance: 1,
 				},
-				Property: bacnet.PropertyIdentifier{
+				Property: bacnet.PropertyIdentifierComplex{
 					Type: bacnet.PresentValue,
 				},
 				PropertyValue: bacnet.PropertyValue{

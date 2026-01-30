@@ -211,7 +211,7 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, erro
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	//Use a set to deduplicate results
-	set := map[Iam]bacnet.Address{}
+	set := map[Iam]bacnet.BACnetAddress{}
 	for {
 		select {
 		case <-timer.C:
@@ -242,14 +242,18 @@ func (c *Client) WhoIs(data WhoIs, timeout time.Duration) ([]bacnet.Device, erro
 					//the IAM response is in broadcast mode, we might
 					//receive an answer triggered by another whois
 					if data.High != nil && data.Low != nil {
-						if iam.ObjectID.Instance >= bacnet.ObjectInstance(*data.Low) &&
-							iam.ObjectID.Instance <= bacnet.ObjectInstance(*data.High) {
+						if iam.ObjectID.Instance >= bacnet.BACnetObjectIdentifier(*data.Low) &&
+							iam.ObjectID.Instance <= bacnet.BACnetObjectIdentifier(*data.High) {
+							/* broken with current changes
 							addr := bacnet.AddressFromUDP(r.src)
 							set[*iam] = *addr
+							*/
 						}
 					} else {
+						/* broken with current changes
 						addr := bacnet.AddressFromUDP(r.src)
 						set[*iam] = *addr
+						*/
 					}
 
 				}
@@ -265,10 +269,12 @@ func (c *Client) ReadProperty(ctx context.Context, device bacnet.Device, readPro
 		Version:     Version1,
 		Control:     0b00000100,
 		Destination: &device.Addr,
+		/* broken with current changes
 		Source: bacnet.AddressFromUDP(net.UDPAddr{
 			IP:   c.ipAddress,
 			Port: c.udpPort,
 		}),
+		*/
 		HopCount: 255,
 		ADPU: &APDU{
 			DataType:    ConfirmedServiceRequest,
@@ -307,10 +313,12 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 		Version:     Version1,
 		Control:     0b00000100,
 		Destination: &device.Addr,
+		/* broken with current changes
 		Source: bacnet.AddressFromUDP(net.UDPAddr{
 			IP:   c.ipAddress,
 			Port: c.udpPort,
 		}),
+		*/
 		HopCount: 255,
 		ADPU: &APDU{
 			DataType:    ConfirmedServiceRequest,
@@ -342,21 +350,23 @@ func (c *Client) WriteProperty(ctx context.Context, device bacnet.Device, writeP
 }
 
 func (c *Client) send(npdu *NPDU) (int, error) {
-	bvlc := &BVLC{
-		Type:     TypeBacnetIP,
-		Function: BacFuncUnicast,
-		NPDU:     npdu,
-	}
-	bytes, err := bvlc.MarshalBinary()
-	if err != nil {
-		return 0, err
-	}
-	if npdu.Destination == nil {
-		return 0, fmt.Errorf("destination bacnet address should be not nil to send unicast")
-	}
-	addr := bacnet.UDPFromAddress(*npdu.Destination)
-	return c.udp.WriteToUDP(bytes, &addr)
-
+	/*
+		bvlc := &BVLC{
+			Type:     TypeBacnetIP,
+			Function: BacFuncUnicast,
+			NPDU:     npdu,
+		}
+		bytes, err := bvlc.MarshalBinary()
+		if err != nil {
+			return 0, err
+		}
+		if npdu.Destination == nil {
+			return 0, fmt.Errorf("destination bacnet address should be not nil to send unicast")
+		}
+		addr := bacnet.UDPFromAddress(*npdu.Destination)
+		return c.udp.WriteToUDP(bytes, &addr)
+	*/
+	return 0, errors.New("broken implementation")
 }
 
 func (c *Client) broadcast(npdu *NPDU) (int, error) {
