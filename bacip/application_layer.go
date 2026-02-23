@@ -98,7 +98,26 @@ func (ae *ApplicationEntity) getClientTransaction(id *TransactionId) *ClientTran
 func (ae *ApplicationEntity) addClientTransaction(t *ClientTransaction) {
 	ae.clientTransactionsMutex.Lock()
 	defer ae.clientTransactionsMutex.Unlock()
+	for i := range ae.ClientTransactions {
+		if ae.ClientTransactions[i] == nil {
+			ae.ClientTransactions[i] = t
+			return
+		}
+	}
 	ae.ClientTransactions = append(ae.ClientTransactions, t)
+}
+
+func (ae *ApplicationEntity) removeClientTransaction(id *TransactionId) *ClientTransaction {
+	ae.clientTransactionsMutex.Lock()
+	defer ae.clientTransactionsMutex.Unlock()
+	for i := range ae.ClientTransactions {
+		if ae.ClientTransactions[i].Id.Equal(id) {
+			result := ae.ClientTransactions[i]
+			ae.ClientTransactions[i] = nil
+			return result
+		}
+	}
+	return nil
 }
 
 type ConfServFlags struct {
@@ -226,6 +245,48 @@ func (e *ServerNetworkTransactionEvent) Exec() {
 	}
 }
 
+type ClientNetworkTransactionEvent struct {
+	indication  *NPDUIndication
+	transaction *ClientTransaction
+	header      PDUHeader
+	payload     []byte
+}
+
+func (e *ClientNetworkTransactionEvent) Exec() {
+	switch e.header.GetType() {
+	case SimpleAck:
+		header, ok := e.header.(*SimpleAckHeader)
+		if !ok {
+			logger.Error("wrong header type for SimpleAck")
+			return
+		}
+		e.transaction.HandleSimpleAckPdu(e.indication, header)
+	case ComplexAck:
+		header, ok := e.header.(*ComplexAckHeader)
+		if !ok {
+			logger.Error("wrong header type for ComplexAck")
+			return
+		}
+		e.transaction.HandleComplexAckPdu(e.indication, header, e.payload)
+	case Error:
+		header, ok := e.header.(*ErrorHeader)
+		if !ok {
+			logger.Error("wrong header type for Error")
+			return
+		}
+		e.transaction.HandleErrorPdu(e.indication, header, e.payload)
+	case Reject:
+		header, ok := e.header.(*RejectHeader)
+		if !ok {
+			logger.Error("wrong header type for Reject")
+			return
+		}
+		e.transaction.HandleRejectPdu(e.indication, int(header.RejectReason))
+	default:
+		logger.Trace("Invalid PDU received for a client transaction: ", e.header.GetType().String())
+	}
+}
+
 func (ae *ApplicationEntity) HandleNUNITDATAIndication(indication *NPDUIndication) {
 	if len(indication.apdu) < 1 {
 		logger.Error("N-UNITDATA.indication handling: empty APDU")
@@ -233,8 +294,18 @@ func (ae *ApplicationEntity) HandleNUNITDATAIndication(indication *NPDUIndicatio
 	}
 	pduType := PDUType((indication.apdu[0] & pduTypeMask) >> pduTypeShift)
 	switch pduType {
-	case SimpleAck, ComplexAck, Error, Reject:
+	case SimpleAck:
 		// client
+		ae.handleSimpleAckPDU(indication)
+	case ComplexAck:
+		// client
+		ae.handleComplexAckPDU(indication)
+	case Error:
+		// client
+		ae.handleErrorPDU(indication)
+	case Reject:
+		// client
+		ae.handleRejectPDU(indication)
 	case ConfirmedServiceRequest:
 		// server
 		ae.handleConfirmedServiceRequestPDU(indication)
@@ -428,16 +499,16 @@ func (ae *ApplicationEntity) handleUnconfirmedServiceRequestPDU(indication *NPDU
 	return errors.New("not implemented")
 }
 
-type SimpleACKHeader struct {
+type SimpleAckHeader struct {
 	InvokeId      uint
 	ServiceChoice int
 }
 
-func (h *SimpleACKHeader) GetType() PDUType {
+func (h *SimpleAckHeader) GetType() PDUType {
 	return SimpleAck
 }
 
-func (h *SimpleACKHeader) Marshal() ([]byte, error) {
+func (h *SimpleAckHeader) Marshal() ([]byte, error) {
 	return []byte{
 		uint8(SimpleAck << 4),
 		uint8(h.InvokeId),
@@ -450,7 +521,7 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *NPDUIndication) erro
 	if len(apdu) < 3 {
 		return fmt.Errorf("SimpleACK-PDU too short (len: %d)", len(apdu))
 	}
-	header := SimpleACKHeader{
+	header := SimpleAckHeader{
 		InvokeId:      uint(apdu[1]),
 		ServiceChoice: int(apdu[2]),
 	}
@@ -462,7 +533,7 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *NPDUIndication) erro
 		// Drop message
 		return nil
 	}
-	transaction.HandleSimpleAckPdu(&header)
+	transaction.HandleSimpleAckPdu(indication, &header)
 
 	return errors.New("not implemented")
 }
@@ -519,17 +590,18 @@ func (ae *ApplicationEntity) handleComplexAckPDU(indication *NPDUIndication) err
 	transactionId := NewTransactionId(indication.source, header.InvokeId)
 	transaction := ae.getClientTransaction(&transactionId)
 	if transaction == nil {
-		if header.Flags.SegmentedRequest {
-			// client state machine IDLE state UnexpectedSegmentInfoReceived
-			// TODO issue a N-UNITDATA.request to transmit a AbortPDU
-			return nil
-		}
-		// else: client state machine IDLE state UnexpectedPDU_Received
+		// UnexpectedPDU_Received
 		// Drop message
 		return nil
 	}
-	transaction.HandleComplexAckPdu(indication, &header, serviceAck)
-	return errors.New("not implemented")
+	event := &ClientNetworkTransactionEvent{
+		indication:  indication,
+		header:      &header,
+		transaction: transaction,
+		payload:     serviceAck,
+	}
+	transaction.PushEvent(event)
+	return nil
 }
 
 type SegmentAckHeader struct {
@@ -565,11 +637,15 @@ func (ae *ApplicationEntity) handleSegmentAckPDU(indication *NPDUIndication) err
 	if header.Flags.SentByServer {
 		transaction := ae.getClientTransaction(&transactionId)
 		if transaction == nil {
-			// client state machine IDLE state UnexpectedSegmentInfoReceived
-			// TODO issue a N-UNITDATA.request to transmit a AbortPDU
 			return nil
 		}
-		transaction.HandleSegmentAckPdu(&header)
+		event := &ClientNetworkTransactionEvent{
+			indication:  indication,
+			header:      &header,
+			transaction: transaction,
+			payload:     nil,
+		}
+		transaction.PushEvent(event)
 	} else {
 		transaction := ae.getServerTransaction(&transactionId)
 		if transaction == nil {
@@ -615,9 +691,14 @@ func (ae *ApplicationEntity) handleErrorPDU(indication *NPDUIndication) error {
 		return nil
 	}
 
-	transaction.HandleErrorPdu(&header, errorData)
-
-	return errors.New("not implemented")
+	event := &ClientNetworkTransactionEvent{
+		indication:  indication,
+		header:      &header,
+		transaction: transaction,
+		payload:     errorData,
+	}
+	transaction.PushEvent(event)
+	return nil
 }
 
 type RejectHeader struct {
@@ -650,9 +731,15 @@ func (ae *ApplicationEntity) handleRejectPDU(indication *NPDUIndication) error {
 		return nil
 	}
 
-	transaction.HandleRejectPdu(rejectReason)
+	event := &ClientNetworkTransactionEvent{
+		indication:  indication,
+		header:      &RejectHeader{InvokeId: uint8(invokeId), RejectReason: uint8(rejectReason)},
+		transaction: transaction,
+		payload:     nil,
+	}
+	transaction.PushEvent(event)
 
-	return errors.New("not implemented")
+	return nil
 }
 
 type AbortHeader struct {
@@ -690,8 +777,18 @@ func (ae *ApplicationEntity) handleAbortPDU(indication *NPDUIndication) error {
 			// Drop message
 			return nil
 		}
-		return errors.New("not implemented")
-		//transaction.HandleAbortPdu(reason)
+		event := &ClientNetworkTransactionEvent{
+			indication: indication,
+			header: &AbortHeader{
+				SentByServer: sentByServer,
+				InvokeId:     uint8(invokeId),
+				AbortReason:  uint8(reason),
+			},
+			transaction: transaction,
+			payload:     nil,
+		}
+		transaction.PushEvent(event)
+		return nil
 	} else {
 		transaction := ae.getServerTransaction(&transactionId)
 		if transaction == nil {
