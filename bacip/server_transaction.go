@@ -148,10 +148,11 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 			abortBytes, err := abortHeader.Marshal()
 			if err != nil {
 				logger.Error("could not marshal abort header: ", err)
-			}
-			err = tr.applicationEntity.networkEntity.NUnitDataRequest(indication.source, false, 0, abortBytes)
-			if err != nil {
-				logger.Error("could not send Abort PDU: ", err)
+			} else {
+				err = tr.applicationEntity.networkEntity.NUnitDataRequest(indication.source, false, 0, abortBytes)
+				if err != nil {
+					logger.Error("could not send Abort PDU: ", err)
+				}
 			}
 			tr.applicationEntity.removeServerTransaction(tr.Id)
 		}

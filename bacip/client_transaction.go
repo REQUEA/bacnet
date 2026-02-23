@@ -1,11 +1,13 @@
 package bacip
 
+import "github.com/REQUEA/bacnet"
+
 type ClientTransactionState interface {
-	HandleSimpleAckPdu(*SimpleACKHeader)
+	HandleSimpleAckPdu(*NPDUIndication, *SimpleAckHeader)
 	HandleComplexAckPdu(*NPDUIndication, *ComplexAckHeader, []byte)
-	HandleErrorPdu(*ErrorHeader, []byte)
-	HandleRejectPdu(int)
-	HandleSegmentAckPdu(*SegmentAckHeader)
+	HandleErrorPdu(*NPDUIndication, *ErrorHeader, []byte)
+	HandleRejectPdu(*NPDUIndication, int)
+	HandleSegmentAckPdu(*NPDUIndication, *SegmentAckHeader)
 	HandleAbortPdu(int)
 }
 
@@ -26,9 +28,9 @@ func NewClientTransaction(id *TransactionId) ClientTransaction {
 	return result
 }
 
-func (t *ClientTransaction) HandleSimpleAckPdu(header *SimpleACKHeader) {
+func (t *ClientTransaction) HandleSimpleAckPdu(indication *NPDUIndication, header *SimpleAckHeader) {
 	if t.state != nil {
-		t.state.HandleSimpleAckPdu(header)
+		t.state.HandleSimpleAckPdu(indication, header)
 	}
 }
 
@@ -42,21 +44,21 @@ func (t *ClientTransaction) HandleComplexAckPdu(
 	}
 }
 
-func (t *ClientTransaction) HandleErrorPdu(header *ErrorHeader, errorData []byte) {
+func (t *ClientTransaction) HandleErrorPdu(indication *NPDUIndication, header *ErrorHeader, errorData []byte) {
 	if t.state != nil {
-		t.state.HandleErrorPdu(header, errorData)
+		t.state.HandleErrorPdu(indication, header, errorData)
 	}
 }
 
-func (t *ClientTransaction) HandleRejectPdu(reason int) {
+func (t *ClientTransaction) HandleRejectPdu(indication *NPDUIndication, reason int) {
 	if t.state != nil {
-		t.state.HandleRejectPdu(reason)
+		t.state.HandleRejectPdu(indication, reason)
 	}
 }
 
-func (t *ClientTransaction) HandleSegmentAckPdu(header *SegmentAckHeader) {
+func (t *ClientTransaction) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
 	if t.state != nil {
-		t.state.HandleSegmentAckPdu(header)
+		t.state.HandleSegmentAckPdu(indication, header)
 	}
 }
 
@@ -74,14 +76,59 @@ type ClientTransactionIdleState struct {
 	transaction *ClientTransaction
 }
 
-// All the PDUs are handled directly from the ApplicationEntity
-func (s *ClientTransactionIdleState) HandleSimpleAckPdu(*SimpleACKHeader) {}
-func (s *ClientTransactionIdleState) HandleComplexAckPdu(*NPDUIndication, *ComplexAckHeader, []byte) {
+func (s *ClientTransactionIdleState) HandleSimpleAckPdu(*NPDUIndication, *SimpleAckHeader) {
+	// never called
 }
-func (s *ClientTransactionIdleState) HandleErrorPdu(*ErrorHeader, []byte)   {}
-func (s *ClientTransactionIdleState) HandleRejectPdu(int)                   {}
-func (s *ClientTransactionIdleState) HandleSegmentAckPdu(*SegmentAckHeader) {}
-func (s *ClientTransactionIdleState) HandleAbortPdu(int)                    {}
+
+func (s *ClientTransactionIdleState) HandleComplexAckPdu(
+	indication *NPDUIndication,
+	header *ComplexAckHeader,
+	serviceRequest []byte,
+) {
+	if header.Flags.SegmentedRequest {
+		tr := s.transaction
+		// UnexpectedSegmentInfoReceived
+		abortHeader := &AbortHeader{
+			SentByServer: false,
+			InvokeId:     uint8(header.InvokeId),
+			AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+		}
+		abortBytes, err := abortHeader.Marshal()
+		if err != nil {
+			logger.Error("could not marshal abort header: ", err)
+			tr.applicationEntity.removeClientTransaction(tr.Id)
+			return
+		}
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+			indication.source,
+			false,
+			NormalPriority,
+			abortBytes,
+		)
+		if err != nil {
+			logger.Error("could not send Abort PDU: ", err)
+		}
+		return
+	}
+}
+
+func (s *ClientTransactionIdleState) HandleErrorPdu(*NPDUIndication, *ErrorHeader, []byte) {
+	// never called
+}
+
+func (s *ClientTransactionIdleState) HandleRejectPdu(*NPDUIndication, int) {
+	// never called
+}
+
+func (s *ClientTransactionIdleState) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
+	if header.Flags.SentByServer {
+		// client state machine IDLE state UnexpectedSegmentInfoReceived
+		// TODO issue a N-UNITDATA.request to transmit a AbortPDU
+	}
+}
+func (s *ClientTransactionIdleState) HandleAbortPdu(int) {
+	// never called
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // AWAIT_CONFIRMATION State
@@ -91,11 +138,12 @@ type ClientTransactionAwaitConfirmationState struct {
 	transaction *ClientTransaction
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleSimpleAckPdu(*SimpleACKHeader) {
+func (s *ClientTransactionAwaitConfirmationState) HandleSimpleAckPdu(*NPDUIndication, *SimpleAckHeader) {
 	// SimpleACK_Received
-	// TODO: stop RequestTimer
+	tr := s.transaction
+	tr.RequestTimer.Stop()
 	// TODO: issue a CONF_SERV.confirm to the local application
-	// TODO: discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
 func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
@@ -108,10 +156,26 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 		if header.SequenceNumber == 0 {
 			// SegmentedComplexACK_Received
 			// TODO: save PDU segment
-			// TODO: stop RequestTimer
-			// TODO: compute ActualWindowSize
-			// TODO: issue N-UNITDATA.request to send SegmentACK PDU
-			// TODO: start SegmentTimer
+			tr.RequestTimer.Stop()
+			// TODO: refine the calculation ActualWindowSize ('based [...] and on local conditions')
+			tr.ActualWindowSize = min(tr.MaxSegmentsAccepted, header.ProposedWindowSize)
+			segmentAckHeader := &SegmentAckHeader{
+				Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: false},
+				InvokeId:         tr.Id.InvokeId,
+				SequenceNumber:   header.SequenceNumber,
+				ActualWindowSize: tr.ActualWindowSize,
+			}
+			segmentAckBytes, err := segmentAckHeader.Marshal()
+			if err != nil {
+				logger.Error("could not marshal segment-ack header: ", err)
+			} else {
+				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+					indication.source, false, NormalPriority, segmentAckBytes)
+				if err != nil {
+					logger.Error("could not send SegmentAck PDU: ", err)
+				}
+			}
+			tr.SegmentTimer.Start()
 			tr.LastSequenceNumber = 0
 			tr.InitialSequenceNumber = 0
 			tr.DuplicateCount = 0
@@ -119,22 +183,44 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 		}
 	} else {
 		// UnsegmentedComplexACK_Received
-		// TODO: stop RequestTimer
+		tr.RequestTimer.Stop()
 		// TODO: issue CONF_SERV.confirm to the local application
-		// TODO: discard transaction
+		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleErrorPdu(*ErrorHeader, []byte) {
+func (s *ClientTransactionAwaitConfirmationState) HandleErrorPdu(indication *NPDUIndication, header *ErrorHeader, errorData []byte) {
 	// ErrorPDU_Received
-	// TODO: Stop RequestTimer
-	// TODO: issue N-UNITDATA.requeste to send Abort PDU
-	// TODO: discard transaction
+	// Stop RequestTimer
+	tr := s.transaction
+	tr.RequestTimer.Stop()
+	// TODO: send CONF_SERV.confirm(-) to user layer
+	// discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(int)                   {}
-func (s *ClientTransactionAwaitConfirmationState) HandleSegmentAckPdu(*SegmentAckHeader) {}
-func (s *ClientTransactionAwaitConfirmationState) HandleAbortPdu(int)                    {}
+func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(*NPDUIndication, int) {
+	// RejectPDU_Received
+	tr := s.transaction
+	tr.RequestTimer.Stop()
+	// TODO: send REJECT.indication to user layer
+	// discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
+
+func (s *ClientTransactionAwaitConfirmationState) HandleSegmentAckPdu(*NPDUIndication, *SegmentAckHeader) {
+	// SegmentACK_Received
+	// Drop PDU
+}
+
+func (s *ClientTransactionAwaitConfirmationState) HandleAbortPdu(reason int) {
+	// AbortPDU_Received
+	tr := s.transaction
+	tr.RequestTimer.Stop()
+	// TODO: send ABORT.indication to user layer
+	// discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // SEGMENTED_REQUEST State
@@ -144,19 +230,41 @@ type ClientTransactionSegmentedRequestState struct {
 	transaction *ClientTransaction
 }
 
-func (s *ClientTransactionSegmentedRequestState) HandleSimpleAckPdu(*SimpleACKHeader) {
+func (s *ClientTransactionSegmentedRequestState) HandleSimpleAckPdu(
+	indication *NPDUIndication,
+	header *SimpleAckHeader,
+) {
 	tr := s.transaction
 	if tr.SentAllSegments {
 		// SimpleACK_Received
-		// TODO: stop SegmentTimer
+		// Stop SegmentTimer
+		tr.SegmentTimer.Stop()
 		// TODO: issue CONF_SERV.confirm to local application
-		// TODO: discard transaction
+		// Discard transaction
+		tr.applicationEntity.removeClientTransaction(tr.Id)
 	} else {
 		// UnexpectedPDU_Received
-		// TODO: stop SegmentTimer
-		// TODO: issue N-UNITDATA.request to send a AbortPDU
+		// Stop SegmentTimer
+		tr.SegmentTimer.Stop()
+		// Issue N-UNITDATA.request to send a AbortPDU
+		header := &AbortHeader{
+			SentByServer: false,
+			InvokeId:     uint8(tr.Id.InvokeId),
+			AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+		}
+		abortBytes, err := header.Marshal()
+		if err != nil {
+			logger.Error("could not marshal abort header: ", err)
+		} else {
+			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+				indication.source, false, NormalPriority, abortBytes)
+			if err != nil {
+				logger.Error("could not send Abort PDU: ", err)
+			}
+		}
 		// TODO: issue a ABORT.indication to the local application program
-		// TODO: discard transaction
+		// Discard transaction
+		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
 func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
@@ -170,10 +278,31 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 			if tr.SentAllSegments {
 				// SegmentedComplexACK_Received
 				// TODO: Save PDU segment
-				// TODO: stop SegmentTimer
-				// TODO: compute ActualWindowSize
-				// TODO: issue N-UNITDATA.request to send a SegmentACK PDU
-				// TODO: start SegmentTimer
+				tr.SegmentTimer.Stop()
+				// Compute ActualWindowSize
+				// TODO: improve calculation
+				tr.ActualWindowSize = min(tr.MaxSegmentsAccepted, header.ProposedWindowSize)
+				// Issue N-UNITDATA.request to send a SegmentACK PDU
+				segmentAckHeader := &SegmentAckHeader{
+					Flags: SegmentAckFlags{
+						NegativeAck:  false,
+						SentByServer: false,
+					},
+					InvokeId:         tr.Id.InvokeId,
+					SequenceNumber:   header.SequenceNumber,
+					ActualWindowSize: tr.ActualWindowSize,
+				}
+				segmentAckBytes, err := segmentAckHeader.Marshal()
+				if err != nil {
+					logger.Error("could not marshal segment ack header: ", err)
+				} else {
+					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+						indication.source, false, NormalPriority, segmentAckBytes)
+					if err != nil {
+						logger.Error("could not send SegmentACK PDU: ", err)
+					}
+				}
+				tr.SegmentTimer.Start()
 				tr.LastSequenceNumber = 0
 				tr.InitialSequenceNumber = 0
 				tr.DuplicateCount = 0
@@ -181,48 +310,98 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 			}
 		} else {
 			// UnexpectedPDU_Received
-			// TODO: stop SegmentTimer
-			// TODO: issue N-UNITDATA.request to send a AbortPDU
+			tr.SegmentTimer.Stop()
+			// Issue N-UNITDATA.request to send a AbortPDU
+			abortHeader := &AbortHeader{
+				SentByServer: false,
+				InvokeId:     uint8(tr.Id.InvokeId),
+				AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+			}
+			abortBytes, err := abortHeader.Marshal()
+			if err != nil {
+				logger.Error("could not marshal abort header: ", err)
+			} else {
+				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+					indication.source, false, NormalPriority, abortBytes)
+				if err != nil {
+					logger.Error("could not send Abort PDU: ", err)
+				}
+			}
 			// TODO: issue a ABORT.indication to the local application program
-			// TODO: discard transaction
+			// Discard transaction
+			tr.applicationEntity.removeClientTransaction(tr.Id)
 		}
 	} else {
 		if tr.SentAllSegments {
 			// UnsegmentedComplexACK_Received
-			// TODO: Stop SegmentTimer
+			tr.SegmentTimer.Stop()
 			// TODO: issue CONF_SERV.confirm to local application
-			// TODO: discard transaction
+			tr.applicationEntity.removeClientTransaction(tr.Id)
 		} else {
 			// UnexpectedPDU_Received
-			// TODO: stop SegmentTimer
-			// TODO: issue N-UNITDATA.request to send a AbortPDU
+			tr.SegmentTimer.Stop()
+			// Issue N-UNITDATA.request to send a AbortPDU
+			abortHeader := &AbortHeader{
+				SentByServer: false,
+				InvokeId:     uint8(tr.Id.InvokeId),
+				AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+			}
+			abortBytes, err := abortHeader.Marshal()
+			if err != nil {
+				logger.Error("could not marshal abort header: ", err)
+			} else {
+				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+					indication.source, false, NormalPriority, abortBytes)
+				if err != nil {
+					logger.Error("could not send Abort PDU: ", err)
+				}
+			}
 			// TODO: issue a ABORT.indication to the local application program
-			// TODO: discard transaction
+			tr.applicationEntity.removeClientTransaction(tr.Id)
 		}
 	}
 }
-func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(*ErrorHeader, []byte) {
+func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(indication *NPDUIndication, header *ErrorHeader, errorData []byte) {
 	tr := s.transaction
 	if tr.SentAllSegments {
 		// ErrorPDU_Received
-		// TODO: Stop SegmentTimer
-		// TODO: issue CONF_SERV.confirm to the local application
-		// TODO: discard transaction
+		tr.SegmentTimer.Stop()
+		// TODO: issue CONF_SERV.confirm(-) to the local application
+		// Discard transaction
+		tr.applicationEntity.removeClientTransaction(tr.Id)
 	} else {
 		// UnexpectedPDU_Received
-		// TODO: stop SegmentTimer
-		// TODO: issue N-UNITDATA.request to send a AbortPDU
+		tr.SegmentTimer.Stop()
+		// Issue N-UNITDATA.request to send a AbortPDU
+		abortHeader := &AbortHeader{
+			SentByServer: false,
+			InvokeId:     uint8(tr.Id.InvokeId),
+			AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+		}
+		abortBytes, err := abortHeader.Marshal()
+		if err != nil {
+			logger.Error("could not marshal abort header: ", err)
+		} else {
+			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+				indication.source, false, NormalPriority, abortBytes)
+			if err != nil {
+				logger.Error("could not send Abort PDU: ", err)
+			}
+		}
 		// TODO: issue a ABORT.indication to the local application program
-		// TODO: discard transaction
+		// Discard transaction
+		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
-func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(int) {
+func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(*NPDUIndication, int) {
 	// RejectPDU_Received
-	// TODO: stop SegmentTimer
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
 	// TODO: issue a REJECT.indication to the local application
-	// TODO: discard transaction
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
-func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(header *SegmentAckHeader) {
+func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
 	tr := s.transaction
 	if tr.InWindow(header.SequenceNumber, tr.InitialSequenceNumber) {
 		if len(tr.segments) > 0 { // TODO this is not correct, check the amount of segments remaining to send
@@ -230,22 +409,25 @@ func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(header *Seg
 			tr.InitialSequenceNumber = (header.SequenceNumber + 1) % 256
 			tr.ActualWindowSize = header.ActualWindowSize
 			tr.SegmentRetryCount = 0
-			// TODO: call FillWindows to send segmentsm
-			// TODO: restart SegmentTimer
+			// TODO: call FillWindow to send segments
+			tr.SegmentTimer.Restart(false)
 		} else {
 			// FinalACK_Received
-			// TODO: Stop SegmentTimer
+			tr.SegmentTimer.Stop()
 			tr.state = &ClientTransactionAwaitConfirmationState{tr}
 		}
 	} else {
-		// TODO: restart SegmentTimer
+		// DuplicateACK_Received
+		tr.SegmentTimer.Restart(false)
 	}
 }
 func (s *ClientTransactionSegmentedRequestState) HandleAbortPdu(int) {
 	// AbortPDU_Received
-	// TODO: stop SegmentTimer
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
 	// TODO: issue ABORT.indication to local application
-	// TODO: discard transaction
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -256,11 +438,32 @@ type ClientTransactionSegmentedConfState struct {
 	transaction *ClientTransaction
 }
 
-func (s *ClientTransactionSegmentedConfState) HandleSimpleAckPdu(*SimpleACKHeader) {
+func (s *ClientTransactionSegmentedConfState) HandleSimpleAckPdu(
+	indication *NPDUIndication,
+	header *SimpleAckHeader,
+) {
 	// UnexpectedPDU_Received
-	// TODO: stop SegmentTimer
-	// TODO: issue a N-UNITDATA.request to send Abort PDU
-	// TODO: discard transaction
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
+	// Issue a N-UNITDATA.request to send Abort PDU
+	abortHeader := &AbortHeader{
+		SentByServer: false,
+		InvokeId:     uint8(tr.Id.InvokeId),
+		AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+	}
+	abortBytes, err := abortHeader.Marshal()
+	if err != nil {
+		logger.Error("could not marshal abort header: ", err)
+	} else {
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+			indication.source, false, NormalPriority, abortBytes)
+		if err != nil {
+			logger.Error("could not send Abort PDU: ", err)
+		}
+	}
+	// TODO: send ABORT.indication to user layer (InvalidApduInThisState)
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
 func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
@@ -280,77 +483,227 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 					tr.LastSequenceNumber = (tr.LastSequenceNumber + 1) % 256
 					tr.InitialSequenceNumber = tr.LastSequenceNumber
 					tr.DuplicateCount = 0
-					// TODO issue N-UNITDATA.request to send SegmentACK PDU
-					// TODO: Restart SegmentTimer
+					// Issue N-UNITDATA.request to send SegmentACK PDU
+					segmentAckHeader := &SegmentAckHeader{
+						Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: false},
+						InvokeId:         tr.Id.InvokeId,
+						SequenceNumber:   header.SequenceNumber,
+						ActualWindowSize: tr.ActualWindowSize,
+					}
+					segmentAckBytes, err := segmentAckHeader.Marshal()
+					if err != nil {
+						logger.Error("could not marshal segment ack header: ", err)
+					} else {
+						err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+							indication.source, false, NormalPriority, segmentAckBytes)
+						if err != nil {
+							logger.Error("could not send SegmentACK PDU: ", err)
+						}
+					}
+					tr.SegmentTimer.Restart(false)
 				} else {
 					// NewSegmentReceived
 					// TODO: save PDU segment
 					tr.LastSequenceNumber = (tr.LastSequenceNumber + 1) % 256
-					// TODO: restart SegmentTimer
-					// TODO: issue N-RELEASE.request to inform datalink layer
+					tr.SegmentTimer.Restart(false)
+					// Issue N-RELEASE.request to inform datalink layer
+					err := tr.applicationEntity.networkEntity.NReleaseRequest(indication.source)
+					if err != nil {
+						logger.Error("could not send N-RELEASE.request: ", err)
+					}
 				}
 			} else {
 				// LastSegmentOfComplexACK_Received
 				// TODO: save PDU segment
-				// TODO: stop SegmentTimer
-				// TODO: issue N-UNITDATA.request to send SegmentACK PDU
+				tr.SegmentTimer.Stop()
+				// Issue N-UNITDATA.request to send SegmentACK PDU
+				segmentAckHeader := &SegmentAckHeader{
+					Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: false},
+					InvokeId:         tr.Id.InvokeId,
+					SequenceNumber:   header.SequenceNumber,
+					ActualWindowSize: tr.ActualWindowSize,
+				}
+				segmentAckBytes, err := segmentAckHeader.Marshal()
+				if err != nil {
+					logger.Error("could not marshal segment ack header: ", err)
+				} else {
+					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+						indication.source, false, NormalPriority, segmentAckBytes)
+					if err != nil {
+						logger.Error("could not send SegmentACK PDU: ", err)
+					}
+				}
 				// TODO: issue CONF_SERV.confirm to the local application
-				// TODO: discard transaction
+				// Discard transaction
+				tr.applicationEntity.removeClientTransaction(tr.Id)
 			}
 		} else {
 			if tr.DuplicateInWindow(header.SequenceNumber) {
 				if tr.DuplicateCount < Ndup {
 					// DuplicateSegmentReceived
 					// Drop message
-					// TODO: restart SegmentTimer
+					tr.SegmentTimer.Restart(false)
 					tr.DuplicateCount++
 				} else {
 					// TooManyDuplicateSegmentsReceived
 					// Drop message
-					// TODO: issue a N-UNITDATA.request to send SegmentACK PDU
-					// TODO: restart SegmentTimer
+					// Issue a N-UNITDATA.request to send SegmentACK PDU
+					segmentAckHeader := &SegmentAckHeader{
+						Flags:            SegmentAckFlags{NegativeAck: true, SentByServer: false},
+						InvokeId:         tr.Id.InvokeId,
+						SequenceNumber:   tr.LastSequenceNumber,
+						ActualWindowSize: tr.ActualWindowSize,
+					}
+					segmentAckBytes, err := segmentAckHeader.Marshal()
+					if err != nil {
+						logger.Error("could not marshal segment ack header: ", err)
+					} else {
+						err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+							indication.source, false, NormalPriority, segmentAckBytes)
+						if err != nil {
+							logger.Error("could not send SegmentACK PDU: ", err)
+						}
+					}
+					tr.SegmentTimer.Restart(false)
 					tr.DuplicateCount = 0
 				}
 			} else {
 				// SegmentReceivedOutOfOrder
 				// Drop message
-				// TODO: issue N-UNITDATA.request to send SegmentACK PDU
-				// TODO: restart SegmentTimer
+				// Issue N-UNITDATA.request to send SegmentACK PDU
+				segmentAckHeader := &SegmentAckHeader{
+					Flags:            SegmentAckFlags{NegativeAck: true, SentByServer: false},
+					InvokeId:         tr.Id.InvokeId,
+					SequenceNumber:   tr.LastSequenceNumber,
+					ActualWindowSize: tr.ActualWindowSize,
+				}
+				segmentAckBytes, err := segmentAckHeader.Marshal()
+				if err != nil {
+					logger.Error("could not marshal segment ack header: ", err)
+				} else {
+					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+						indication.source, false, NormalPriority, segmentAckBytes)
+					if err != nil {
+						logger.Error("could not send SegmentACK PDU: ", err)
+					}
+				}
+				tr.SegmentTimer.Restart(false)
 				tr.InitialSequenceNumber = tr.LastSequenceNumber
 				tr.DuplicateCount = 0
 			}
 		}
 	} else {
 		// UnexpectedPDU_Received
-		// TODO: stop SegmentTimer
-		// TODO: issue a N-UNITDATA.request to send Abort PDU
-		// TODO: discard transaction
+		tr.SegmentTimer.Stop()
+		// Issue a N-UNITDATA.request to send Abort PDU
+		abortHeader := &AbortHeader{
+			SentByServer: false,
+			InvokeId:     uint8(tr.Id.InvokeId),
+			AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+		}
+		abortBytes, err := abortHeader.Marshal()
+		if err != nil {
+			logger.Error("could not marshal abort header: ", err)
+		} else {
+			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+				indication.source, false, NormalPriority, abortBytes)
+			if err != nil {
+				logger.Error("could not send Abort PDU: ", err)
+			}
+		}
+		// TODO: send ABORT.indication to the user layer
+		// Discard transaction
+		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
-func (s *ClientTransactionSegmentedConfState) HandleErrorPdu(*ErrorHeader, []byte) {
+
+func (s *ClientTransactionSegmentedConfState) HandleErrorPdu(
+	indication *NPDUIndication,
+	header *ErrorHeader,
+	payload []byte,
+) {
 	// UnexpectedPDU_Received
-	// TODO: stop SegmentTimer
-	// TODO: issue a N-UNITDATA.request to send Abort PDU
-	// TODO: discard transaction
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
+	// Issue a N-UNITDATA.request to send Abort PDU
+	abortHeader := &AbortHeader{
+		SentByServer: false,
+		InvokeId:     uint8(tr.Id.InvokeId),
+		AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+	}
+	abortBytes, err := abortHeader.Marshal()
+	if err != nil {
+		logger.Error("could not marshal abort header: ", err)
+	} else {
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+			indication.source, false, NormalPriority, abortBytes)
+		if err != nil {
+			logger.Error("could not send Abort PDU: ", err)
+		}
+	}
+	// TODO: send ABORT.indication to the user layer
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionSegmentedConfState) HandleRejectPdu(int) {
+func (s *ClientTransactionSegmentedConfState) HandleRejectPdu(
+	indication *NPDUIndication,
+	reason int,
+) {
 	// UnexpectedPDU_Received
-	// TODO: stop SegmentTimer
-	// TODO: issue a N-UNITDATA.request to send Abort PDU
-	// TODO: discard transaction
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
+	// Issue a N-UNITDATA.request to send Abort PDU
+	abortHeader := &AbortHeader{
+		SentByServer: false,
+		InvokeId:     uint8(tr.Id.InvokeId),
+		AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+	}
+	abortBytes, err := abortHeader.Marshal()
+	if err != nil {
+		logger.Error("could not marshal abort header: ", err)
+	} else {
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+			indication.source, false, NormalPriority, abortBytes)
+		if err != nil {
+			logger.Error("could not send Abort PDU: ", err)
+		}
+	}
+	// TODO: send ABORT.indication to the user layer
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionSegmentedConfState) HandleSegmentAckPdu(*SegmentAckHeader) {
+func (s *ClientTransactionSegmentedConfState) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
 	// UnexpectedPDU_Received
-	// TODO: stop SegmentTimer
-	// TODO: issue a N-UNITDATA.request to send Abort PDU
-	// TODO: discard transaction
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
+	// Issue a N-UNITDATA.request to send Abort PDU
+	abortHeader := &AbortHeader{
+		SentByServer: false,
+		InvokeId:     uint8(tr.Id.InvokeId),
+		AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+	}
+	abortBytes, err := abortHeader.Marshal()
+	if err != nil {
+		logger.Error("could not marshal abort header: ", err)
+	} else {
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+			indication.source, false, NormalPriority, abortBytes)
+		if err != nil {
+			logger.Error("could not send Abort PDU: ", err)
+		}
+	}
+	// TODO: send ABORT.indication to the user layer
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionSegmentedConfState) HandleAbortPdu(int) {
+func (s *ClientTransactionSegmentedConfState) HandleAbortPdu(reason int) {
 	// AbortPDU_Received
-	// TODO: stop SegmentTimer
+	tr := s.transaction
+	tr.SegmentTimer.Stop()
 	// TODO: issue ABORT.indication to local application
-	// TODO: discard transaction
+	// Discard transaction
+	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
