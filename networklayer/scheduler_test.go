@@ -1,4 +1,4 @@
-package bacip
+package networklayer
 
 import "testing"
 

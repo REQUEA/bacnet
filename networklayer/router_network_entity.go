@@ -1,4 +1,4 @@
-package bacip
+package networklayer
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
 )
 
 type RouterNetworkEntity struct {

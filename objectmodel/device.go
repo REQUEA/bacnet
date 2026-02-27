@@ -1,4 +1,4 @@
-package bacip
+package objectmodel
 
 import "github.com/REQUEA/bacnet"
 
@@ -12,6 +12,10 @@ func NewDevice(deviceObject *DeviceObject) *Device {
 		deviceObject: deviceObject,
 		objects:      make([]Object, 0),
 	}
+}
+
+func (d *Device) DeviceObject() *DeviceObject {
+	return d.deviceObject
 }
 
 type DeviceObject struct {

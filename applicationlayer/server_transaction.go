@@ -1,10 +1,14 @@
-package bacip
+package applicationlayer
 
-import "github.com/REQUEA/bacnet"
+import (
+	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/networklayer"
+)
 
 type ServerTransactionState interface {
 	HandleUnconfirmedServiceRequestPdu()
-	HandleConfirmedServiceRequestPdu(*NPDUIndication, *ConfirmedServiceRequestHeader, []byte)
+	HandleConfirmedServiceRequestPdu(*networklayer.NPDUIndication, *ConfirmedServiceRequestHeader, []byte)
 	HandleSegmentAckPdu(*SegmentAckHeader)
 	HandleAbortPdu(int)
 	OnSegmentTimerFired()
@@ -29,7 +33,7 @@ func NewServerTransaction(id *TransactionId) ServerTransaction {
 }
 
 func (t *ServerTransaction) HandleConfirmedServiceRequestPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
 	serverRequest []byte,
 ) {
@@ -87,14 +91,20 @@ func (s *ServerTransactionIdleState) HandleSegmentAckPdu(*SegmentAckHeader) {}
 func (s *ServerTransactionIdleState) HandleAbortPdu(int) {}
 
 func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
 	serviceRequest []byte,
 ) {
 	tr := s.transaction
 	if !header.Flags.SegmentedRequest {
 		// ConfirmedUnsegmentedReceived
-		// TODO send CONF_SERV.indication to application
+		// send CONF_SERV.indication to application
+		apduInd := APDUIndication{
+			Source:        indication.Source,
+			ExpectedReply: indication.ExpectedReply,
+			Data:          serviceRequest,
+		}
+		tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
 		tr.RequestTimer.Start()
 		tr.state = &ServerTransactionAwaitResponseState{
 			transaction: tr,
@@ -121,7 +131,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 				return
 			}
 			tr.applicationEntity.networkEntity.NUnitDataRequest(
-				tr.Source, false, NormalPriority,
+				tr.Source, false, networklayer.NormalPriority,
 				segmentAckBytes,
 			)
 
@@ -149,7 +159,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 			if err != nil {
 				logger.Error("could not marshal abort header: ", err)
 			} else {
-				err = tr.applicationEntity.networkEntity.NUnitDataRequest(indication.source, false, 0, abortBytes)
+				err = tr.applicationEntity.networkEntity.NUnitDataRequest(indication.Source, false, 0, abortBytes)
 				if err != nil {
 					logger.Error("could not send Abort PDU: ", err)
 				}
@@ -158,7 +168,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 		}
 	} else {
 		// UnexpectedPDU_Received
-		err := tr.applicationEntity.networkEntity.NReleaseRequest(indication.source)
+		err := tr.applicationEntity.networkEntity.NReleaseRequest(indication.Source)
 		if err != nil {
 			logger.Error("N-RELEASE.request failed: ", err)
 		}
@@ -171,7 +181,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 		if err != nil {
 			logger.Error("could not marshal abort header: ", err)
 		}
-		err = tr.applicationEntity.networkEntity.NUnitDataRequest(indication.source, false, 0, abortBytes)
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(indication.Source, false, 0, abortBytes)
 		if err != nil {
 			logger.Error("could not send Abort PDU: ", err)
 		}
@@ -201,7 +211,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleSegmentAckPdu(*SegmentAck
 func (s *ServerTransactionSegmentedRequestState) HandleAbortPdu(int) {}
 
 func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
 	data []byte,
 ) {
@@ -241,7 +251,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 						return
 					}
 					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-						tr.Source, false, NormalPriority, headerBytes)
+						tr.Source, false, networklayer.NormalPriority, headerBytes)
 					if err != nil {
 						logger.Error("error when sending segment-ack-pdu: ", err)
 					}
@@ -254,25 +264,31 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 			} else {
 				// LastSegmentOfMessageReceived
 				tr.SegmentTimer.Stop()
-				header := SegmentAckHeader{
+				segmentAckHeader := SegmentAckHeader{
 					Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: true},
 					InvokeId:         tr.Id.InvokeId,
 					SequenceNumber:   tr.LastSequenceNumber,
 					ActualWindowSize: tr.ActualWindowSize,
 				}
-				headerBytes, err := header.Marshal()
+				headerBytes, err := segmentAckHeader.Marshal()
 				if err != nil {
 					logger.Error("could not marshal segment-ack pdu: ", err)
 					return
 				}
 				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-					tr.Source, false, NormalPriority, headerBytes)
+					tr.Source, false, networklayer.NormalPriority, headerBytes)
 				if err != nil {
 					logger.Error("error when sending segment-ack-pdu: ", err)
 					return
 				}
 				tr.InitialSequenceNumber = tr.LastSequenceNumber
-				// TODO: send CONF_SERV.indication
+				// send CONF_SERV.indication
+				apduInd := APDUIndication{
+					Source:        indication.Source,
+					ExpectedReply: indication.ExpectedReply,
+					Data:          data,
+				}
+				tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
 				tr.RequestTimer.Start()
 				tr.state = &ServerTransactionAwaitResponseState{
 					transaction: tr,
@@ -300,7 +316,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 						return
 					}
 					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-						tr.Source, false, NormalPriority, headerBytes)
+						tr.Source, false, networklayer.NormalPriority, headerBytes)
 					if err != nil {
 						logger.Error("error when sending segment-ack-pdu: ", err)
 						return
@@ -325,7 +341,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 					return
 				}
 				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-					tr.Source, false, NormalPriority, headerBytes)
+					tr.Source, false, networklayer.NormalPriority, headerBytes)
 				if err != nil {
 					logger.Error("error when sending segment-ack-pdu: ", err)
 					return
@@ -351,7 +367,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 			return
 		}
 		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-			tr.Source, false, NormalPriority, headerBytes)
+			tr.Source, false, networklayer.NormalPriority, headerBytes)
 		if err != nil {
 			logger.Error("error when sending abort-pdu: ", err)
 			return
@@ -385,7 +401,7 @@ func (s *ServerTransactionAwaitResponseState) HandleSegmentAckPdu(*SegmentAckHea
 func (s *ServerTransactionAwaitResponseState) HandleAbortPdu(int) {}
 
 func (s *ServerTransactionAwaitResponseState) HandleConfirmedServiceRequestPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
 	serviceRequest []byte,
 ) {
@@ -404,7 +420,7 @@ func (s *ServerTransactionAwaitResponseState) HandleConfirmedServiceRequestPdu(
 			return
 		}
 		tr.applicationEntity.networkEntity.NUnitDataRequest(
-			tr.Source, false, NormalPriority, segmentAckBytes,
+			tr.Source, false, networklayer.NormalPriority, segmentAckBytes,
 		)
 	}
 }
@@ -429,11 +445,17 @@ func (s *ServerTransactionAwaitResponseState) OnRequestTimerFired() {
 		return
 	}
 	tr.applicationEntity.networkEntity.NUnitDataRequest(
-		tr.Source, false, NormalPriority,
+		tr.Source, false, networklayer.NormalPriority,
 		abortBytes,
 	)
 
 	// TODO send ABORT.indication to the user layer
+	indication := APDUIndication{
+		Source:        tr.Source,
+		ExpectedReply: false,
+	}
+	tr.serviceLayer.HandleAbortIndication(&indication, 0, uint8(bacnet.AbortApplicationExceededReplyTime))
+	// TODO: discard transaction?
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -451,7 +473,7 @@ func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(*SegmentAc
 func (s *ServerTransactionSegmentedResponseState) HandleAbort() {}
 
 func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequest(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
 	serviceRequest []byte,
 ) {
@@ -469,7 +491,7 @@ func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequest(
 		return
 	}
 	err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-		tr.Source, false, NormalPriority, abortBytes)
+		tr.Source, false, networklayer.NormalPriority, abortBytes)
 	if err != nil {
 		logger.Error("error when sending abort-pdu: ", err)
 		return
