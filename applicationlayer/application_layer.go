@@ -1,4 +1,4 @@
-package bacip
+package applicationlayer
 
 import (
 	"errors"
@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/networklayer"
+	"github.com/REQUEA/bacnet/objectmodel"
 )
 
 const (
@@ -32,13 +35,35 @@ const (
 	allFlagsMask uint8 = 0b00001111
 )
 
+type APDUIndication struct {
+	Source        *bacnet.BACnetAddress
+	ExpectedReply bool
+	Data          []byte
+}
+
+type ServiceHandler interface {
+	GetDevice(bacnet.BACnetConfirmedServiceChoice, []byte) *objectmodel.Device
+	HandleConfServIndication(*APDUIndication, bacnet.BACnetConfirmedServiceChoice)
+	HandleConfServConfirm(*APDUIndication, bacnet.BACnetConfirmedServiceChoice)
+	HandleUnconfServIndication(*APDUIndication, bacnet.BACnetUnconfirmedServiceChoice)
+	HandleSegmentAckIndication(*APDUIndication, bacnet.BACnetConfirmedServiceChoice)
+	HandleRejectIndication(*APDUIndication, bacnet.BACnetConfirmedServiceChoice)
+	HandleAbortIndication(*APDUIndication, bacnet.BACnetConfirmedServiceChoice, uint8)
+}
+
 type ApplicationEntity struct {
 	ServerTransactions      []*ServerTransaction
 	ClientTransactions      []*ClientTransaction
 	clientTransactionsMutex sync.Mutex
 	serverTransactionsMutex sync.Mutex
-	serviceLayer            *ServiceLayer
-	networkEntity           NetworkEntity
+	serviceLayer            *ServiceHandler
+	networkEntity           networklayer.NetworkEntity
+	serviceRegistery        *ServiceRegistry
+}
+
+type ServiceRegistry struct {
+	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ServiceHandler
+	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]ServiceHandler
 }
 
 func NewApplicationEntity() *ApplicationEntity {
@@ -204,14 +229,8 @@ func (f *AbortFlags) ToByte() byte {
 	return result
 }
 
-type NPDUIndication struct {
-	source *bacnet.BACnetAddress
-	dest   *bacnet.BACnetAddress
-	apdu   []byte
-}
-
 type ServerNetworkTransactionEvent struct {
-	indication     *NPDUIndication
+	indication     *networklayer.NPDUIndication
 	transaction    *ServerTransaction
 	header         PDUHeader
 	serviceRequest []byte
@@ -246,7 +265,7 @@ func (e *ServerNetworkTransactionEvent) Exec() {
 }
 
 type ClientNetworkTransactionEvent struct {
-	indication  *NPDUIndication
+	indication  *networklayer.NPDUIndication
 	transaction *ClientTransaction
 	header      PDUHeader
 	payload     []byte
@@ -287,12 +306,12 @@ func (e *ClientNetworkTransactionEvent) Exec() {
 	}
 }
 
-func (ae *ApplicationEntity) HandleNUNITDATAIndication(indication *NPDUIndication) {
-	if len(indication.apdu) < 1 {
+func (ae *ApplicationEntity) HandleNUNITDATAIndication(indication *networklayer.NPDUIndication) {
+	if len(indication.Apdu) < 1 {
 		logger.Error("N-UNITDATA.indication handling: empty APDU")
 		return
 	}
-	pduType := PDUType((indication.apdu[0] & pduTypeMask) >> pduTypeShift)
+	pduType := PDUType((indication.Apdu[0] & pduTypeMask) >> pduTypeShift)
 	switch pduType {
 	case SimpleAck:
 		// client
@@ -381,13 +400,13 @@ func (h *ConfirmedServiceRequestHeader) Marshal() ([]byte, error) {
 	return result, nil
 }
 
-func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *NPDUIndication) error {
-	if indication.dest.Mac.IsBroadcast() || indication.dest.Network == bacnet.BroadcastDNET {
+func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networklayer.NPDUIndication) error {
+	if indication.Dest.Mac.IsBroadcast() || indication.Dest.Network == bacnet.BroadcastDNET {
 		// Drop
 		// TODO: Log?
 		return nil
 	}
-	apdu := indication.apdu
+	apdu := indication.Apdu
 	var header ConfirmedServiceRequestHeader
 	header.Flags.FromByte(apdu[0])
 	if header.Flags.SegmentedRequest && len(apdu) < 6 {
@@ -410,7 +429,7 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *NPDUIn
 		header.ServiceChoice = bacnet.BACnetConfirmedServiceChoice(apdu[3])
 		serviceRequest = apdu[4:]
 	}
-	transactionId := NewTransactionId(indication.source, header.InvokeId)
+	transactionId := NewTransactionId(indication.Source, header.InvokeId)
 	transaction := ae.getServerTransaction(&transactionId)
 	if transaction != nil {
 		// TODO log or drop?
@@ -418,15 +437,15 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *NPDUIn
 	tr := NewServerTransaction(&transactionId)
 	// Find device from service
 	// Need to fetch the device to know the values for the timers
-	device := tr.serviceLayer.GetDevice(uint(header.ServiceChoice), serviceRequest)
+	device := tr.serviceLayer.GetDevice(header.ServiceChoice, serviceRequest)
 	if device == nil {
 		// reply with an error?
 	}
 	tr.Device = device
-	tr.Source = indication.source
-	tr.Dest = indication.dest
+	tr.Source = indication.Source
+	tr.Dest = indication.Dest
 	// ConfirmedSegmentedReceived
-	deviceObject := device.deviceObject
+	deviceObject := device.DeviceObject()
 	maxSegmentsAcceptedProp := deviceObject.GetProperty(bacnet.MaxSegmentsAccepted)
 	if maxSegmentsAcceptedProp == nil {
 		return fmt.Errorf("device object without max-segments-accepted property")
@@ -488,8 +507,8 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *NPDUIn
 	return nil
 }
 
-func (ae *ApplicationEntity) handleUnconfirmedServiceRequestPDU(indication *NPDUIndication) error {
-	apdu := indication.apdu
+func (ae *ApplicationEntity) handleUnconfirmedServiceRequestPDU(indication *networklayer.NPDUIndication) error {
+	apdu := indication.Apdu
 	if len(apdu) < 2 {
 		return fmt.Errorf("Unconfirmed-Service-Request-PDU too short (len: %d)", len(apdu))
 	}
@@ -516,8 +535,8 @@ func (h *SimpleAckHeader) Marshal() ([]byte, error) {
 	}, nil
 }
 
-func (ae *ApplicationEntity) handleSimpleAckPDU(indication *NPDUIndication) error {
-	apdu := indication.apdu
+func (ae *ApplicationEntity) handleSimpleAckPDU(indication *networklayer.NPDUIndication) error {
+	apdu := indication.Apdu
 	if len(apdu) < 3 {
 		return fmt.Errorf("SimpleACK-PDU too short (len: %d)", len(apdu))
 	}
@@ -526,7 +545,7 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *NPDUIndication) erro
 		ServiceChoice: int(apdu[2]),
 	}
 
-	transactionId := NewTransactionId(indication.source, header.InvokeId)
+	transactionId := NewTransactionId(indication.Source, header.InvokeId)
 	transaction := ae.getClientTransaction(&transactionId)
 	if transaction == nil {
 		// client state machine IDLE state UnexpectedPDU_Received
@@ -571,10 +590,10 @@ func (h *ComplexAckHeader) Marshal() ([]byte, error) {
 	return result, nil
 }
 
-func (ae *ApplicationEntity) handleComplexAckPDU(indication *NPDUIndication) error {
+func (ae *ApplicationEntity) handleComplexAckPDU(indication *networklayer.NPDUIndication) error {
 	// TODO: check apdu length
 	var serviceAck []byte
-	apdu := indication.apdu
+	apdu := indication.Apdu
 	header := ComplexAckHeader{}
 	header.Flags.FromByte(apdu[0])
 	header.InvokeId = uint(apdu[1])
@@ -587,7 +606,7 @@ func (ae *ApplicationEntity) handleComplexAckPDU(indication *NPDUIndication) err
 		header.ServiceAckChoice = int(apdu[2])
 		serviceAck = apdu[3:]
 	}
-	transactionId := NewTransactionId(indication.source, header.InvokeId)
+	transactionId := NewTransactionId(indication.Source, header.InvokeId)
 	transaction := ae.getClientTransaction(&transactionId)
 	if transaction == nil {
 		// UnexpectedPDU_Received
@@ -623,8 +642,8 @@ func (h *SegmentAckHeader) Marshal() ([]byte, error) {
 	return result, nil
 }
 
-func (ae *ApplicationEntity) handleSegmentAckPDU(indication *NPDUIndication) error {
-	apdu := indication.apdu
+func (ae *ApplicationEntity) handleSegmentAckPDU(indication *networklayer.NPDUIndication) error {
+	apdu := indication.Apdu
 	if len(apdu) != 4 {
 		return fmt.Errorf("Segment-Ack-PDU too short")
 	}
@@ -633,7 +652,7 @@ func (ae *ApplicationEntity) handleSegmentAckPDU(indication *NPDUIndication) err
 	header.InvokeId = uint(apdu[1])
 	header.SequenceNumber = uint(apdu[2])
 	header.ActualWindowSize = uint(apdu[3])
-	transactionId := NewTransactionId(indication.source, header.InvokeId)
+	transactionId := NewTransactionId(indication.Source, header.InvokeId)
 	if header.Flags.SentByServer {
 		transaction := ae.getClientTransaction(&transactionId)
 		if transaction == nil {
@@ -676,14 +695,14 @@ func (h *ErrorHeader) Marshal() ([]byte, error) {
 	return []byte{uint8(Error << 4), uint8(h.InvokeId), uint8(h.ErrorChoice)}, nil
 }
 
-func (ae *ApplicationEntity) handleErrorPDU(indication *NPDUIndication) error {
-	apdu := indication.apdu
+func (ae *ApplicationEntity) handleErrorPDU(indication *networklayer.NPDUIndication) error {
+	apdu := indication.Apdu
 	header := ErrorHeader{
 		InvokeId:    uint(apdu[1]),
 		ErrorChoice: int(apdu[2]),
 	}
 	errorData := apdu[3:]
-	transactionId := NewTransactionId(indication.source, header.InvokeId)
+	transactionId := NewTransactionId(indication.Source, header.InvokeId)
 	transaction := ae.getClientTransaction(&transactionId)
 	if transaction == nil {
 		// client state machine IDLE state UnexpectedPDU_Received
@@ -714,8 +733,8 @@ func (h *RejectHeader) Marshal() ([]byte, error) {
 	return []byte{uint8(Reject << 4), h.InvokeId, h.RejectReason}, nil
 }
 
-func (ae *ApplicationEntity) handleRejectPDU(indication *NPDUIndication) error {
-	apdu := indication.apdu
+func (ae *ApplicationEntity) handleRejectPDU(indication *networklayer.NPDUIndication) error {
+	apdu := indication.Apdu
 	if len(apdu) != 3 {
 		return fmt.Errorf("wrong Reject-PDU size")
 	}
@@ -723,7 +742,7 @@ func (ae *ApplicationEntity) handleRejectPDU(indication *NPDUIndication) error {
 	invokeId := uint(apdu[1])
 	rejectReason := int(apdu[2])
 
-	transactionId := NewTransactionId(indication.source, invokeId)
+	transactionId := NewTransactionId(indication.Source, invokeId)
 	transaction := ae.getClientTransaction(&transactionId)
 	if transaction == nil {
 		// client state machine IDLE state UnexpectedPDU_Received
@@ -760,8 +779,8 @@ func (h *AbortHeader) Marshal() ([]byte, error) {
 	return []byte{uint8(Abort<<4) | flags, h.InvokeId, h.AbortReason}, nil
 }
 
-func (ae *ApplicationEntity) handleAbortPDU(indication *NPDUIndication) error {
-	apdu := indication.apdu
+func (ae *ApplicationEntity) handleAbortPDU(indication *networklayer.NPDUIndication) error {
+	apdu := indication.Apdu
 	if len(apdu) != 3 {
 		return fmt.Errorf("wrong Abort-PDU size")
 	}
@@ -769,7 +788,7 @@ func (ae *ApplicationEntity) handleAbortPDU(indication *NPDUIndication) error {
 	sentByServer := (apdu[0] & srvMask) != 0
 	invokeId := uint(apdu[1])
 	reason := int(apdu[2])
-	transactionId := NewTransactionId(indication.source, invokeId)
+	transactionId := NewTransactionId(indication.Source, invokeId)
 	if sentByServer {
 		transaction := ae.getClientTransaction(&transactionId)
 		if transaction == nil {

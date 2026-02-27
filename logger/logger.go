@@ -1,4 +1,4 @@
-package bacip
+package logger
 
 type Logger interface {
 	Info(...interface{})
@@ -17,3 +17,7 @@ var logger Logger
 func SetLogger(l Logger) {
 	logger = l
 }
+
+func Info(args ...interface{})  { logger.Info(args...) }
+func Error(args ...interface{}) { logger.Error(args...) }
+func Trace(args ...interface{}) { logger.Trace(args...) }

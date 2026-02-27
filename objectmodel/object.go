@@ -1,4 +1,4 @@
-package bacip
+package objectmodel
 
 import (
 	"fmt"

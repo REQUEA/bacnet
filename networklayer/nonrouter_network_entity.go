@@ -1,4 +1,4 @@
-package bacip
+package networklayer
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
 )
 
 type NonRouterNetworkEntity struct {
@@ -40,18 +41,18 @@ func (ne *NonRouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.M
 			return ne.handleNetworkLayerMessage(sport, sadr, npdu)
 		} else {
 			logger.Trace("Handle: application message payload")
-			indication := NPDUIndication{apdu: npdu.data}
+			indication := NPDUIndication{Apdu: npdu.data}
 			if npdu.IsSourcePresent() {
-				indication.source = npdu.Source
+				indication.Source = npdu.Source
 			} else {
-				indication.source = &bacnet.BACnetAddress{Mac: sadr}
+				indication.Source = &bacnet.BACnetAddress{Mac: sadr}
 			}
 			if npdu.IsDestPresent() {
-				indication.dest = npdu.Destination
+				indication.Dest = npdu.Destination
 			} else {
-				indication.dest = &bacnet.BACnetAddress{Mac: sadr}
+				indication.Dest = &bacnet.BACnetAddress{Mac: sadr}
 			}
-			ne.applicationEntity.HandleNUNITDATAIndication(&indication)
+			ne.applicationEntity.HandleNUnitDataIndication(&indication)
 		}
 	}
 	// In other cases a node that is not a router must discard the message
@@ -102,7 +103,7 @@ func (ne *NonRouterNetworkEntity) NUnitDataRequest(
 		npdu.data = payload
 		if len(dadr.Mac.GetBytes()) == 0 {
 			// local broadcast
-			err := ne.port.ToDataLink(npdu, ne.port.BroadcastMac.GetBytes())
+			err := ne.port.Broadcast(npdu)
 			if err != nil {
 				return fmt.Errorf("passing local unicast NPDU to datalink failed: %w", err)
 			}
@@ -120,7 +121,7 @@ func (ne *NonRouterNetworkEntity) NUnitDataRequest(
 			SetIsExpectingReply(der).
 			SetPriority(priority)
 		npdu.data = payload
-		err := ne.port.ToDataLink(npdu, ne.port.BroadcastMac.GetBytes())
+		err := ne.port.Broadcast(npdu)
 		if err != nil {
 			return fmt.Errorf("passing global broadcast NPDU to datalink failed: %w", err)
 		}
@@ -130,7 +131,7 @@ func (ne *NonRouterNetworkEntity) NUnitDataRequest(
 		if !ok {
 			// TODO: drop or queue the message?
 			npdu := NewWhoIsRouterToNetworkNPDU(bacnet.NetworkNumber(dadr.Network))
-			err := ne.port.ToDataLink(npdu, ne.port.BroadcastMac.GetBytes())
+			err := ne.port.Broadcast(npdu)
 			if err != nil {
 				return fmt.Errorf("sending Who-Is-Router-To-Network %d failed: %w",
 					dadr.Network, err)

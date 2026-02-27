@@ -1,4 +1,4 @@
-package bacip
+package applicationlayer
 
 import (
 	"fmt"
@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/networklayer"
+	"github.com/REQUEA/bacnet/objectmodel"
 )
 
 type TransactionId struct {
@@ -118,9 +121,10 @@ type TransactionEvent interface {
 
 type Transaction struct {
 	Id                    *TransactionId
-	Device                *Device
+	Device                *objectmodel.Device
 	Source                *bacnet.BACnetAddress
 	Dest                  *bacnet.BACnetAddress
+	Priority              networklayer.NPDUPriority
 	RetryCount            int
 	SegmentRetryCount     uint
 	DuplicateCount        int
@@ -135,7 +139,7 @@ type Transaction struct {
 	MaxSegmentsAccepted uint
 	NumberOfApduRetries uint
 	applicationEntity   *ApplicationEntity
-	serviceLayer        *ServiceLayer
+	serviceLayer        ServiceHandler
 	segments            []*Segment
 	events              chan TransactionEvent
 }

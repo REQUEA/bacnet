@@ -1,13 +1,17 @@
-package bacip
+package applicationlayer
 
-import "github.com/REQUEA/bacnet"
+import (
+	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/networklayer"
+)
 
 type ClientTransactionState interface {
-	HandleSimpleAckPdu(*NPDUIndication, *SimpleAckHeader)
-	HandleComplexAckPdu(*NPDUIndication, *ComplexAckHeader, []byte)
-	HandleErrorPdu(*NPDUIndication, *ErrorHeader, []byte)
-	HandleRejectPdu(*NPDUIndication, int)
-	HandleSegmentAckPdu(*NPDUIndication, *SegmentAckHeader)
+	HandleSimpleAckPdu(*networklayer.NPDUIndication, *SimpleAckHeader)
+	HandleComplexAckPdu(*networklayer.NPDUIndication, *ComplexAckHeader, []byte)
+	HandleErrorPdu(*networklayer.NPDUIndication, *ErrorHeader, []byte)
+	HandleRejectPdu(*networklayer.NPDUIndication, int)
+	HandleSegmentAckPdu(*networklayer.NPDUIndication, *SegmentAckHeader)
 	HandleAbortPdu(int)
 }
 
@@ -28,14 +32,14 @@ func NewClientTransaction(id *TransactionId) ClientTransaction {
 	return result
 }
 
-func (t *ClientTransaction) HandleSimpleAckPdu(indication *NPDUIndication, header *SimpleAckHeader) {
+func (t *ClientTransaction) HandleSimpleAckPdu(indication *networklayer.NPDUIndication, header *SimpleAckHeader) {
 	if t.state != nil {
 		t.state.HandleSimpleAckPdu(indication, header)
 	}
 }
 
 func (t *ClientTransaction) HandleComplexAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ComplexAckHeader,
 	serviceAck []byte,
 ) {
@@ -44,19 +48,19 @@ func (t *ClientTransaction) HandleComplexAckPdu(
 	}
 }
 
-func (t *ClientTransaction) HandleErrorPdu(indication *NPDUIndication, header *ErrorHeader, errorData []byte) {
+func (t *ClientTransaction) HandleErrorPdu(indication *networklayer.NPDUIndication, header *ErrorHeader, errorData []byte) {
 	if t.state != nil {
 		t.state.HandleErrorPdu(indication, header, errorData)
 	}
 }
 
-func (t *ClientTransaction) HandleRejectPdu(indication *NPDUIndication, reason int) {
+func (t *ClientTransaction) HandleRejectPdu(indication *networklayer.NPDUIndication, reason int) {
 	if t.state != nil {
 		t.state.HandleRejectPdu(indication, reason)
 	}
 }
 
-func (t *ClientTransaction) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
+func (t *ClientTransaction) HandleSegmentAckPdu(indication *networklayer.NPDUIndication, header *SegmentAckHeader) {
 	if t.state != nil {
 		t.state.HandleSegmentAckPdu(indication, header)
 	}
@@ -76,12 +80,12 @@ type ClientTransactionIdleState struct {
 	transaction *ClientTransaction
 }
 
-func (s *ClientTransactionIdleState) HandleSimpleAckPdu(*NPDUIndication, *SimpleAckHeader) {
+func (s *ClientTransactionIdleState) HandleSimpleAckPdu(*networklayer.NPDUIndication, *SimpleAckHeader) {
 	// never called
 }
 
 func (s *ClientTransactionIdleState) HandleComplexAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ComplexAckHeader,
 	serviceRequest []byte,
 ) {
@@ -100,9 +104,9 @@ func (s *ClientTransactionIdleState) HandleComplexAckPdu(
 			return
 		}
 		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-			indication.source,
+			indication.Source,
 			false,
-			NormalPriority,
+			networklayer.NormalPriority,
 			abortBytes,
 		)
 		if err != nil {
@@ -112,15 +116,15 @@ func (s *ClientTransactionIdleState) HandleComplexAckPdu(
 	}
 }
 
-func (s *ClientTransactionIdleState) HandleErrorPdu(*NPDUIndication, *ErrorHeader, []byte) {
+func (s *ClientTransactionIdleState) HandleErrorPdu(*networklayer.NPDUIndication, *ErrorHeader, []byte) {
 	// never called
 }
 
-func (s *ClientTransactionIdleState) HandleRejectPdu(*NPDUIndication, int) {
+func (s *ClientTransactionIdleState) HandleRejectPdu(*networklayer.NPDUIndication, int) {
 	// never called
 }
 
-func (s *ClientTransactionIdleState) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
+func (s *ClientTransactionIdleState) HandleSegmentAckPdu(indication *networklayer.NPDUIndication, header *SegmentAckHeader) {
 	if header.Flags.SentByServer {
 		// client state machine IDLE state UnexpectedSegmentInfoReceived
 		// TODO issue a N-UNITDATA.request to transmit a AbortPDU
@@ -138,16 +142,28 @@ type ClientTransactionAwaitConfirmationState struct {
 	transaction *ClientTransaction
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleSimpleAckPdu(*NPDUIndication, *SimpleAckHeader) {
+func (s *ClientTransactionAwaitConfirmationState) HandleSimpleAckPdu(
+	indication *networklayer.NPDUIndication,
+	header *SimpleAckHeader,
+) {
 	// SimpleACK_Received
 	tr := s.transaction
 	tr.RequestTimer.Stop()
-	// TODO: issue a CONF_SERV.confirm to the local application
+	// issue a CONF_SERV.confirm to the local application
+	// TODO: this is probably not enough, there needs to be some mapping between
+	// the request and the confirm at some point
+	/*
+		tr.applicationEntity.serviceLayer.ConfServConfirm(
+			indication,
+			bacnet.BACnetConfirmedServiceChoice(header.ServiceChoice),
+			[]byte{},
+		)
+	*/
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
 func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ComplexAckHeader,
 	serviceAck []byte,
 ) {
@@ -170,7 +186,7 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 				logger.Error("could not marshal segment-ack header: ", err)
 			} else {
 				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-					indication.source, false, NormalPriority, segmentAckBytes)
+					indication.Source, false, networklayer.NormalPriority, segmentAckBytes)
 				if err != nil {
 					logger.Error("could not send SegmentAck PDU: ", err)
 				}
@@ -185,11 +201,18 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 		// UnsegmentedComplexACK_Received
 		tr.RequestTimer.Stop()
 		// TODO: issue CONF_SERV.confirm to the local application
+		/*
+			tr.applicationEntity.serviceLayer.ConfServConfirm(
+				indication,
+				bacnet.BACnetConfirmedServiceChoice(header.ServiceAckChoice),
+				serviceAck,
+			)
+		*/
 		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleErrorPdu(indication *NPDUIndication, header *ErrorHeader, errorData []byte) {
+func (s *ClientTransactionAwaitConfirmationState) HandleErrorPdu(indication *networklayer.NPDUIndication, header *ErrorHeader, errorData []byte) {
 	// ErrorPDU_Received
 	// Stop RequestTimer
 	tr := s.transaction
@@ -199,7 +222,7 @@ func (s *ClientTransactionAwaitConfirmationState) HandleErrorPdu(indication *NPD
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(*NPDUIndication, int) {
+func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(*networklayer.NPDUIndication, int) {
 	// RejectPDU_Received
 	tr := s.transaction
 	tr.RequestTimer.Stop()
@@ -208,7 +231,7 @@ func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(*NPDUIndicatio
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleSegmentAckPdu(*NPDUIndication, *SegmentAckHeader) {
+func (s *ClientTransactionAwaitConfirmationState) HandleSegmentAckPdu(*networklayer.NPDUIndication, *SegmentAckHeader) {
 	// SegmentACK_Received
 	// Drop PDU
 }
@@ -231,7 +254,7 @@ type ClientTransactionSegmentedRequestState struct {
 }
 
 func (s *ClientTransactionSegmentedRequestState) HandleSimpleAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *SimpleAckHeader,
 ) {
 	tr := s.transaction
@@ -257,7 +280,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleSimpleAckPdu(
 			logger.Error("could not marshal abort header: ", err)
 		} else {
 			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-				indication.source, false, NormalPriority, abortBytes)
+				indication.Source, false, networklayer.NormalPriority, abortBytes)
 			if err != nil {
 				logger.Error("could not send Abort PDU: ", err)
 			}
@@ -268,7 +291,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleSimpleAckPdu(
 	}
 }
 func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ComplexAckHeader,
 	serviceAck []byte,
 ) {
@@ -297,7 +320,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 					logger.Error("could not marshal segment ack header: ", err)
 				} else {
 					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-						indication.source, false, NormalPriority, segmentAckBytes)
+						indication.Source, false, networklayer.NormalPriority, segmentAckBytes)
 					if err != nil {
 						logger.Error("could not send SegmentACK PDU: ", err)
 					}
@@ -322,7 +345,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 				logger.Error("could not marshal abort header: ", err)
 			} else {
 				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-					indication.source, false, NormalPriority, abortBytes)
+					indication.Source, false, networklayer.NormalPriority, abortBytes)
 				if err != nil {
 					logger.Error("could not send Abort PDU: ", err)
 				}
@@ -351,7 +374,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 				logger.Error("could not marshal abort header: ", err)
 			} else {
 				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-					indication.source, false, NormalPriority, abortBytes)
+					indication.Source, false, networklayer.NormalPriority, abortBytes)
 				if err != nil {
 					logger.Error("could not send Abort PDU: ", err)
 				}
@@ -361,7 +384,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 		}
 	}
 }
-func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(indication *NPDUIndication, header *ErrorHeader, errorData []byte) {
+func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(indication *networklayer.NPDUIndication, header *ErrorHeader, errorData []byte) {
 	tr := s.transaction
 	if tr.SentAllSegments {
 		// ErrorPDU_Received
@@ -383,7 +406,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(indication *NPDU
 			logger.Error("could not marshal abort header: ", err)
 		} else {
 			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-				indication.source, false, NormalPriority, abortBytes)
+				indication.Source, false, networklayer.NormalPriority, abortBytes)
 			if err != nil {
 				logger.Error("could not send Abort PDU: ", err)
 			}
@@ -393,7 +416,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(indication *NPDU
 		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
-func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(*NPDUIndication, int) {
+func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(*networklayer.NPDUIndication, int) {
 	// RejectPDU_Received
 	tr := s.transaction
 	tr.SegmentTimer.Stop()
@@ -401,7 +424,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(*NPDUIndication
 	// Discard transaction
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
-func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
+func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(indication *networklayer.NPDUIndication, header *SegmentAckHeader) {
 	tr := s.transaction
 	if tr.InWindow(header.SequenceNumber, tr.InitialSequenceNumber) {
 		if len(tr.segments) > 0 { // TODO this is not correct, check the amount of segments remaining to send
@@ -439,7 +462,7 @@ type ClientTransactionSegmentedConfState struct {
 }
 
 func (s *ClientTransactionSegmentedConfState) HandleSimpleAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *SimpleAckHeader,
 ) {
 	// UnexpectedPDU_Received
@@ -456,7 +479,7 @@ func (s *ClientTransactionSegmentedConfState) HandleSimpleAckPdu(
 		logger.Error("could not marshal abort header: ", err)
 	} else {
 		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-			indication.source, false, NormalPriority, abortBytes)
+			indication.Source, false, networklayer.NormalPriority, abortBytes)
 		if err != nil {
 			logger.Error("could not send Abort PDU: ", err)
 		}
@@ -467,7 +490,7 @@ func (s *ClientTransactionSegmentedConfState) HandleSimpleAckPdu(
 }
 
 func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ComplexAckHeader,
 	serviceAck []byte,
 ) {
@@ -495,7 +518,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 						logger.Error("could not marshal segment ack header: ", err)
 					} else {
 						err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-							indication.source, false, NormalPriority, segmentAckBytes)
+							indication.Source, false, networklayer.NormalPriority, segmentAckBytes)
 						if err != nil {
 							logger.Error("could not send SegmentACK PDU: ", err)
 						}
@@ -507,7 +530,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 					tr.LastSequenceNumber = (tr.LastSequenceNumber + 1) % 256
 					tr.SegmentTimer.Restart(false)
 					// Issue N-RELEASE.request to inform datalink layer
-					err := tr.applicationEntity.networkEntity.NReleaseRequest(indication.source)
+					err := tr.applicationEntity.networkEntity.NReleaseRequest(indication.Source)
 					if err != nil {
 						logger.Error("could not send N-RELEASE.request: ", err)
 					}
@@ -528,7 +551,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 					logger.Error("could not marshal segment ack header: ", err)
 				} else {
 					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-						indication.source, false, NormalPriority, segmentAckBytes)
+						indication.Source, false, networklayer.NormalPriority, segmentAckBytes)
 					if err != nil {
 						logger.Error("could not send SegmentACK PDU: ", err)
 					}
@@ -559,7 +582,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 						logger.Error("could not marshal segment ack header: ", err)
 					} else {
 						err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-							indication.source, false, NormalPriority, segmentAckBytes)
+							indication.Source, false, networklayer.NormalPriority, segmentAckBytes)
 						if err != nil {
 							logger.Error("could not send SegmentACK PDU: ", err)
 						}
@@ -582,7 +605,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 					logger.Error("could not marshal segment ack header: ", err)
 				} else {
 					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-						indication.source, false, NormalPriority, segmentAckBytes)
+						indication.Source, false, networklayer.NormalPriority, segmentAckBytes)
 					if err != nil {
 						logger.Error("could not send SegmentACK PDU: ", err)
 					}
@@ -606,7 +629,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 			logger.Error("could not marshal abort header: ", err)
 		} else {
 			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-				indication.source, false, NormalPriority, abortBytes)
+				indication.Source, false, networklayer.NormalPriority, abortBytes)
 			if err != nil {
 				logger.Error("could not send Abort PDU: ", err)
 			}
@@ -618,7 +641,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 }
 
 func (s *ClientTransactionSegmentedConfState) HandleErrorPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	header *ErrorHeader,
 	payload []byte,
 ) {
@@ -636,7 +659,7 @@ func (s *ClientTransactionSegmentedConfState) HandleErrorPdu(
 		logger.Error("could not marshal abort header: ", err)
 	} else {
 		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-			indication.source, false, NormalPriority, abortBytes)
+			indication.Source, false, networklayer.NormalPriority, abortBytes)
 		if err != nil {
 			logger.Error("could not send Abort PDU: ", err)
 		}
@@ -647,7 +670,7 @@ func (s *ClientTransactionSegmentedConfState) HandleErrorPdu(
 }
 
 func (s *ClientTransactionSegmentedConfState) HandleRejectPdu(
-	indication *NPDUIndication,
+	indication *networklayer.NPDUIndication,
 	reason int,
 ) {
 	// UnexpectedPDU_Received
@@ -664,7 +687,7 @@ func (s *ClientTransactionSegmentedConfState) HandleRejectPdu(
 		logger.Error("could not marshal abort header: ", err)
 	} else {
 		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-			indication.source, false, NormalPriority, abortBytes)
+			indication.Source, false, networklayer.NormalPriority, abortBytes)
 		if err != nil {
 			logger.Error("could not send Abort PDU: ", err)
 		}
@@ -674,7 +697,7 @@ func (s *ClientTransactionSegmentedConfState) HandleRejectPdu(
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionSegmentedConfState) HandleSegmentAckPdu(indication *NPDUIndication, header *SegmentAckHeader) {
+func (s *ClientTransactionSegmentedConfState) HandleSegmentAckPdu(indication *networklayer.NPDUIndication, header *SegmentAckHeader) {
 	// UnexpectedPDU_Received
 	tr := s.transaction
 	tr.SegmentTimer.Stop()
@@ -689,7 +712,7 @@ func (s *ClientTransactionSegmentedConfState) HandleSegmentAckPdu(indication *NP
 		logger.Error("could not marshal abort header: ", err)
 	} else {
 		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-			indication.source, false, NormalPriority, abortBytes)
+			indication.Source, false, networklayer.NormalPriority, abortBytes)
 		if err != nil {
 			logger.Error("could not send Abort PDU: ", err)
 		}

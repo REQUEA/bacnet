@@ -1,4 +1,4 @@
-package bacip
+package linklayer
 
 import (
 	"bytes"
@@ -8,10 +8,17 @@ import (
 	"net"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/logger"
 	"golang.org/x/net/ipv4"
 )
 
-type DatalinkEntity interface {
+type NPDUHandler interface {
+	HandleNPDU(dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error
+}
+
+type DatalinkPort interface {
+	Mac() bacnet.MAC
+	BroadcastMac() bacnet.MAC
 	Send(data []byte, destMAC []byte) error
 }
 
@@ -50,7 +57,14 @@ func (m *BACnetIPMAC) Equal(other bacnet.MAC) bool {
 	return m.IP.Equal(o.IP) && m.Port == o.Port
 }
 
-func NewBACnetIPPort(id, dnet int, addr net.IP, prefixLen int, port int) *Port {
+type BACnetIPPort struct {
+	mac          *BACnetIPMAC
+	broadcastMac *BACnetIPMAC
+	datalink     *BACnetIPDatalink
+	npduHandler  NPDUHandler
+}
+
+func NewBACnetIPPort(addr net.IP, prefixLen int, port int) *BACnetIPPort {
 	mac := BACnetIPMAC{
 		IP:   addr,
 		Port: port,
@@ -60,12 +74,30 @@ func NewBACnetIPPort(id, dnet int, addr net.IP, prefixLen int, port int) *Port {
 		Port:        port,
 		isBroadcast: true,
 	}
-	return &Port{
-		Id:           id,
-		Mac:          &mac,
-		BroadcastMac: &broadcastMac,
-		Dnet:         bacnet.NetworkNumber(dnet),
+	return &BACnetIPPort{
+		mac:          &mac,
+		broadcastMac: &broadcastMac,
 	}
+}
+
+func (p *BACnetIPPort) SetNPDUHandler(h NPDUHandler) {
+	p.npduHandler = h
+}
+
+func (p *BACnetIPPort) SetDatalink(l *BACnetIPDatalink) {
+	p.datalink = l
+}
+
+func (p *BACnetIPPort) Mac() bacnet.MAC {
+	return p.mac
+}
+
+func (p *BACnetIPPort) BroadcastMac() bacnet.MAC {
+	return p.broadcastMac
+}
+
+func (p *BACnetIPPort) Send(data []byte, destMAC []byte) error {
+	return p.datalink.Send(data, destMAC)
 }
 
 func getBroadcastAddress(ip net.IP, prefixLen int) net.IP {
@@ -78,12 +110,12 @@ func getBroadcastAddress(ip net.IP, prefixLen int) net.IP {
 }
 
 type BACnetIPDatalink struct {
-	Conn *net.UDPConn
-	Port []*Port
+	Conn  *net.UDPConn
+	Ports []*BACnetIPPort
 }
 
-func (l *BACnetIPDatalink) AddPort(p *Port) {
-	l.Port = append(l.Port, p)
+func (l *BACnetIPDatalink) AddPort(p *BACnetIPPort) {
+	l.Ports = append(l.Ports, p)
 }
 
 func (l *BACnetIPDatalink) Start() error {
@@ -91,20 +123,20 @@ func (l *BACnetIPDatalink) Start() error {
 	if l.Conn == nil {
 		return fmt.Errorf("UDP connection not configured")
 	}
-	if l.Port == nil {
-		return fmt.Errorf("port is not configured")
+	if l.Ports == nil {
+		return fmt.Errorf("no port is configured")
 	}
 	go l.listen()
 	return nil
 }
 
-func (l *BACnetIPDatalink) getPortFromDest(dst net.IP) (*Port, bool) {
-	for _, p := range l.Port {
-		bcastMac := p.BroadcastMac.(*BACnetIPMAC)
+func (l *BACnetIPDatalink) getPortFromDest(dst net.IP) (*BACnetIPPort, bool) {
+	for _, p := range l.Ports {
+		bcastMac := p.BroadcastMac().(*BACnetIPMAC)
 		if bcastMac.IP.String() == dst.String() {
 			return p, true
 		}
-		mac := p.Mac.(*BACnetIPMAC)
+		mac := p.Mac().(*BACnetIPMAC)
 		if mac.IP.String() == dst.String() {
 			return p, false
 		}
@@ -149,8 +181,8 @@ mainloop:
 				logger.Error("could not parse source address: ", err)
 				continue
 			}
-			for _, p := range l.Port {
-				macbytes := p.Mac.GetBytes()
+			for _, p := range l.Ports {
+				macbytes := p.Mac().GetBytes()
 				ipAddr := net.IP{macbytes[0], macbytes[1], macbytes[2], macbytes[3]}
 				udpPort := int(macbytes[4])<<8 | int(macbytes[5])
 				if sadr.IP.Equal(ipAddr) && sadr.Port == udpPort {
@@ -160,15 +192,15 @@ mainloop:
 			}
 			dadr := BACnetIPMAC{
 				IP:          ctrlMsg.Dst,
-				Port:        int(port.Mac.GetBytes()[4])<<8 | int(port.Mac.GetBytes()[5]),
+				Port:        int(port.Mac().GetBytes()[4])<<8 | int(port.Mac().GetBytes()[5]),
 				isBroadcast: isBroadcast,
 			}
 			switch bvlc.Function {
 			case BacFuncUnicast:
-				port.ToNetworkEntity(&dadr, &sadr, payload)
+				port.npduHandler.HandleNPDU(&dadr, &sadr, payload)
 			case BacFuncBroadcast:
 				// TODO: check it is really what has to be done
-				port.ToNetworkEntity(&dadr, &sadr, payload)
+				port.npduHandler.HandleNPDU(&dadr, &sadr, payload)
 			default:
 				logger.Error("unsupported BVLC function ", bvlc.Function)
 			}
@@ -233,7 +265,6 @@ type BVLC struct {
 	Type     BVLCType
 	Function Function
 	data     []byte
-	NPDU     *NPDU // TODO remove, only data should be used
 }
 
 func (bvlc *BVLC) MarshalBinary() ([]byte, error) {

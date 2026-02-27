@@ -1,20 +1,48 @@
-package bacip
+package servicelayer
 
 import (
 	"fmt"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/applicationlayer"
 	"github.com/REQUEA/bacnet/internal/encoding"
+	"github.com/REQUEA/bacnet/objectmodel"
 )
 
-type ServiceLayer struct {
-	devices             []*Device
-	objectIndex         map[bacnet.BACnetObjectIdentifier]*Object
-	confirmedServices   map[uint]ConfirmedService
-	unconfirmedServices []UnconfirmedService
+type ServiceHandler struct {
+	devices             []*objectmodel.Device
+	objectIndex         map[bacnet.BACnetObjectIdentifier]*objectmodel.Object
+	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ConfirmedService
+	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]UnconfirmedService
 }
 
-func (l *ServiceLayer) GetDevice(serviceChoice uint, request []byte) *Device {
+func (e *ServiceHandler) ConfServIndication(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	data []byte,
+) {
+	// TODO: implement
+	go func() {
+		// find service
+	}()
+}
+
+func (e *ServiceHandler) AbortIndication(indication *applicationlayer.APDUIndication, reason uint8) {
+	// TODO: implement
+}
+
+func (e *ServiceHandler) ConfServConfirm(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	data []byte,
+) {
+	// TODO implement
+}
+
+func (l *ServiceHandler) GetDevice(
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	request []byte,
+) *objectmodel.Device {
 	service, ok := l.confirmedServices[serviceChoice]
 	if !ok {
 		return nil
@@ -23,14 +51,14 @@ func (l *ServiceLayer) GetDevice(serviceChoice uint, request []byte) *Device {
 }
 
 type ConfirmedService interface {
-	GetDevice(serviceRequest []byte) *Device
+	GetDevice(serviceRequest []byte) *objectmodel.Device
 }
 
 type UnconfirmedService interface {
 }
 
 type WhoIsService struct {
-	serviceLayer *ServiceLayer
+	serviceLayer *ServiceHandler
 }
 
 type WhoIsRequest struct {
@@ -143,10 +171,10 @@ func (r *IAmRequest) Marshal() ([]byte, error) {
 }
 
 type ReadPropertyService struct {
-	serviceLayer *ServiceLayer
+	serviceLayer *ServiceHandler
 }
 
-func (s *ReadPropertyService) GetDevice(request []byte) *Device {
+func (s *ReadPropertyService) GetDevice(request []byte) *objectmodel.Device {
 	return nil
 }
 

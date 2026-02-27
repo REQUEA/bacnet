@@ -1,4 +1,4 @@
-package bacip
+package networklayer
 
 import (
 	"bytes"
@@ -6,22 +6,28 @@ import (
 	"fmt"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/linklayer"
+	"github.com/REQUEA/bacnet/logger"
 )
 
-// TODO: should be an interface to allow for the implementation of technologies
-// other than IP
 type Port struct {
 	Id            int // used for management, cannot be 0
 	Dnet          bacnet.NetworkNumber
-	Mac           bacnet.MAC
-	BroadcastMac  bacnet.MAC
 	portInfo      []byte
 	networkEntity NetworkEntity
-	datalink      DatalinkEntity
+	datalinkPort  linklayer.DatalinkPort
 }
 
-func (p *Port) SetDatalink(e DatalinkEntity) {
-	p.datalink = e
+func NewPort(id, dnet int, dlPort linklayer.DatalinkPort) *Port {
+	return &Port{
+		Id:           id,
+		Dnet:         bacnet.NetworkNumber(dnet),
+		datalinkPort: dlPort,
+	}
+}
+
+func (p *Port) SetDatalinkPort(e linklayer.DatalinkPort) {
+	p.datalinkPort = e
 }
 
 func (p *Port) SetPortInfo(portInfo []byte) {
@@ -36,7 +42,7 @@ func (p *Port) SetNetworkEntity(e NetworkEntity) {
 	p.networkEntity = e
 }
 
-func (p *Port) ToNetworkEntity(dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
+func (p *Port) HandleNPDU(dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
 	// TODO: might have to place the incoming message in an input queue for
 	// the network entity
 	return p.networkEntity.NUnitDataIndication(p, dadr, sadr, buf)
@@ -48,9 +54,38 @@ func (p *Port) ToDataLink(npdu *NPDU, destMAC []byte) error {
 		return fmt.Errorf("could not marshal NPDU: %w", err)
 	}
 	if destMAC != nil {
-		return p.datalink.Send(data, destMAC)
+		return p.datalinkPort.Send(data, destMAC)
 	}
-	return p.datalink.Send(data, p.BroadcastMac.GetBytes())
+	return fmt.Errorf("dest MAC not specified")
+}
+
+func (p *Port) Broadcast(npdu *NPDU) error {
+	data, err := npdu.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("could not marshal NPDU: %w", err)
+	}
+	return p.datalinkPort.Send(data, p.datalinkPort.BroadcastMac().GetBytes())
+}
+
+func (p *Port) Mac() bacnet.MAC {
+	return p.datalinkPort.Mac()
+}
+
+func (p *Port) BroadcastMac() bacnet.MAC {
+	return p.datalinkPort.BroadcastMac()
+}
+
+type NPDUIndication struct {
+	Source        *bacnet.BACnetAddress
+	Dest          *bacnet.BACnetAddress
+	Priority      NPDUPriority
+	ExpectedReply bool
+	Apdu          []byte
+}
+
+type APDUHandler interface {
+	HandleNUnitDataIndication(*NPDUIndication)
+	HandleNUnitReportIndication(*NPDUIndication)
 }
 
 type NetworkEntity interface {
@@ -61,7 +96,7 @@ type NetworkEntity interface {
 
 type CommonNetworkEntity struct {
 	routingTable      map[bacnet.NetworkNumber]RoutingTableEntry
-	applicationEntity *ApplicationEntity
+	applicationEntity APDUHandler
 }
 
 func (e *CommonNetworkEntity) NUnitDataIndication(source *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
@@ -149,7 +184,6 @@ type NPDU struct {
 	VendorID           uint16
 
 	data []byte
-	ADPU *APDU
 }
 
 func NewNPDU() *NPDU {
@@ -202,7 +236,7 @@ func (npdu *NPDU) String() string {
 			result,
 			npdu.NetworkMessageType,
 		)
-		if npdu.NetworkMessageType >= 0x80 && npdu.NetworkMessageType <= 0xff {
+		if npdu.NetworkMessageType >= 0x80 {
 			result = fmt.Sprintf("%s | VendorID: %v",
 				result,
 				npdu.VendorID,
@@ -235,16 +269,9 @@ func (npdu *NPDU) MarshalBinary() ([]byte, error) {
 			_ = binary.Write(b, binary.BigEndian, npdu.VendorID)
 		}
 	}
+	// TODO verify if bytes is needed
 	bytes := b.Bytes()
-	if npdu.ADPU != nil {
-		bytesapdu, err := npdu.ADPU.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-		bytes = append(bytes, bytesapdu...)
-	} else {
-		bytes = append(bytes, npdu.data...)
-	}
+	bytes = append(bytes, npdu.data...)
 	return bytes, nil
 }
 

@@ -255,24 +255,24 @@ const (
 	ConfirmedServiceChoiceVtData                           BACnetConfirmedServiceChoice = 23
 )
 
-type BACUnconfirmedServiceChoice uint
+type BACnetUnconfirmedServiceChoice uint
 
 const (
-	UnconfirmedServiceChoiceIAm                                BACUnconfirmedServiceChoice = 0
-	UnconfirmedServiceChoiceIHave                              BACUnconfirmedServiceChoice = 1
-	UnconfirmedServiceChoiceUnconfirmedCovNotification         BACUnconfirmedServiceChoice = 2
-	UnconfirmedServiceChoiceUnconfirmedEventNotification       BACUnconfirmedServiceChoice = 3
-	UnconfirmedServiceChoiceUnconfirmedPrivateTransfer         BACUnconfirmedServiceChoice = 4
-	UnconfirmedServiceChoiceUnconfirmedTextMessage             BACUnconfirmedServiceChoice = 5
-	UnconfirmedServiceChoiceTimeSynchronization                BACUnconfirmedServiceChoice = 6
-	UnconfirmedServiceChoiceWhoHas                             BACUnconfirmedServiceChoice = 7
-	UnconfirmedServiceChoiceWhoIs                              BACUnconfirmedServiceChoice = 8
-	UnconfirmedServiceChoiceUtcTimeSynchronization             BACUnconfirmedServiceChoice = 9
-	UnconfirmedServiceChoiceWriteGroup                         BACUnconfirmedServiceChoice = 10
-	UnconfirmedServiceChoiceUnconfirmedCovNotificationMultiple BACUnconfirmedServiceChoice = 11
-	UnconfirmedServiceChoiceUnconfirmedAuditNotification       BACUnconfirmedServiceChoice = 12
-	UnconfirmedServiceChoiceWhoAmI                             BACUnconfirmedServiceChoice = 13
-	UnconfirmedServiceChoiceYouAre                             BACUnconfirmedServiceChoice = 14
+	UnconfirmedServiceChoiceIAm                                BACnetUnconfirmedServiceChoice = 0
+	UnconfirmedServiceChoiceIHave                              BACnetUnconfirmedServiceChoice = 1
+	UnconfirmedServiceChoiceUnconfirmedCovNotification         BACnetUnconfirmedServiceChoice = 2
+	UnconfirmedServiceChoiceUnconfirmedEventNotification       BACnetUnconfirmedServiceChoice = 3
+	UnconfirmedServiceChoiceUnconfirmedPrivateTransfer         BACnetUnconfirmedServiceChoice = 4
+	UnconfirmedServiceChoiceUnconfirmedTextMessage             BACnetUnconfirmedServiceChoice = 5
+	UnconfirmedServiceChoiceTimeSynchronization                BACnetUnconfirmedServiceChoice = 6
+	UnconfirmedServiceChoiceWhoHas                             BACnetUnconfirmedServiceChoice = 7
+	UnconfirmedServiceChoiceWhoIs                              BACnetUnconfirmedServiceChoice = 8
+	UnconfirmedServiceChoiceUtcTimeSynchronization             BACnetUnconfirmedServiceChoice = 9
+	UnconfirmedServiceChoiceWriteGroup                         BACnetUnconfirmedServiceChoice = 10
+	UnconfirmedServiceChoiceUnconfirmedCovNotificationMultiple BACnetUnconfirmedServiceChoice = 11
+	UnconfirmedServiceChoiceUnconfirmedAuditNotification       BACnetUnconfirmedServiceChoice = 12
+	UnconfirmedServiceChoiceWhoAmI                             BACnetUnconfirmedServiceChoice = 13
+	UnconfirmedServiceChoiceYouAre                             BACnetUnconfirmedServiceChoice = 14
 )
 
 const (

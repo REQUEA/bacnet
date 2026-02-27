@@ -3,7 +3,9 @@ package main
 import (
 	"net"
 
-	"github.com/REQUEA/bacnet/bacip"
+	"github.com/REQUEA/bacnet/linklayer"
+	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/networklayer"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,7 +28,7 @@ func (l *LogRUsAdapter) Trace(fields ...any) {
 func main() {
 	log := logrus.New()
 	log.SetLevel(logrus.TraceLevel)
-	bacip.SetLogger(log)
+	logger.SetLogger(log)
 
 	udpAddr1, err := net.ResolveUDPAddr("udp", ":47808")
 	if err != nil {
@@ -37,32 +39,40 @@ func main() {
 		log.Fatal("could not create UDP connection 1: ", err)
 	}
 
-	datalink1 := bacip.BACnetIPDatalink{
+	datalink1 := linklayer.BACnetIPDatalink{
 		Conn: conn1,
 	}
 
 	addr1 := net.IP{10, 10, 1, 3}
-	port1 := bacip.NewBACnetIPPort(1, 10, addr1, 24, 47808)
-	if port1 == nil {
-		log.Fatal("could not create port 1")
+	ipPort1 := linklayer.NewBACnetIPPort(addr1, 24, 47808)
+	if ipPort1 == nil {
+		log.Fatal("could not create datalink port 1")
 	}
-	port1.SetDatalink(&datalink1)
-	datalink1.AddPort(port1)
+	ipPort1.SetDatalink(&datalink1)
+	datalink1.AddPort(ipPort1)
+	nlPort1 := networklayer.NewPort(1, 10, ipPort1)
+	if nlPort1 == nil {
+		log.Fatal("could not create network layer port 1")
+	}
 
 	addr2 := net.IP{10, 10, 2, 3}
-	port2 := bacip.NewBACnetIPPort(2, 20, addr2, 25, 47808)
-	if port2 == nil {
-		log.Fatal("could not create port 2")
+	ipPort2 := linklayer.NewBACnetIPPort(addr2, 25, 47808)
+	if ipPort2 == nil {
+		log.Fatal("could not create datalink port 2")
 	}
-	port2.SetDatalink(&datalink1)
-	datalink1.AddPort(port2)
+	ipPort2.SetDatalink(&datalink1)
+	datalink1.AddPort(ipPort2)
+	nlPort2 := networklayer.NewPort(2, 20, ipPort2)
+	if nlPort2 == nil {
+		log.Fatal("could not create network layer port 2")
+	}
 
-	router := bacip.NewRouterNetworkEntity().
-		AddPort(port1).
-		AddPort(port2)
+	router := networklayer.NewRouterNetworkEntity().
+		AddPort(nlPort1).
+		AddPort(nlPort2)
 
-	port1.SetNetworkEntity(router)
-	port2.SetNetworkEntity(router)
+	nlPort1.SetNetworkEntity(router)
+	nlPort2.SetNetworkEntity(router)
 
 	router.Start()
 	datalink1.Start()
