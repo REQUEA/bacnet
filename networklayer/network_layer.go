@@ -92,11 +92,12 @@ type NetworkEntity interface {
 	NUnitDataIndication(source *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error
 	NUnitDataRequest(dadr *bacnet.BACnetAddress, der bool, priority NPDUPriority, payload []byte) error
 	NReleaseRequest(dadr *bacnet.BACnetAddress) error
+	GetMaxPDULength(dnet bacnet.NetworkNumber) uint
 }
 
 type CommonNetworkEntity struct {
-	routingTable      map[bacnet.NetworkNumber]RoutingTableEntry
-	applicationEntity APDUHandler
+	routingTable map[bacnet.NetworkNumber]RoutingTableEntry
+	apduHandler  APDUHandler
 }
 
 func (e *CommonNetworkEntity) NUnitDataIndication(source *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
