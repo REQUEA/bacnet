@@ -41,6 +41,32 @@ type APDUIndication struct {
 	Data          []byte
 }
 
+type ConfServResponseType uint
+
+const (
+	ResponseConfirm = 0
+	ResponseReject  = 1
+	ResponseAbort   = 2
+)
+
+type ConfServResponse struct {
+	Type       ConfServResponseType
+	Indication *APDUIndication
+}
+
+type ConfServFuture struct {
+	c chan *ConfServResponse
+}
+
+func (f *ConfServFuture) WaitResponse() *ConfServResponse {
+	// TODO: add timeout?
+	result, ok := <-f.c
+	if !ok {
+		return nil
+	}
+	return result
+}
+
 type ServiceHandler interface {
 	GetDevice(bacnet.BACnetConfirmedServiceChoice, []byte) *objectmodel.Device
 	HandleConfServIndication(*APDUIndication, bacnet.BACnetConfirmedServiceChoice)
@@ -59,6 +85,8 @@ type ApplicationEntity struct {
 	serviceLayer            *ServiceHandler
 	networkEntity           networklayer.NetworkEntity
 	serviceRegistery        *ServiceRegistry
+	remoteDeviceCache       *objectmodel.RemoteDeviceCache
+	clientInvokeId          uint
 }
 
 type ServiceRegistry struct {
@@ -306,7 +334,7 @@ func (e *ClientNetworkTransactionEvent) Exec() {
 	}
 }
 
-func (ae *ApplicationEntity) HandleNUNITDATAIndication(indication *networklayer.NPDUIndication) {
+func (ae *ApplicationEntity) HandleNUnitDataIndication(indication *networklayer.NPDUIndication) {
 	if len(indication.Apdu) < 1 {
 		logger.Error("N-UNITDATA.indication handling: empty APDU")
 		return
@@ -340,6 +368,42 @@ func (ae *ApplicationEntity) HandleNUNITDATAIndication(indication *networklayer.
 	default:
 		logger.Error("unsupported PDU type: ", pduType)
 	}
+}
+
+func (ae *ApplicationEntity) HandleNUnitReportIndication(indication *networklayer.NPDUIndication) {
+	// TODO: write implementation
+}
+
+func (ae *ApplicationEntity) nextClientInvokeId() uint {
+	ae.clientInvokeId++
+	return ae.clientInvokeId
+}
+
+func (ae *ApplicationEntity) SendConfServRequest(
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	dest *bacnet.BACnetAddress,
+	expectedReply bool,
+	priority networklayer.NPDUPriority,
+	data []byte,
+) *ConfServFuture {
+	// create new client transaction
+	// segment request if needed
+	// create events from the segments
+	// push events to the transaction
+	// return the future
+	id := NewTransactionId(dest, ae.nextClientInvokeId())
+	transaction := NewClientTransaction(&id)
+	device := ae.remoteDeviceCache.Get(dest)
+	if device != nil {
+		transaction.maxPduLength = int(device.MaxAPDULength())
+		transaction.segmentationSupported = device.SegmentationSupported()
+	} else {
+		// TODO: use some default values
+	}
+	transaction.serviceChoice = serviceChoice
+	transaction.requestPdu = data
+	ae.addClientTransaction(&transaction)
+	return nil
 }
 
 const (

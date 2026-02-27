@@ -52,7 +52,7 @@ func (ne *NonRouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.M
 			} else {
 				indication.Dest = &bacnet.BACnetAddress{Mac: sadr}
 			}
-			ne.applicationEntity.HandleNUnitDataIndication(&indication)
+			ne.apduHandler.HandleNUnitDataIndication(&indication)
 		}
 	}
 	// In other cases a node that is not a router must discard the message

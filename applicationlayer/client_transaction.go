@@ -13,11 +13,18 @@ type ClientTransactionState interface {
 	HandleRejectPdu(*networklayer.NPDUIndication, int)
 	HandleSegmentAckPdu(*networklayer.NPDUIndication, *SegmentAckHeader)
 	HandleAbortPdu(int)
+	HandleConfServRequest(*bacnet.BACnetAddress, bool, networklayer.NPDUPriority)
 }
 
 type ClientTransaction struct {
 	Transaction
-	state ClientTransactionState
+	state                 ClientTransactionState
+	requestPdu            []byte
+	requestOffset         int
+	maxPduLength          int
+	segmentationSupported bool
+	serviceChoice         bacnet.BACnetConfirmedServiceChoice
+	responsePdu           []byte
 }
 
 func NewClientTransaction(id *TransactionId) ClientTransaction {
@@ -69,6 +76,16 @@ func (t *ClientTransaction) HandleSegmentAckPdu(indication *networklayer.NPDUInd
 func (t *ClientTransaction) HandleAbortPdu(reason int) {
 	if t.state != nil {
 		t.state.HandleAbortPdu(reason)
+	}
+}
+
+func (t *ClientTransaction) HandleConfServRequest(
+	dest *bacnet.BACnetAddress,
+	expectedReply bool,
+	priority networklayer.NPDUPriority,
+) {
+	if t.state != nil {
+		t.state.HandleConfServRequest(dest, expectedReply, priority)
 	}
 }
 
@@ -132,6 +149,64 @@ func (s *ClientTransactionIdleState) HandleSegmentAckPdu(indication *networklaye
 }
 func (s *ClientTransactionIdleState) HandleAbortPdu(int) {
 	// never called
+}
+
+func MaxRespFromPduLen(len int) int {
+	if len <= 50 {
+		return 0
+	} else if len <= 128 {
+		return 1
+	} else if len <= 206 {
+		return 2
+	} else if len <= 480 {
+		return 3
+	} else if len <= 1024 {
+		return 4
+	} else if len <= 1476 {
+		return 5
+	}
+	return 0
+}
+
+func (s *ClientTransactionIdleState) HandleConfServRequest(
+	dest *bacnet.BACnetAddress,
+	expectedReply bool,
+	priority networklayer.NPDUPriority,
+) {
+	tr := s.transaction
+	maxApduLength := tr.applicationEntity.networkEntity.GetMaxPDULength(dest.Network)
+	if len(tr.requestPdu) > int(maxApduLength) {
+		// TODO: implement the CannotSend case
+		// SendConfirmedSegmented
+		// TODO need to check if the Max_Segment_Accepted value is known and
+		// all segments can be transmitted
+		tr.SentAllSegments = false
+		tr.RetryCount = 0
+		tr.SegmentRetryCount = 0
+		tr.InitialSequenceNumber = 0
+		tr.ProposedWindowSize = 5
+		tr.ActualWindowSize = 1
+		tr.SegmentTimer.Start()
+		sentData := tr.requestPdu[:tr.maxPduLength]
+		maxResp := MaxRespFromPduLen(int(tr.applicationEntity.networkEntity.GetMaxPDULength()))
+		// TODO: make accepting segmentation of the response a configurable option
+		header := ConfirmedServiceRequestHeader{
+			Flags: ConfServFlags{
+				SegmentedRequest:          true,
+				MoreSegments:              true,
+				SegmentedResponseAccepted: true,
+			},
+			MaxSegs:            0b111, // TODO should be coming from a configuration on the local node
+			MaxResp:            maxResp,
+			SequenceNumber:     0,
+			ProposedWindowSize: tr.ProposedWindowSize,
+			InvokeId:           tr.Id.InvokeId,
+			ServiceChoice:      tr.serviceChoice,
+		}
+
+	} else {
+		// SendConfirmedUnsegmented
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -243,6 +318,13 @@ func (s *ClientTransactionAwaitConfirmationState) HandleAbortPdu(reason int) {
 	// TODO: send ABORT.indication to user layer
 	// discard transaction
 	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
+
+func (s *ClientTransactionAwaitConfirmationState) HandleConfServRequest(
+	dest *bacnet.BACnetAddress,
+	expectedReply bool,
+	priority networklayer.NPDUPriority,
+) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -451,6 +533,13 @@ func (s *ClientTransactionSegmentedRequestState) HandleAbortPdu(int) {
 	// TODO: issue ABORT.indication to local application
 	// Discard transaction
 	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
+
+func (s *ClientTransactionSegmentedRequestState) HandleConfServRequest(
+	dest *bacnet.BACnetAddress,
+	expectedReply bool,
+	priority networklayer.NPDUPriority,
+) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -729,4 +818,11 @@ func (s *ClientTransactionSegmentedConfState) HandleAbortPdu(reason int) {
 	// TODO: issue ABORT.indication to local application
 	// Discard transaction
 	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
+
+func (s *ClientTransactionSegmentedConfState) HandleConfServRequest(
+	dest *bacnet.BACnetAddress,
+	expectedReply bool,
+	priority networklayer.NPDUPriority,
+) {
 }
