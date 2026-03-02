@@ -2,7 +2,6 @@ package applicationlayer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -749,8 +748,7 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *networklayer.NPDUInd
 		return nil
 	}
 	transaction.HandleSimpleAckPdu(indication, &header)
-
-	return errors.New("not implemented")
+	return nil
 }
 
 type ComplexAckHeader struct {
@@ -875,7 +873,7 @@ func (ae *ApplicationEntity) handleSegmentAckPDU(indication *networklayer.NPDUIn
 		}
 		transaction.PushEvent(event)
 	}
-	return errors.New("not implemented")
+	return nil
 }
 
 type ErrorHeader struct {

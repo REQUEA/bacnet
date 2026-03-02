@@ -91,6 +91,14 @@ func (t *ClientTransaction) HandleConfServRequest(
 	}
 }
 
+func (t *ClientTransaction) resolveFuture(resp *ConfServResponse) {
+	if t.future != nil {
+		t.future.c <- resp
+		close(t.future.c)
+		t.future = nil
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // IDLE State
 ////////////////////////////////////////////////////////////////////////////////
@@ -216,6 +224,30 @@ func (s *ClientTransactionIdleState) HandleConfServRequest(
 		)
 	} else {
 		// SendConfirmedUnsegmented
+		maxResp := MaxRespFromPduLen(int(maxApduLength))
+		header := ConfirmedServiceRequestHeader{
+			Flags: ConfServFlags{
+				SegmentedRequest:          false,
+				MoreSegments:              false,
+				SegmentedResponseAccepted: true,
+			},
+			MaxSegs:       0b111,
+			MaxResp:       maxResp,
+			InvokeId:      tr.Id.InvokeId,
+			ServiceChoice: tr.serviceChoice,
+		}
+		confReqBytes, err := header.Marshal()
+		if err != nil {
+			logger.Error("could not marshal ConfServ header: ", err)
+			return
+		}
+		confReqBytes = append(confReqBytes, tr.requestPdu...)
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(dest, expectedReply, priority, confReqBytes)
+		if err != nil {
+			logger.Error("could not send ConfirmedServiceRequest: ", err)
+		}
+		tr.RequestTimer.Start()
+		tr.state = &ClientTransactionAwaitConfirmationState{tr}
 	}
 }
 
@@ -234,16 +266,14 @@ func (s *ClientTransactionAwaitConfirmationState) HandleSimpleAckPdu(
 	// SimpleACK_Received
 	tr := s.transaction
 	tr.RequestTimer.Stop()
-	// issue a CONF_SERV.confirm to the local application
-	// TODO: this is probably not enough, there needs to be some mapping between
-	// the request and the confirm at some point
-	/*
-		tr.applicationEntity.serviceLayer.ConfServConfirm(
-			indication,
-			bacnet.BACnetConfirmedServiceChoice(header.ServiceChoice),
-			[]byte{},
-		)
-	*/
+	serviceChoice := bacnet.BACnetConfirmedServiceChoice(header.ServiceChoice)
+	apduInd := &APDUIndication{
+		Source:        indication.Source,
+		ExpectedReply: false,
+		Data:          nil,
+	}
+	tr.applicationEntity.serviceLayer.HandleConfServConfirm(apduInd, serviceChoice)
+	tr.resolveFuture(&ConfServResponse{Type: ResponseConfirm, Indication: apduInd})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
@@ -285,34 +315,38 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 	} else {
 		// UnsegmentedComplexACK_Received
 		tr.RequestTimer.Stop()
-		// TODO: issue CONF_SERV.confirm to the local application
-		/*
-			tr.applicationEntity.serviceLayer.ConfServConfirm(
-				indication,
-				bacnet.BACnetConfirmedServiceChoice(header.ServiceAckChoice),
-				serviceAck,
-			)
-		*/
+		tr.responsePdu = serviceAck
+		serviceChoice := bacnet.BACnetConfirmedServiceChoice(header.ServiceAckChoice)
+		apduInd := &APDUIndication{
+			Source:        indication.Source,
+			ExpectedReply: false,
+			Data:          serviceAck,
+		}
+		tr.applicationEntity.serviceLayer.HandleConfServConfirm(apduInd, serviceChoice)
+		tr.resolveFuture(&ConfServResponse{Type: ResponseConfirm, Indication: apduInd})
 		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
 
 func (s *ClientTransactionAwaitConfirmationState) HandleErrorPdu(indication *networklayer.NPDUIndication, header *ErrorHeader, errorData []byte) {
 	// ErrorPDU_Received
-	// Stop RequestTimer
 	tr := s.transaction
 	tr.RequestTimer.Stop()
-	// TODO: send CONF_SERV.confirm(-) to user layer
-	// discard transaction
+	apduInd := &APDUIndication{
+		Source:        indication.Source,
+		ExpectedReply: false,
+		Data:          errorData,
+	}
+	tr.resolveFuture(&ConfServResponse{Type: ResponseReject, Indication: apduInd})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
-func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(*networklayer.NPDUIndication, int) {
+func (s *ClientTransactionAwaitConfirmationState) HandleRejectPdu(indication *networklayer.NPDUIndication, reason int) {
 	// RejectPDU_Received
 	tr := s.transaction
 	tr.RequestTimer.Stop()
-	// TODO: send REJECT.indication to user layer
-	// discard transaction
+	apduInd := &APDUIndication{Source: indication.Source, ExpectedReply: false}
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: apduInd})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
@@ -325,8 +359,7 @@ func (s *ClientTransactionAwaitConfirmationState) HandleAbortPdu(reason int) {
 	// AbortPDU_Received
 	tr := s.transaction
 	tr.RequestTimer.Stop()
-	// TODO: send ABORT.indication to user layer
-	// discard transaction
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: nil})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
@@ -508,12 +541,12 @@ func (s *ClientTransactionSegmentedRequestState) HandleErrorPdu(indication *netw
 		tr.applicationEntity.removeClientTransaction(tr.Id)
 	}
 }
-func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(*networklayer.NPDUIndication, int) {
+func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(indication *networklayer.NPDUIndication, reason int) {
 	// RejectPDU_Received
 	tr := s.transaction
 	tr.SegmentTimer.Stop()
-	// TODO: issue a REJECT.indication to the local application
-	// Discard transaction
+	apduInd := &APDUIndication{Source: indication.Source, ExpectedReply: false}
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: apduInd})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(indication *networklayer.NPDUIndication, header *SegmentAckHeader) {
@@ -536,12 +569,11 @@ func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(indication 
 		tr.SegmentTimer.Restart(false)
 	}
 }
-func (s *ClientTransactionSegmentedRequestState) HandleAbortPdu(int) {
+func (s *ClientTransactionSegmentedRequestState) HandleAbortPdu(reason int) {
 	// AbortPDU_Received
 	tr := s.transaction
 	tr.SegmentTimer.Stop()
-	// TODO: issue ABORT.indication to local application
-	// Discard transaction
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: nil})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
@@ -601,7 +633,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 			if header.Flags.MoreSegments {
 				if header.SequenceNumber == (tr.InitialSequenceNumber+tr.ActualWindowSize)%256 {
 					// LastSegmentOfGroup_Received
-					// TODO: save PDU segment
+					tr.responsePdu = append(tr.responsePdu, serviceAck...)
 					tr.LastSequenceNumber = (tr.LastSequenceNumber + 1) % 256
 					tr.InitialSequenceNumber = tr.LastSequenceNumber
 					tr.DuplicateCount = 0
@@ -625,7 +657,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 					tr.SegmentTimer.Restart(false)
 				} else {
 					// NewSegmentReceived
-					// TODO: save PDU segment
+					tr.responsePdu = append(tr.responsePdu, serviceAck...)
 					tr.LastSequenceNumber = (tr.LastSequenceNumber + 1) % 256
 					tr.SegmentTimer.Restart(false)
 					// Issue N-RELEASE.request to inform datalink layer
@@ -636,7 +668,7 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 				}
 			} else {
 				// LastSegmentOfComplexACK_Received
-				// TODO: save PDU segment
+				tr.responsePdu = append(tr.responsePdu, serviceAck...)
 				tr.SegmentTimer.Stop()
 				// Issue N-UNITDATA.request to send SegmentACK PDU
 				segmentAckHeader := &SegmentAckHeader{
@@ -655,8 +687,13 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 						logger.Error("could not send SegmentACK PDU: ", err)
 					}
 				}
-				// TODO: issue CONF_SERV.confirm to the local application
-				// Discard transaction
+				apduInd := &APDUIndication{
+					Source:        indication.Source,
+					ExpectedReply: false,
+					Data:          tr.responsePdu,
+				}
+				tr.applicationEntity.serviceLayer.HandleConfServConfirm(apduInd, tr.serviceChoice)
+				tr.resolveFuture(&ConfServResponse{Type: ResponseConfirm, Indication: apduInd})
 				tr.applicationEntity.removeClientTransaction(tr.Id)
 			}
 		} else {
@@ -763,8 +800,8 @@ func (s *ClientTransactionSegmentedConfState) HandleErrorPdu(
 			logger.Error("could not send Abort PDU: ", err)
 		}
 	}
-	// TODO: send ABORT.indication to the user layer
-	// Discard transaction
+	apduInd := &APDUIndication{Source: indication.Source, ExpectedReply: false, Data: payload}
+	tr.resolveFuture(&ConfServResponse{Type: ResponseReject, Indication: apduInd})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
@@ -791,8 +828,8 @@ func (s *ClientTransactionSegmentedConfState) HandleRejectPdu(
 			logger.Error("could not send Abort PDU: ", err)
 		}
 	}
-	// TODO: send ABORT.indication to the user layer
-	// Discard transaction
+	apduInd := &APDUIndication{Source: indication.Source, ExpectedReply: false}
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: apduInd})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
@@ -825,8 +862,7 @@ func (s *ClientTransactionSegmentedConfState) HandleAbortPdu(reason int) {
 	// AbortPDU_Received
 	tr := s.transaction
 	tr.SegmentTimer.Stop()
-	// TODO: issue ABORT.indication to local application
-	// Discard transaction
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: nil})
 	tr.applicationEntity.removeClientTransaction(tr.Id)
 }
 
