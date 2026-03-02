@@ -17,7 +17,12 @@ type ServerTransactionState interface {
 
 type ServerTransaction struct {
 	Transaction
-	state ServerTransactionState
+	state          ServerTransactionState
+	responsePdu    []byte
+	requestOffset  int
+	maxPduLength   int
+	serviceChoice  bacnet.BACnetConfirmedServiceChoice
+	lastSentSeqNum uint
 }
 
 func NewServerTransaction(id *TransactionId) *ServerTransaction {
@@ -469,7 +474,82 @@ type ServerTransactionSegmentedResponseState struct {
 
 func (s *ServerTransactionSegmentedResponseState) HandleUnconfirmedServiceRequestPdu() {}
 
-func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(*SegmentAckHeader) {}
+// sendNextSegments sends up to ActualWindowSize ComplexAck segments starting from
+// tr.requestOffset / tr.InitialSequenceNumber. It does NOT advance requestOffset or ISN
+// (those are updated only when a positive SegmentAck is received), so retransmitting the
+// current window is achieved simply by calling sendNextSegments again.
+func (s *ServerTransactionSegmentedResponseState) sendNextSegments() {
+	tr := s.transaction
+	seqNum := tr.InitialSequenceNumber
+	offset := tr.requestOffset
+
+	for i := uint(0); i < tr.ActualWindowSize; i++ {
+		end := offset + tr.maxPduLength
+		if end > len(tr.responsePdu) {
+			end = len(tr.responsePdu)
+		}
+		moreSegments := end < len(tr.responsePdu)
+		segData := tr.responsePdu[offset:end]
+
+		header := ComplexAckHeader{
+			Flags: ComplexAckFlags{
+				SegmentedRequest: true,
+				MoreSegments:     moreSegments,
+			},
+			InvokeId:           tr.Id.InvokeId,
+			SequenceNumber:     seqNum,
+			ProposedWindowSize: tr.ActualWindowSize,
+			ServiceAckChoice:   int(tr.serviceChoice),
+		}
+		headerBytes, err := header.Marshal()
+		if err != nil {
+			logger.Error("could not marshal ComplexAck segment header: ", err)
+			return
+		}
+		pdu := append(headerBytes, segData...)
+		err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+			tr.Source, false, networklayer.NormalPriority, pdu)
+		if err != nil {
+			logger.Error("could not send ComplexAck segment: ", err)
+		}
+
+		if !moreSegments {
+			tr.SentAllSegments = true
+			tr.lastSentSeqNum = seqNum
+			break
+		}
+		seqNum = (seqNum + 1) % 256
+		offset = end
+	}
+
+	tr.SegmentTimer.Reset()
+	tr.SegmentTimer.Start()
+}
+
+func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(header *SegmentAckHeader) {
+	tr := s.transaction
+	if !header.Flags.NegativeAck {
+		// Positive ack
+		if tr.SentAllSegments && header.SequenceNumber == tr.lastSentSeqNum {
+			// Final ack: all segments delivered
+			tr.SegmentTimer.Stop()
+			tr.applicationEntity.removeServerTransaction(tr.Id)
+			return
+		}
+		// Advance window: compute how many segments were acked
+		nackedSegs := int((header.SequenceNumber-tr.InitialSequenceNumber+257)%256) + 1
+		tr.requestOffset += nackedSegs * tr.maxPduLength
+		if tr.requestOffset > len(tr.responsePdu) {
+			tr.requestOffset = len(tr.responsePdu)
+		}
+		tr.InitialSequenceNumber = (header.SequenceNumber + 1) % 256
+		tr.SegmentRetryCount = 0
+		s.sendNextSegments()
+	} else {
+		// Negative ack: retransmit current window from ISN
+		s.sendNextSegments()
+	}
+}
 
 func (s *ServerTransactionSegmentedResponseState) HandleAbortPdu(int) {}
 
@@ -504,10 +584,9 @@ func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequestP
 func (s *ServerTransactionSegmentedResponseState) OnSegmentTimerFired() {
 	tr := s.transaction
 	if tr.SegmentRetryCount < tr.NumberOfApduRetries {
-		// Timeout
-		// TODO: send multiple complex ack to fill send window
-		// TODO: check returned value
-		tr.SegmentTimer.Restart(false)
+		// Timeout: retransmit current window
+		tr.SegmentRetryCount++
+		s.sendNextSegments()
 	} else {
 		// FinalTimeout
 		tr.SegmentTimer.Stop()

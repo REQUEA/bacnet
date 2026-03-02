@@ -629,6 +629,82 @@ func (ae *ApplicationEntity) SendIAmRequest(dest *bacnet.BACnetAddress, priority
 	return ae.networkEntity.NUnitDataRequest(dest, false, priority, apdu)
 }
 
+const (
+	// defaultMaxApduLength is the safe fallback when the remote device's max APDU length is unknown.
+	defaultMaxApduLength = 480
+
+	complexAckUnsegHeaderLen = 3 // type+flags, invoke-id, service-ack-choice
+	complexAckSegHeaderLen   = 5 // type+flags, invoke-id, seq-no, window-size, service-ack-choice
+)
+
+// SendConfServResponse sends a confirmed-service response for an in-progress server transaction.
+// data is the service-ack payload (empty for SimpleAck, non-empty for ComplexAck).
+func (ae *ApplicationEntity) SendConfServResponse(
+	invokeId uint,
+	source *bacnet.BACnetAddress,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	data []byte,
+) error {
+	transactionId := NewTransactionId(source, invokeId)
+	tr := ae.getServerTransaction(&transactionId)
+	if tr == nil {
+		return fmt.Errorf("SendConfServResponse: no server transaction for invokeId=%d source=%s", invokeId, source)
+	}
+	tr.RequestTimer.Stop()
+
+	maxApduLength := defaultMaxApduLength
+	device := ae.remoteDeviceCache.Get(source)
+	if device != nil && device.MaxAPDULength() > 0 {
+		maxApduLength = int(device.MaxAPDULength())
+	}
+
+	if len(data) == 0 {
+		// SimpleAck
+		ack := SimpleAckHeader{
+			InvokeId:      invokeId,
+			ServiceChoice: int(serviceChoice),
+		}
+		ackBytes, err := ack.Marshal()
+		if err != nil {
+			return fmt.Errorf("SendConfServResponse: could not marshal SimpleAck: %w", err)
+		}
+		err = ae.networkEntity.NUnitDataRequest(source, false, networklayer.NormalPriority, ackBytes)
+		ae.removeServerTransaction(&transactionId)
+		return err
+	}
+
+	if complexAckUnsegHeaderLen+len(data) <= maxApduLength {
+		// Unsegmented ComplexAck
+		header := ComplexAckHeader{
+			Flags:            ComplexAckFlags{SegmentedRequest: false},
+			InvokeId:         invokeId,
+			ServiceAckChoice: int(serviceChoice),
+		}
+		headerBytes, err := header.Marshal()
+		if err != nil {
+			return fmt.Errorf("SendConfServResponse: could not marshal ComplexAck header: %w", err)
+		}
+		pdu := append(headerBytes, data...)
+		err = ae.networkEntity.NUnitDataRequest(source, false, networklayer.NormalPriority, pdu)
+		ae.removeServerTransaction(&transactionId)
+		return err
+	}
+
+	// Segmented ComplexAck
+	tr.responsePdu = data
+	tr.requestOffset = 0
+	tr.maxPduLength = maxApduLength - complexAckSegHeaderLen
+	tr.serviceChoice = serviceChoice
+	tr.SentAllSegments = false
+	tr.InitialSequenceNumber = 0
+	tr.SegmentRetryCount = 0
+	tr.ActualWindowSize = 1
+	segState := &ServerTransactionSegmentedResponseState{transaction: tr}
+	tr.state = segState
+	segState.sendNextSegments()
+	return nil
+}
+
 // SendWhoIsRequest sends an unconfirmed WhoIs service request PDU. data is the pre-encoded WhoIsRequest payload.
 func (ae *ApplicationEntity) SendWhoIsRequest(dest *bacnet.BACnetAddress, priority networklayer.NPDUPriority, data []byte) error {
 	apdu := make([]byte, 0, 2+len(data))
@@ -696,14 +772,14 @@ func (h *ComplexAckHeader) Marshal() ([]byte, error) {
 		result = []byte{
 			typeFlag,
 			uint8(h.InvokeId),
+			uint8(h.SequenceNumber),
+			uint8(h.ProposedWindowSize),
 			uint8(h.ServiceAckChoice),
 		}
 	} else {
 		result = []byte{
 			typeFlag,
 			uint8(h.InvokeId),
-			uint8(h.SequenceNumber),
-			uint8(h.ProposedWindowSize),
 			uint8(h.ServiceAckChoice),
 		}
 	}
