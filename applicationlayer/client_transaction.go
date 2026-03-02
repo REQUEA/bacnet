@@ -188,7 +188,7 @@ func (s *ClientTransactionIdleState) HandleConfServRequest(
 		tr.ActualWindowSize = 1
 		tr.SegmentTimer.Start()
 		sentData := tr.requestPdu[:tr.maxPduLength]
-		maxResp := MaxRespFromPduLen(int(tr.applicationEntity.networkEntity.GetMaxPDULength()))
+		maxResp := MaxRespFromPduLen(int(maxApduLength))
 		// TODO: make accepting segmentation of the response a configurable option
 		header := ConfirmedServiceRequestHeader{
 			Flags: ConfServFlags{
@@ -203,7 +203,15 @@ func (s *ClientTransactionIdleState) HandleConfServRequest(
 			InvokeId:           tr.Id.InvokeId,
 			ServiceChoice:      tr.serviceChoice,
 		}
-
+		confReqBytes, err := header.Marshal()
+		if err != nil {
+			logger.Error("could not marshal ConfServ header: ", err)
+			return
+		}
+		confReqBytes = append(confReqBytes, sentData...)
+		tr.applicationEntity.networkEntity.NUnitDataRequest(
+			dest, expectedReply, priority, confReqBytes,
+		)
 	} else {
 		// SendConfirmedUnsegmented
 	}
