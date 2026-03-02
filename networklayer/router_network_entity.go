@@ -41,11 +41,22 @@ func (e *RouterNetworkEntity) NUnitDataRequest(
 ) error {
 	switch dadr.Network {
 	case bacnet.LocalDNET:
-		// local transmission
+		npdu := NewNPDU().SetIsExpectingReply(der).SetPriority(priority)
+		npdu.data = payload
 		if len(dadr.Mac.GetBytes()) == 0 {
-			// local broadcast
+			// local broadcast — send on all ports
+			for _, p := range e.ports {
+				if err := p.Broadcast(npdu); err != nil {
+					logger.Error("local broadcast on port ", p.Id, " failed: ", err)
+				}
+			}
 		} else {
-			// transmission to a specific host on the network
+			// local unicast — send on all ports; datalink discards if unreachable
+			for _, p := range e.ports {
+				if err := p.ToDataLink(npdu, dadr.Mac.GetBytes()); err != nil {
+					logger.Error("local unicast on port ", p.Id, " failed: ", err)
+				}
+			}
 		}
 	case bacnet.BroadcastDNET:
 		// global broadcast
@@ -225,12 +236,16 @@ func (ne *RouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.MAC,
 	} else {
 		if !npdu.IsDestPresent() {
 			logger.Trace("Handle: npdu for local application layer")
-			// find bacnet application entity
-			// if found pass payload to the application entity
+			if ne.apduHandler != nil {
+				indication := buildNPDUIndication(npdu, sport, sadr, dadr)
+				ne.apduHandler.HandleNUnitDataIndication(indication)
+			}
 		} else if npdu.Destination.Network == bacnet.BroadcastDNET { // DNET present and broadcast
 			logger.Trace("Handle: npdu for broadcast DNET")
-			// find bacnet application entity
-			// if found pass payload to the application entity
+			if ne.apduHandler != nil {
+				indication := buildNPDUIndication(npdu, sport, sadr, dadr)
+				ne.apduHandler.HandleNUnitDataIndication(indication)
+			}
 			source := &bacnet.BACnetAddress{
 				Network: sport.Dnet,
 				Mac:     sadr,
@@ -250,12 +265,31 @@ func (ne *RouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.MAC,
 			npdu.SetSource(source)
 			err := ne.schedule(int(npdu.GetPriority()), npdu)
 			if err != nil {
-				logger.Error("error shceduling application message for network ", npdu.Destination.Network, ": ", err)
+				logger.Error("error scheduling application message for network ", npdu.Destination.Network, ": ", err)
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func buildNPDUIndication(npdu *NPDU, sport *Port, sadr bacnet.MAC, dadr bacnet.MAC) *NPDUIndication {
+	indication := &NPDUIndication{
+		Apdu:          npdu.data,
+		Priority:      npdu.GetPriority(),
+		ExpectedReply: npdu.IsExpectingReply(),
+	}
+	if npdu.IsSourcePresent() {
+		indication.Source = npdu.Source
+	} else {
+		indication.Source = &bacnet.BACnetAddress{Network: sport.Dnet, Mac: sadr}
+	}
+	if npdu.IsDestPresent() {
+		indication.Dest = npdu.Destination
+	} else {
+		indication.Dest = &bacnet.BACnetAddress{Network: sport.Dnet, Mac: dadr}
+	}
+	return indication
 }
 
 func (ne *RouterNetworkEntity) handleNetworkLayerMessage(source *Port, sadr bacnet.MAC, npdu *NPDU) error {

@@ -100,6 +100,10 @@ type CommonNetworkEntity struct {
 	apduHandler  APDUHandler
 }
 
+func (e *CommonNetworkEntity) SetAPDUHandler(h APDUHandler) {
+	e.apduHandler = h
+}
+
 func (e *CommonNetworkEntity) NUnitDataIndication(source *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
 	return nil
 }

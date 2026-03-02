@@ -99,6 +99,9 @@ type ApplicationEntity struct {
 	clientInvokeId          uint
 }
 
+// Compile-time check: ApplicationEntity must implement networklayer.APDUHandler.
+var _ networklayer.APDUHandler = (*ApplicationEntity)(nil)
+
 type ServiceRegistry struct {
 	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ServiceHandler
 	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]ServiceHandler
