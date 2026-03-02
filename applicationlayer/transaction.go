@@ -99,6 +99,18 @@ func (t *TransactionTimer) Stop() {
 	t.stopped = true
 }
 
+// Reset stops any running timer and clears internal state, allowing Start to be called again.
+func (t *TransactionTimer) Reset() {
+	t.Lock()
+	defer t.Unlock()
+	if t.timer != nil {
+		t.timer.Stop()
+		t.timer = nil
+	}
+	t.stopped = false
+	t.restarted = false
+}
+
 func (t *TransactionTimer) Restart(force bool) bool {
 	t.Lock()
 	defer t.Unlock()
