@@ -79,6 +79,23 @@ func (e *RouterNetworkEntity) AddPort(p *Port) *RouterNetworkEntity {
 	return e
 }
 
+func (e *RouterNetworkEntity) GetMaxPDULength(dnet bacnet.NetworkNumber) uint {
+	for _, p := range e.ports {
+		if p.Dnet == dnet {
+			return p.datalinkPort.MaxPDULength()
+		}
+	}
+	if entry, ok := e.routingTable[dnet]; ok {
+		return entry.Port.datalinkPort.MaxPDULength()
+	}
+	return 480 // safe minimum per ASHRAE 135
+}
+
+func (e *RouterNetworkEntity) NReleaseRequest(_ *bacnet.BACnetAddress) error {
+	// BACnet/IP is connectionless; nothing to release.
+	return nil
+}
+
 func (ne *RouterNetworkEntity) Start() {
 	go ne.route()
 }

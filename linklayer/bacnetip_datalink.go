@@ -20,6 +20,7 @@ type DatalinkPort interface {
 	Mac() bacnet.MAC
 	BroadcastMac() bacnet.MAC
 	Send(data []byte, destMAC []byte) error
+	MaxPDULength() uint
 }
 
 type BACnetIPMAC struct {
@@ -98,6 +99,11 @@ func (p *BACnetIPPort) BroadcastMac() bacnet.MAC {
 
 func (p *BACnetIPPort) Send(data []byte, destMAC []byte) error {
 	return p.datalink.Send(data, destMAC)
+}
+
+// MaxPDULength returns the maximum APDU length for BACnet/IP (ASHRAE 135 Annex J).
+func (p *BACnetIPPort) MaxPDULength() uint {
+	return 1476
 }
 
 func getBroadcastAddress(ip net.IP, prefixLen int) net.IP {

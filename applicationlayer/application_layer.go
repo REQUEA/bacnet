@@ -1,6 +1,7 @@
 package applicationlayer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -58,13 +59,22 @@ type ConfServFuture struct {
 	c chan *ConfServResponse
 }
 
-func (f *ConfServFuture) WaitResponse() *ConfServResponse {
-	// TODO: add timeout?
-	result, ok := <-f.c
-	if !ok {
+func (f *ConfServFuture) WaitResponse(ctx context.Context) *ConfServResponse {
+	select {
+	case result, ok := <-f.c:
+		if !ok {
+			return nil
+		}
+		return result
+	case <-ctx.Done():
 		return nil
 	}
-	return result
+}
+
+func (f *ConfServFuture) WaitResponseWithTimeout(d time.Duration) *ConfServResponse {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return f.WaitResponse(ctx)
 }
 
 type ServiceHandler interface {
@@ -82,7 +92,7 @@ type ApplicationEntity struct {
 	ClientTransactions      []*ClientTransaction
 	clientTransactionsMutex sync.Mutex
 	serverTransactionsMutex sync.Mutex
-	serviceLayer            *ServiceHandler
+	serviceLayer            ServiceHandler
 	networkEntity           networklayer.NetworkEntity
 	serviceRegistery        *ServiceRegistry
 	remoteDeviceCache       *objectmodel.RemoteDeviceCache
@@ -98,7 +108,16 @@ func NewApplicationEntity() *ApplicationEntity {
 	return &ApplicationEntity{
 		ServerTransactions: make([]*ServerTransaction, 0),
 		ClientTransactions: make([]*ClientTransaction, 0),
+		remoteDeviceCache:  &objectmodel.RemoteDeviceCache{},
 	}
+}
+
+func (ae *ApplicationEntity) SetServiceLayer(sl ServiceHandler) {
+	ae.serviceLayer = sl
+}
+
+func (ae *ApplicationEntity) SetNetworkEntity(ne networklayer.NetworkEntity) {
+	ae.networkEntity = ne
 }
 
 func (ae *ApplicationEntity) getServerTransaction(id *TransactionId) *ServerTransaction {
@@ -386,24 +405,29 @@ func (ae *ApplicationEntity) SendConfServRequest(
 	priority networklayer.NPDUPriority,
 	data []byte,
 ) *ConfServFuture {
-	// create new client transaction
-	// segment request if needed
-	// create events from the segments
-	// push events to the transaction
-	// return the future
 	id := NewTransactionId(dest, ae.nextClientInvokeId())
 	transaction := NewClientTransaction(&id)
+	transaction.applicationEntity = ae
+	transaction.serviceLayer = ae.serviceLayer
+
 	device := ae.remoteDeviceCache.Get(dest)
 	if device != nil {
 		transaction.maxPduLength = int(device.MaxAPDULength())
 		transaction.segmentationSupported = device.SegmentationSupported()
 	} else {
-		// TODO: use some default values
+		// TODO: use some default values when the remote device is not yet in the cache
 	}
+
 	transaction.serviceChoice = serviceChoice
 	transaction.requestPdu = data
-	ae.addClientTransaction(&transaction)
-	return nil
+
+	future := &ConfServFuture{c: make(chan *ConfServResponse, 1)}
+	transaction.future = future
+
+	transaction.Start()
+	ae.addClientTransaction(transaction)
+	transaction.HandleConfServRequest(dest, expectedReply, priority)
+	return future
 }
 
 const (
@@ -499,16 +523,18 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 		// TODO log or drop?
 	}
 	tr := NewServerTransaction(&transactionId)
-	// Find device from service
-	// Need to fetch the device to know the values for the timers
-	device := tr.serviceLayer.GetDevice(header.ServiceChoice, serviceRequest)
-	if device == nil {
-		// reply with an error?
-	}
-	tr.Device = device
+	tr.applicationEntity = ae
+	tr.serviceLayer = ae.serviceLayer
 	tr.Source = indication.Source
 	tr.Dest = indication.Dest
-	// ConfirmedSegmentedReceived
+
+	// Find device from service to populate transaction timers
+	device := ae.serviceLayer.GetDevice(header.ServiceChoice, serviceRequest)
+	if device == nil {
+		return fmt.Errorf("no device found for service choice %d", header.ServiceChoice)
+	}
+	tr.Device = device
+
 	deviceObject := device.DeviceObject()
 	maxSegmentsAcceptedProp := deviceObject.GetProperty(bacnet.MaxSegmentsAccepted)
 	if maxSegmentsAcceptedProp == nil {
@@ -516,7 +542,6 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	}
 	maxSegmentsAccepted, ok := maxSegmentsAcceptedProp.GetValue().(uint)
 	if !ok {
-		// should not be possible
 		return fmt.Errorf("max-segments-accepted value is not an unsigned int")
 	}
 	tr.MaxSegmentsAccepted = maxSegmentsAccepted
@@ -527,12 +552,11 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	}
 	apduTimeout, ok := apduTimeoutProp.GetValue().(uint)
 	if !ok {
-		// should not be possible
 		return fmt.Errorf("apdu-timeout value is not an unsigned int")
 	}
 	tr.RequestTimer = NewTransactionTimer(
 		time.Duration(apduTimeout)*time.Millisecond,
-		func() {},
+		tr.OnRequestTimerFired,
 	)
 
 	apduSegmentTimeoutProp := deviceObject.GetProperty(bacnet.ApduSegmentTimeout)
@@ -541,7 +565,6 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	}
 	apduSegmentTimeout, ok := apduSegmentTimeoutProp.GetValue().(uint)
 	if !ok {
-		// should not be possible
 		return fmt.Errorf("apdu-segment-timeout value is not an unsigned int")
 	}
 	tr.SegmentTimer = NewTransactionTimer(
@@ -555,16 +578,15 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	}
 	tr.NumberOfApduRetries, ok = numberOfApduRetriesProp.GetValue().(uint)
 	if !ok {
-		// should not be possible
 		return fmt.Errorf("number-of-apdu-retries value is not an unsigned int")
 	}
 
-	ae.addServerTransaction(&tr)
+	ae.addServerTransaction(tr)
 	tr.Start() // tr is in IDLE state and can start processing events
 	event := &ServerNetworkTransactionEvent{
 		indication:     indication,
 		header:         &header,
-		transaction:    &tr,
+		transaction:    tr,
 		serviceRequest: serviceRequest,
 	}
 	tr.PushEvent(event)
