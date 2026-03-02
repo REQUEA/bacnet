@@ -39,6 +39,24 @@ func (d *RemoteDevice) AnnouncementTime() time.Time {
 	return d.announcementTime
 }
 
+func NewRemoteDevice(
+	deviceObjectId bacnet.BACnetObjectIdentifier,
+	address *bacnet.BACnetAddress,
+	maxAPDULength uint,
+	segmentationSupported bool,
+	vendorId uint16,
+	announcementTime time.Time,
+) RemoteDevice {
+	return RemoteDevice{
+		deviceObjectId:        deviceObjectId,
+		address:               address,
+		maxAPDULength:         maxAPDULength,
+		segmentationSupported: segmentationSupported,
+		vendorId:              vendorId,
+		announcementTime:      announcementTime,
+	}
+}
+
 type RemoteDeviceCache struct {
 	remoteDevices []*RemoteDevice
 }

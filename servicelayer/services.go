@@ -2,52 +2,225 @@ package servicelayer
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/REQUEA/bacnet"
 	"github.com/REQUEA/bacnet/applicationlayer"
 	"github.com/REQUEA/bacnet/internal/encoding"
+	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/networklayer"
 	"github.com/REQUEA/bacnet/objectmodel"
 )
 
+// Compile-time check: ServiceHandler implements applicationlayer.ServiceHandler.
+var _ applicationlayer.ServiceHandler = (*ServiceHandler)(nil)
+
 type ServiceHandler struct {
 	devices             []*objectmodel.Device
-	objectIndex         map[bacnet.BACnetObjectIdentifier]*objectmodel.Object
+	applicationEntity   *applicationlayer.ApplicationEntity
+	remoteDeviceCache   *objectmodel.RemoteDeviceCache
 	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ConfirmedService
 	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]UnconfirmedService
 }
 
-func (e *ServiceHandler) ConfServIndication(
-	indication *applicationlayer.APDUIndication,
-	serviceChoice bacnet.BACnetConfirmedServiceChoice,
-	data []byte,
-) {
-	// TODO: implement
-	go func() {
-		// find service
-	}()
+// NewServiceHandler creates a ServiceHandler for the given device and wires it into the ApplicationEntity.
+func NewServiceHandler(ae *applicationlayer.ApplicationEntity, device *objectmodel.Device) *ServiceHandler {
+	sh := &ServiceHandler{
+		devices:             []*objectmodel.Device{device},
+		applicationEntity:   ae,
+		remoteDeviceCache:   ae.RemoteDeviceCache(),
+		confirmedServices:   make(map[bacnet.BACnetConfirmedServiceChoice]ConfirmedService),
+		unconfirmedServices: make(map[bacnet.BACnetUnconfirmedServiceChoice]UnconfirmedService),
+	}
+	ae.SetServiceLayer(sh)
+	return sh
 }
 
-func (e *ServiceHandler) AbortIndication(indication *applicationlayer.APDUIndication, reason uint8) {
-	// TODO: implement
-}
-
-func (e *ServiceHandler) ConfServConfirm(
-	indication *applicationlayer.APDUIndication,
-	serviceChoice bacnet.BACnetConfirmedServiceChoice,
-	data []byte,
-) {
-	// TODO implement
-}
-
-func (l *ServiceHandler) GetDevice(
+func (sh *ServiceHandler) GetDevice(
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 	request []byte,
 ) *objectmodel.Device {
-	service, ok := l.confirmedServices[serviceChoice]
+	service, ok := sh.confirmedServices[serviceChoice]
 	if !ok {
 		return nil
 	}
 	return service.GetDevice(request)
+}
+
+func (sh *ServiceHandler) HandleConfServIndication(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+) {
+	// TODO: implement in Phase 6
+}
+
+func (sh *ServiceHandler) HandleConfServConfirm(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+) {
+	// TODO: implement in Phase 7
+}
+
+func (sh *ServiceHandler) HandleUnconfServIndication(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetUnconfirmedServiceChoice,
+) {
+	switch serviceChoice {
+	case bacnet.UnconfirmedServiceChoiceWhoIs:
+		sh.handleWhoIs(indication)
+	case bacnet.UnconfirmedServiceChoiceIAm:
+		sh.handleIAm(indication)
+	default:
+		logger.Trace("unconfirmed service not handled: ", serviceChoice)
+	}
+}
+
+func (sh *ServiceHandler) HandleSegmentAckIndication(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+) {
+	// TODO: implement
+}
+
+func (sh *ServiceHandler) HandleRejectIndication(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+) {
+	// TODO: implement
+}
+
+func (sh *ServiceHandler) HandleAbortIndication(
+	indication *applicationlayer.APDUIndication,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	reason uint8,
+) {
+	// TODO: implement
+}
+
+// handleWhoIs responds to a received WhoIs with an IAm for each matching local device.
+func (sh *ServiceHandler) handleWhoIs(indication *applicationlayer.APDUIndication) {
+	var req WhoIsRequest
+	_, err := req.Unmarshal(indication.Data)
+	if err != nil {
+		logger.Error("could not unmarshal WhoIs request: ", err)
+		return
+	}
+	for _, device := range sh.devices {
+		devObj := device.DeviceObject()
+		if devObj == nil {
+			continue
+		}
+		idProp := devObj.GetProperty(bacnet.ObjectIdentifier)
+		if idProp == nil {
+			continue
+		}
+		rawId, ok := idProp.GetValue().(bacnet.BACnetObjectIdentifier)
+		if !ok {
+			continue
+		}
+		instance := uint32(rawId) & uint32(bacnet.MaxInstance)
+		if req.deviceInstanceRangeLow.Present() && req.deviceInstanceRangeHigh.Present() {
+			low := uint32(req.deviceInstanceRangeLow.Get().Value())
+			high := uint32(req.deviceInstanceRangeHigh.Get().Value())
+			if instance < low || instance > high {
+				continue
+			}
+		}
+		if err := sh.sendIAmForDevice(device); err != nil {
+			logger.Error("could not send IAm in response to WhoIs: ", err)
+		}
+	}
+}
+
+// handleIAm processes a received IAm and updates the remote device cache.
+func (sh *ServiceHandler) handleIAm(indication *applicationlayer.APDUIndication) {
+	var req IAmRequest
+	_, err := req.Unmarshal(indication.Data)
+	if err != nil {
+		logger.Error("could not unmarshal IAm request: ", err)
+		return
+	}
+	rawId := bacnet.BACnetObjectIdentifier(
+		uint32(req.iAmDeviceIdentifier.ObjType())<<22 | req.iAmDeviceIdentifier.Instance(),
+	)
+	segVal := bacnet.SegmentationSupport(req.segmentationSupported.Value())
+	segSupported := segVal == bacnet.SegmentationSupportBoth || segVal == bacnet.SegmentationSupportReceive
+	device := objectmodel.NewRemoteDevice(
+		rawId,
+		indication.Source,
+		uint(req.maxApduLengthAccepted.Value()),
+		segSupported,
+		req.vendorId.Value(),
+		time.Now(),
+	)
+	sh.remoteDeviceCache.Add(device)
+}
+
+// sendIAmForDevice broadcasts an IAm for the given local device.
+func (sh *ServiceHandler) sendIAmForDevice(device *objectmodel.Device) error {
+	devObj := device.DeviceObject()
+	idProp := devObj.GetProperty(bacnet.ObjectIdentifier)
+	if idProp == nil {
+		return fmt.Errorf("device object has no ObjectIdentifier property")
+	}
+	rawId, ok := idProp.GetValue().(bacnet.BACnetObjectIdentifier)
+	if !ok {
+		return fmt.Errorf("wrong type for ObjectIdentifier property")
+	}
+	maxApduProp := devObj.GetProperty(bacnet.MaxApduLengthAccepted)
+	if maxApduProp == nil {
+		return fmt.Errorf("device object has no MaxApduLengthAccepted property")
+	}
+	maxApdu, ok := maxApduProp.GetValue().(uint)
+	if !ok {
+		return fmt.Errorf("wrong type for MaxApduLengthAccepted property")
+	}
+	segProp := devObj.GetProperty(bacnet.SegmentationSupported)
+	if segProp == nil {
+		return fmt.Errorf("device object has no SegmentationSupported property")
+	}
+	seg, ok := segProp.GetValue().(bacnet.SegmentationSupport)
+	if !ok {
+		return fmt.Errorf("wrong type for SegmentationSupported property")
+	}
+	vendorProp := devObj.GetProperty(bacnet.VendorIdentifier)
+	if vendorProp == nil {
+		return fmt.Errorf("device object has no VendorIdentifier property")
+	}
+	vendorId, ok := vendorProp.GetValue().(uint16)
+	if !ok {
+		return fmt.Errorf("wrong type for VendorIdentifier property")
+	}
+	objType := uint16(rawId >> 22)
+	instance := uint32(rawId) & uint32(bacnet.MaxInstance)
+	iamReq := NewIAmRequest(objType, instance, uint64(maxApdu), uint32(seg), vendorId)
+	data, err := iamReq.Marshal()
+	if err != nil {
+		return fmt.Errorf("could not marshal IAm request: %w", err)
+	}
+	dest := &bacnet.BACnetAddress{Network: bacnet.BroadcastDNET}
+	return sh.applicationEntity.SendIAmRequest(dest, networklayer.NormalPriority, data)
+}
+
+// WhoIs sends a WhoIs broadcast. Pass nil for both limits to query all devices.
+func (sh *ServiceHandler) WhoIs(lowLimit, highLimit *uint32) error {
+	req := NewWhoIsRequest(lowLimit, highLimit)
+	data, err := req.Marshal()
+	if err != nil {
+		return fmt.Errorf("could not marshal WhoIs request: %w", err)
+	}
+	dest := &bacnet.BACnetAddress{Network: bacnet.BroadcastDNET}
+	return sh.applicationEntity.SendWhoIsRequest(dest, networklayer.NormalPriority, data)
+}
+
+// IAmBroadcast sends an IAm broadcast for all local devices.
+func (sh *ServiceHandler) IAmBroadcast() error {
+	for _, device := range sh.devices {
+		if err := sh.sendIAmForDevice(device); err != nil {
+			logger.Error("IAm broadcast failed: ", err)
+		}
+	}
+	return nil
 }
 
 type ConfirmedService interface {
@@ -57,13 +230,27 @@ type ConfirmedService interface {
 type UnconfirmedService interface {
 }
 
-type WhoIsService struct {
-	serviceLayer *ServiceHandler
-}
+// --- WhoIsRequest ---
 
 type WhoIsRequest struct {
 	deviceInstanceRangeLow  encoding.Optional[*encoding.Unsigned]
 	deviceInstanceRangeHigh encoding.Optional[*encoding.Unsigned]
+}
+
+// NewWhoIsRequest creates a WhoIsRequest. Pass nil for both to query all devices.
+func NewWhoIsRequest(low, high *uint32) *WhoIsRequest {
+	r := &WhoIsRequest{}
+	if low != nil {
+		var lowVal encoding.Unsigned
+		lowVal.SetValue(uint64(*low))
+		r.deviceInstanceRangeLow.Set(&lowVal)
+	}
+	if high != nil {
+		var highVal encoding.Unsigned
+		highVal.SetValue(uint64(*high))
+		r.deviceInstanceRangeHigh.Set(&highVal)
+	}
+	return r
 }
 
 func (r *WhoIsRequest) Unmarshal(buf []byte) ([]byte, error) {
@@ -77,7 +264,7 @@ func (r *WhoIsRequest) Unmarshal(buf []byte) ([]byte, error) {
 		switch tag {
 		case 0:
 			var low encoding.Unsigned
-			remaining, err = low.Unmarshal(buf)
+			remaining, err = low.Unmarshal(remaining)
 			if err != nil {
 				return remaining, fmt.Errorf("error reading low: %v", err)
 			}
@@ -85,45 +272,60 @@ func (r *WhoIsRequest) Unmarshal(buf []byte) ([]byte, error) {
 			eltCount++
 		case 1:
 			var high encoding.Unsigned
-			remaining, err = high.Unmarshal(buf)
+			remaining, err = high.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading low: %v", err)
+				return remaining, fmt.Errorf("error reading high: %v", err)
 			}
-			r.deviceInstanceRangeLow.Set(&high)
+			r.deviceInstanceRangeHigh.Set(&high)
 			eltCount++
 		default:
 			return remaining, fmt.Errorf("unexpected tag %v", tag)
 		}
 	}
 	if eltCount != 0 && eltCount != 2 {
-		return remaining, fmt.Errorf("invalid who-is request")
+		return remaining, fmt.Errorf("invalid who-is request: expected 0 or 2 range elements, got %d", eltCount)
 	}
 	return remaining, nil
 }
 
 func (r *WhoIsRequest) Marshal() ([]byte, error) {
-	if !r.deviceInstanceRangeHigh.Present() || !r.deviceInstanceRangeLow.Present() {
-		return nil, fmt.Errorf("both deviceinstance-range-high and deviceinstance-range-low must be present")
+	if !r.deviceInstanceRangeLow.Present() && !r.deviceInstanceRangeHigh.Present() {
+		return []byte{}, nil // no range = WhoIs to all devices
+	}
+	if !r.deviceInstanceRangeLow.Present() || !r.deviceInstanceRangeHigh.Present() {
+		return nil, fmt.Errorf("both deviceInstanceRangeLow and deviceInstanceRangeHigh must be present together")
 	}
 	result := make([]byte, 0)
 	tmp, err := r.deviceInstanceRangeLow.Get().MarshalTagged(0)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal deviceinstance-range-low")
+		return nil, fmt.Errorf("could not marshal deviceInstanceRangeLow: %w", err)
 	}
 	result = append(result, tmp...)
 	tmp, err = r.deviceInstanceRangeHigh.Get().MarshalTagged(1)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal deviceinstance-range-low")
+		return nil, fmt.Errorf("could not marshal deviceInstanceRangeHigh: %w", err)
 	}
 	result = append(result, tmp...)
 	return result, nil
 }
+
+// --- IAmRequest ---
 
 type IAmRequest struct {
 	iAmDeviceIdentifier   encoding.BACnetObjectIdentifier
 	maxApduLengthAccepted encoding.Unsigned
 	segmentationSupported encoding.BACnetSegmentation
 	vendorId              encoding.Unsigned16
+}
+
+// NewIAmRequest creates an IAmRequest ready for marshaling.
+func NewIAmRequest(objType uint16, instance uint32, maxApduLengthAccepted uint64, segmentation uint32, vendorId uint16) *IAmRequest {
+	r := &IAmRequest{}
+	r.iAmDeviceIdentifier.SetFromValues(objType, instance)
+	r.maxApduLengthAccepted.SetValue(maxApduLengthAccepted)
+	r.segmentationSupported.SetValue(segmentation)
+	r.vendorId.SetValue(vendorId)
+	return r
 }
 
 func (r *IAmRequest) Unmarshal(buf []byte) ([]byte, error) {
@@ -133,7 +335,7 @@ func (r *IAmRequest) Unmarshal(buf []byte) ([]byte, error) {
 	}
 	remaining, err = r.maxApduLengthAccepted.Unmarshal(remaining)
 	if err != nil {
-		return remaining, fmt.Errorf("could not read max ADPU length: %v", err)
+		return remaining, fmt.Errorf("could not read max APDU length: %v", err)
 	}
 	remaining, err = r.segmentationSupported.Unmarshal(remaining)
 	if err != nil {
@@ -167,8 +369,11 @@ func (r *IAmRequest) Marshal() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	result = append(result, tmp...)
 	return result, nil
 }
+
+// --- ReadPropertyService ---
 
 type ReadPropertyService struct {
 	serviceLayer *ServiceHandler
@@ -186,7 +391,6 @@ type ReadPropertyRequest struct {
 
 func (r *ReadPropertyRequest) Unmarshal(buf []byte) ([]byte, error) {
 	remaining := buf
-	eltCount := 0
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
@@ -203,7 +407,6 @@ func (r *ReadPropertyRequest) Unmarshal(buf []byte) ([]byte, error) {
 			if err != nil {
 				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
 			}
-			eltCount++
 		case 2:
 			var arrayIndex encoding.Unsigned
 			remaining, err = arrayIndex.Unmarshal(remaining)
@@ -249,7 +452,6 @@ type ReadPropertyAck struct {
 
 func (r *ReadPropertyAck) Unmarshal(buf []byte) ([]byte, error) {
 	remaining := buf
-	eltCount := 0
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
@@ -266,7 +468,6 @@ func (r *ReadPropertyAck) Unmarshal(buf []byte) ([]byte, error) {
 			if err != nil {
 				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
 			}
-			eltCount++
 		case 2:
 			var arrayIndex encoding.Unsigned
 			remaining, err = arrayIndex.Unmarshal(remaining)

@@ -257,13 +257,23 @@ func (npdu *NPDU) MarshalBinary() ([]byte, error) {
 	b.WriteByte(npdu.Control)
 	if npdu.IsDestPresent() {
 		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Network)
-		_ = binary.Write(b, binary.BigEndian, byte(len(npdu.Destination.Mac.GetBytes())))
-		_ = binary.Write(b, binary.BigEndian, npdu.Destination.Mac)
+		if npdu.Destination.Mac != nil {
+			macBytes := npdu.Destination.Mac.GetBytes()
+			b.WriteByte(byte(len(macBytes)))
+			b.Write(macBytes)
+		} else {
+			b.WriteByte(0) // DLEN=0 for global broadcast (DNET=0xFFFF, no DADR)
+		}
 	}
 	if npdu.IsSourcePresent() {
 		_ = binary.Write(b, binary.BigEndian, npdu.Source.Network)
-		_ = binary.Write(b, binary.BigEndian, byte(len(npdu.Source.Mac.GetBytes())))
-		_ = binary.Write(b, binary.BigEndian, npdu.Source.Mac)
+		if npdu.Source.Mac != nil {
+			macBytes := npdu.Source.Mac.GetBytes()
+			b.WriteByte(byte(len(macBytes)))
+			b.Write(macBytes)
+		} else {
+			b.WriteByte(0)
+		}
 	}
 	if npdu.IsDestPresent() {
 		b.WriteByte(npdu.HopCount)

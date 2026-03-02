@@ -599,12 +599,43 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 func (ae *ApplicationEntity) handleUnconfirmedServiceRequestPDU(indication *networklayer.NPDUIndication) error {
 	apdu := indication.Apdu
 	if len(apdu) < 2 {
-		return fmt.Errorf("Unconfirmed-Service-Request-PDU too short (len: %d)", len(apdu))
+		logger.Error("Unconfirmed-Service-Request-PDU too short (len: ", len(apdu), ")")
+		return nil
 	}
-	//serviceChoice := bacnet.BACUnconfirmedServiceChoice(apdu[1])
-	//serviceRequest := apdu[2:]
-	// TODO: pass the PDU to the user application
-	return errors.New("not implemented")
+	if ae.serviceLayer == nil {
+		logger.Error("no service layer configured, dropping unconfirmed request")
+		return nil
+	}
+	serviceChoice := bacnet.BACnetUnconfirmedServiceChoice(apdu[1])
+	apduIndication := &APDUIndication{
+		Source:        indication.Source,
+		ExpectedReply: indication.ExpectedReply,
+		Data:          apdu[2:],
+	}
+	ae.serviceLayer.HandleUnconfServIndication(apduIndication, serviceChoice)
+	return nil
+}
+
+func (ae *ApplicationEntity) RemoteDeviceCache() *objectmodel.RemoteDeviceCache {
+	return ae.remoteDeviceCache
+}
+
+// SendIAmRequest sends an unconfirmed IAm service request PDU. data is the pre-encoded IAmRequest payload.
+func (ae *ApplicationEntity) SendIAmRequest(dest *bacnet.BACnetAddress, priority networklayer.NPDUPriority, data []byte) error {
+	apdu := make([]byte, 0, 2+len(data))
+	apdu = append(apdu, byte(UnconfirmedServiceRequest<<pduTypeShift))
+	apdu = append(apdu, byte(bacnet.UnconfirmedServiceChoiceIAm))
+	apdu = append(apdu, data...)
+	return ae.networkEntity.NUnitDataRequest(dest, false, priority, apdu)
+}
+
+// SendWhoIsRequest sends an unconfirmed WhoIs service request PDU. data is the pre-encoded WhoIsRequest payload.
+func (ae *ApplicationEntity) SendWhoIsRequest(dest *bacnet.BACnetAddress, priority networklayer.NPDUPriority, data []byte) error {
+	apdu := make([]byte, 0, 2+len(data))
+	apdu = append(apdu, byte(UnconfirmedServiceRequest<<pduTypeShift))
+	apdu = append(apdu, byte(bacnet.UnconfirmedServiceChoiceWhoIs))
+	apdu = append(apdu, data...)
+	return ae.networkEntity.NUnitDataRequest(dest, false, priority, apdu)
 }
 
 type SimpleAckHeader struct {
