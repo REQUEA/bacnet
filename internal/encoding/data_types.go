@@ -64,6 +64,10 @@ func (u *UnsignedBase[T]) Value() T {
 	return u.value
 }
 
+func (u *UnsignedBase[T]) SetValue(v T) {
+	u.value = v
+}
+
 func (u *UnsignedBase[T]) Unmarshal(buf []byte) ([]byte, error) {
 	tag := (buf[0] & tagNumberMask) >> tagNumberShift
 	data, remaining, err := parseVarLen(uint(tag), buf)
@@ -184,9 +188,16 @@ func (u *BACnetObjectIdentifier) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
+func (i *BACnetObjectIdentifier) ObjType() uint16 { return i.objType }
+func (i *BACnetObjectIdentifier) Instance() uint32 { return i.instance }
+func (i *BACnetObjectIdentifier) SetFromValues(objType uint16, instance uint32) {
+	i.objType = objType
+	i.instance = instance
+}
+
 func (i *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
 	result := make([]byte, 0)
-	value := uint32(i.objType)<<6 | (i.instance & 0x3fffff)
+	value := uint32(i.objType)<<22 | (i.instance & 0x3fffff)
 	result = append(result,
 		(applicationTagUnsignedInt<<tagNumberShift)|0b100, // tag + len(4)
 		byte(value>>24),
@@ -199,7 +210,7 @@ func (i *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
 
 func (i *BACnetObjectIdentifier) MarshalTagged(tag uint8) ([]byte, error) {
 	result := make([]byte, 0)
-	value := uint32(i.objType)<<6 | (i.instance & 0x3fffff)
+	value := uint32(i.objType)<<22 | (i.instance & 0x3fffff)
 	result = append(result,
 		(0xf<<tagNumberShift)|0b100, // extended tag + len(4)
 		byte(tag),
