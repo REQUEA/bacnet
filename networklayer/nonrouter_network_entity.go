@@ -150,3 +150,12 @@ func (ne *NonRouterNetworkEntity) NUnitDataRequest(
 	}
 	return nil
 }
+
+func (ne *NonRouterNetworkEntity) GetMaxPDULength(_ bacnet.NetworkNumber) uint {
+	return ne.port.datalinkPort.MaxPDULength()
+}
+
+func (ne *NonRouterNetworkEntity) NReleaseRequest(_ *bacnet.BACnetAddress) error {
+	// BACnet/IP is connectionless; nothing to release.
+	return nil
+}

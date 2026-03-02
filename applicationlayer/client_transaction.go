@@ -25,16 +25,18 @@ type ClientTransaction struct {
 	segmentationSupported bool
 	serviceChoice         bacnet.BACnetConfirmedServiceChoice
 	responsePdu           []byte
+	future                *ConfServFuture
 }
 
-func NewClientTransaction(id *TransactionId) ClientTransaction {
-	result := ClientTransaction{
+func NewClientTransaction(id *TransactionId) *ClientTransaction {
+	result := &ClientTransaction{
 		Transaction: Transaction{
-			Id: id,
+			Id:     id,
+			events: make(chan TransactionEvent, 16),
 		},
 	}
 	result.state = &ClientTransactionIdleState{
-		transaction: &result,
+		transaction: result,
 	}
 	return result
 }

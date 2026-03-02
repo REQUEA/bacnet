@@ -20,14 +20,15 @@ type ServerTransaction struct {
 	state ServerTransactionState
 }
 
-func NewServerTransaction(id *TransactionId) ServerTransaction {
-	result := ServerTransaction{
+func NewServerTransaction(id *TransactionId) *ServerTransaction {
+	result := &ServerTransaction{
 		Transaction: Transaction{
-			Id: id,
+			Id:     id,
+			events: make(chan TransactionEvent, 16),
 		},
 	}
 	result.state = &ServerTransactionIdleState{
-		transaction: &result,
+		transaction: result,
 	}
 	return result
 }
@@ -466,13 +467,13 @@ type ServerTransactionSegmentedResponseState struct {
 	transaction *ServerTransaction
 }
 
-func (s *ServerTransactionSegmentedResponseState) HandleUnconfirmedServiceRequest() {}
+func (s *ServerTransactionSegmentedResponseState) HandleUnconfirmedServiceRequestPdu() {}
 
 func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(*SegmentAckHeader) {}
 
-func (s *ServerTransactionSegmentedResponseState) HandleAbort() {}
+func (s *ServerTransactionSegmentedResponseState) HandleAbortPdu(int) {}
 
-func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequest(
+func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequestPdu(
 	indication *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
 	serviceRequest []byte,
