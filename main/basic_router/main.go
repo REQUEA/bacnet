@@ -3,6 +3,7 @@ package main
 import (
 	"net"
 
+	"github.com/REQUEA/bacnet/applicationlayer"
 	"github.com/REQUEA/bacnet/linklayer"
 	"github.com/REQUEA/bacnet/logger"
 	"github.com/REQUEA/bacnet/networklayer"
@@ -74,7 +75,12 @@ func main() {
 	nlPort1.SetNetworkEntity(router)
 	nlPort2.SetNetworkEntity(router)
 
+	ae := applicationlayer.NewApplicationEntity()
+	ae.SetNetworkEntity(router)
+	router.SetAPDUHandler(ae)
+
 	router.Start()
+	_ = ae // will be used when a service layer is attached
 	datalink1.Start()
 
 	select {}
