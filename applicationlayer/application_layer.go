@@ -127,7 +127,7 @@ func (ae *ApplicationEntity) getServerTransaction(id *TransactionId) *ServerTran
 	ae.serverTransactionsMutex.Lock()
 	defer ae.serverTransactionsMutex.Unlock()
 	for _, t := range ae.ServerTransactions {
-		if t.Id.Equal(id) {
+		if t != nil && t.Id.Equal(id) {
 			return t
 		}
 	}
@@ -138,7 +138,7 @@ func (ae *ApplicationEntity) removeServerTransaction(id *TransactionId) *ServerT
 	ae.serverTransactionsMutex.Lock()
 	defer ae.serverTransactionsMutex.Unlock()
 	for i := range ae.ServerTransactions {
-		if ae.ServerTransactions[i].Id.Equal(id) {
+		if ae.ServerTransactions[i] != nil && ae.ServerTransactions[i].Id.Equal(id) {
 			result := ae.ServerTransactions[i]
 			ae.ServerTransactions[i] = nil
 			return result
@@ -163,7 +163,7 @@ func (ae *ApplicationEntity) getClientTransaction(id *TransactionId) *ClientTran
 	ae.clientTransactionsMutex.Lock()
 	defer ae.clientTransactionsMutex.Unlock()
 	for _, t := range ae.ClientTransactions {
-		if t.Id.Equal(id) {
+		if t != nil && t.Id.Equal(id) {
 			return t
 		}
 	}
@@ -186,7 +186,7 @@ func (ae *ApplicationEntity) removeClientTransaction(id *TransactionId) *ClientT
 	ae.clientTransactionsMutex.Lock()
 	defer ae.clientTransactionsMutex.Unlock()
 	for i := range ae.ClientTransactions {
-		if ae.ClientTransactions[i].Id.Equal(id) {
+		if ae.ClientTransactions[i] != nil && ae.ClientTransactions[i].Id.Equal(id) {
 			result := ae.ClientTransactions[i]
 			ae.ClientTransactions[i] = nil
 			return result
@@ -429,9 +429,9 @@ func (ae *ApplicationEntity) SendConfServRequest(
 	future := &ConfServFuture{c: make(chan *ConfServResponse, 1)}
 	transaction.future = future
 
-	transaction.Start()
 	ae.addClientTransaction(transaction)
 	transaction.HandleConfServRequest(dest, expectedReply, priority)
+	transaction.Start()
 	return future
 }
 
@@ -781,7 +781,13 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *networklayer.NPDUInd
 		// Drop message
 		return nil
 	}
-	transaction.HandleSimpleAckPdu(indication, &header)
+	event := &ClientNetworkTransactionEvent{
+		indication:  indication,
+		header:      &header,
+		transaction: transaction,
+		payload:     nil,
+	}
+	transaction.PushEvent(event)
 	return nil
 }
 

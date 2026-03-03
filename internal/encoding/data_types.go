@@ -6,6 +6,23 @@ import (
 	"reflect"
 )
 
+// nolint: deadcode, varcheck
+const (
+	applicationTagNull            byte = 0x00
+	applicationTagBoolean         byte = 0x01
+	applicationTagUnsignedInt     byte = 0x02
+	applicationTagSignedInt       byte = 0x03
+	applicationTagReal            byte = 0x04
+	applicationTagDouble          byte = 0x05
+	applicationTagOctetString     byte = 0x06
+	applicationTagCharacterString byte = 0x07
+	applicationTagBitString       byte = 0x08
+	applicationTagEnumerated      byte = 0x09
+	applicationTagDate            byte = 0x0A
+	applicationTagTime            byte = 0x0B
+	applicationTagObjectID        byte = 0x0C
+)
+
 const (
 	tagNumberMask  uint8 = 0xf0
 	tagNumberShift       = 4
@@ -139,6 +156,9 @@ func (u *UnsignedBase[T]) MarshalTagged(tag uint) ([]byte, error) {
 		}
 		shift -= 8
 	}
+	if len(data) == 0 {
+		data = append(data, 0)
+	}
 	result := make([]byte, 0)
 	tagLen := createTagLen(byte(tag), uint(len(data)))
 	result = append(result, tagLen...)
@@ -236,7 +256,7 @@ func (i *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
 	result := make([]byte, 0)
 	value := uint32(i.objType)<<22 | (i.instance & 0x3fffff)
 	result = append(result,
-		(applicationTagUnsignedInt<<tagNumberShift)|0b100, // tag + len(4)
+		(applicationTagObjectID<<tagNumberShift)|0b100, // tag + len(4)
 		byte(value>>24),
 		byte(value>>16),
 		byte(value>>8),
@@ -259,7 +279,39 @@ func (i *BACnetObjectIdentifier) MarshalTagged(tag uint8) ([]byte, error) {
 	return result, nil
 }
 
-type Enumerated = UnsignedBase[uint32]
+type Enumerated struct {
+	UnsignedBase[uint32]
+}
+
+// Unmarshal reads an Enumerated value from buf. For application-tagged data the tag
+// number is validated (must be 9); context-tagged data is accepted without tag validation.
+func (e *Enumerated) Unmarshal(buf []byte) ([]byte, error) {
+	if len(buf) == 0 {
+		return buf, fmt.Errorf("empty buffer")
+	}
+	if buf[0]&classMask == 0 {
+		tag := (buf[0] & tagNumberMask) >> tagNumberShift
+		if tag != applicationTagEnumerated {
+			return buf, fmt.Errorf("expected enumerated tag %d, got %d", applicationTagEnumerated, tag)
+		}
+	}
+	return e.UnsignedBase.Unmarshal(buf)
+}
+
+// MarshalPrimitive encodes the value with the BACnet Enumerated application tag (9).
+func (e *Enumerated) MarshalPrimitive() ([]byte, error) {
+	return e.UnsignedBase.MarshalTagged(uint(applicationTagEnumerated))
+}
+
+// MarshalTagged encodes the value with a BACnet context tag, setting the context class bit.
+func (e *Enumerated) MarshalTagged(tag uint) ([]byte, error) {
+	result, err := e.UnsignedBase.MarshalTagged(tag)
+	if err != nil {
+		return nil, err
+	}
+	result[0] |= classMask
+	return result, nil
+}
 
 type BACnetPropertyIdentifier = Enumerated
 type BACnetSegmentation = Enumerated

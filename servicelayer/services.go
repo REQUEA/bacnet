@@ -335,6 +335,30 @@ func (sh *ServiceHandler) handleReadProperty(indication *applicationlayer.APDUIn
 		)
 		return
 	}
+	var resultValue any
+	if req.propertyArrayIndex.Present() {
+		idx := uint(req.propertyArrayIndex.Get().Value())
+		arrayProp, ok := prop.(objectmodel.ArrayProperty)
+		if !ok {
+			sh.applicationEntity.SendErrorResponse(
+				indication.InvokeId, indication.Source,
+				bacnet.ConfirmedServiceChoiceReadProperty,
+				bacnet.PropertyError, bacnet.PropertyIsNotAnArray,
+			)
+			return
+		}
+		resultValue, err = arrayProp.GetAt(idx)
+		if err != nil {
+			sh.applicationEntity.SendErrorResponse(
+				indication.InvokeId, indication.Source,
+				bacnet.ConfirmedServiceChoiceReadProperty,
+				bacnet.PropertyError, bacnet.InvalidArrayIndex,
+			)
+			return
+		}
+	} else {
+		resultValue = prop.GetValue()
+	}
 	rawVal := prop.GetValue()
 	var valBytes []byte
 	if req.propertyArrayIndex.Present() {

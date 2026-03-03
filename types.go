@@ -290,6 +290,26 @@ type MAC interface {
 	Equal(MAC) bool
 }
 
+// AbstractMAC is a MAC address backed by a plain byte slice.
+type AbstractMAC []byte
+
+func (m AbstractMAC) GetBytes() []byte    { return []byte(m) }
+func (m *AbstractMAC) FromBytes(b []byte) { *m = AbstractMAC(b) }
+func (m AbstractMAC) String() string      { return fmt.Sprintf("%x", []byte(m)) }
+func (m AbstractMAC) IsBroadcast() bool   { return false }
+func (m AbstractMAC) Equal(o MAC) bool {
+	ob := o.GetBytes()
+	if len(m) != len(ob) {
+		return false
+	}
+	for i := range m {
+		if m[i] != ob[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // ObjectID represent the type of a bacnet object and it's instance number
 type ObjectID struct {
 	Type     ObjectType
@@ -461,6 +481,10 @@ func NewBACnetArray[T any](size int, resizable bool) BACnetArray[T] {
 		array:     make([]T, size),
 		resizable: resizable,
 	}
+}
+
+func (a *BACnetArray[T]) Len() int {
+	return len(a.array)
 }
 
 func (a *BACnetArray[T]) Set(values ...T) error {
