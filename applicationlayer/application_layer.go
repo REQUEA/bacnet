@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/internal/encoding"
 	"github.com/REQUEA/bacnet/logger"
 	"github.com/REQUEA/bacnet/networklayer"
 	"github.com/REQUEA/bacnet/objectmodel"
@@ -545,22 +546,22 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	if maxSegmentsAcceptedProp == nil {
 		return fmt.Errorf("device object without max-segments-accepted property")
 	}
-	maxSegmentsAccepted, ok := maxSegmentsAcceptedProp.GetValue().(uint)
+	maxSegmentsAcceptedUnsigned, ok := maxSegmentsAcceptedProp.GetValue().(*encoding.Unsigned)
 	if !ok {
 		return fmt.Errorf("max-segments-accepted value is not an unsigned int")
 	}
-	tr.MaxSegmentsAccepted = maxSegmentsAccepted
+	tr.MaxSegmentsAccepted = uint(maxSegmentsAcceptedUnsigned.Value())
 
 	apduTimeoutProp := deviceObject.GetProperty(bacnet.ApduTimeout)
 	if apduTimeoutProp == nil {
 		return fmt.Errorf("device object without apdu-timeout property")
 	}
-	apduTimeout, ok := apduTimeoutProp.GetValue().(uint)
+	apduTimeoutUnsigned, ok := apduTimeoutProp.GetValue().(*encoding.Unsigned)
 	if !ok {
 		return fmt.Errorf("apdu-timeout value is not an unsigned int")
 	}
 	tr.RequestTimer = NewTransactionTimer(
-		time.Duration(apduTimeout)*time.Millisecond,
+		time.Duration(apduTimeoutUnsigned.Value())*time.Millisecond,
 		tr.OnRequestTimerFired,
 	)
 
@@ -568,12 +569,12 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	if apduSegmentTimeoutProp == nil {
 		return fmt.Errorf("device object without apdu-segment-timeout property")
 	}
-	apduSegmentTimeout, ok := apduSegmentTimeoutProp.GetValue().(uint)
+	apduSegmentTimeoutUnsigned, ok := apduSegmentTimeoutProp.GetValue().(*encoding.Unsigned)
 	if !ok {
 		return fmt.Errorf("apdu-segment-timeout value is not an unsigned int")
 	}
 	tr.SegmentTimer = NewTransactionTimer(
-		time.Duration(apduSegmentTimeout*4)*time.Millisecond,
+		time.Duration(apduSegmentTimeoutUnsigned.Value()*4)*time.Millisecond,
 		tr.OnSegmentTimerFired,
 	)
 
@@ -581,10 +582,11 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	if numberOfApduRetriesProp == nil {
 		return fmt.Errorf("device object without number-of-apdu-retries property")
 	}
-	tr.NumberOfApduRetries, ok = numberOfApduRetriesProp.GetValue().(uint)
+	numberOfApduRetriesUnsigned, ok := numberOfApduRetriesProp.GetValue().(*encoding.Unsigned)
 	if !ok {
 		return fmt.Errorf("number-of-apdu-retries value is not an unsigned int")
 	}
+	tr.NumberOfApduRetries = uint(numberOfApduRetriesUnsigned.Value())
 
 	ae.addServerTransaction(tr)
 	tr.Start() // tr is in IDLE state and can start processing events

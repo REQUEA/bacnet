@@ -52,7 +52,7 @@ func (sh *ServiceHandler) ReadProperty(
 }
 
 // WriteProperty sends a WriteProperty request to dest and waits for the response.
-// valueBytes are the pre-encoded application-tagged property value bytes (e.g. from marshalPropertyValue).
+// valueBytes are the pre-encoded application-tagged property value bytes.
 // Pass nil for arrayIndex to write the whole property.
 // Pass nil for priority to use default priority.
 func (sh *ServiceHandler) WriteProperty(

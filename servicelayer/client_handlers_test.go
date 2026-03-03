@@ -74,17 +74,13 @@ func TestClientReadProperty_ObjectName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadProperty failed: %v", err)
 	}
-	// Decode using decodePropertyValue with string hint
-	decoded, err := decodePropertyValue(valBytes, "")
-	if err != nil {
-		t.Fatalf("decodePropertyValue failed: %v", err)
+	var cs encoding.CharacterString
+	_, decErr := cs.Unmarshal(valBytes)
+	if decErr != nil {
+		t.Fatalf("CharacterString.Unmarshal failed: %v", decErr)
 	}
-	name, ok := decoded.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", decoded)
-	}
-	if name != "TestDevice" {
-		t.Errorf("expected ObjectName 'TestDevice', got %q", name)
+	if cs.Value() != "TestDevice" {
+		t.Errorf("expected ObjectName 'TestDevice', got %q", cs.Value())
 	}
 }
 
@@ -145,11 +141,12 @@ func TestClientWriteProperty_ObjectName(t *testing.T) {
 	ctx, cancel := reqCtx(t)
 	defer cancel()
 
-	// Encode new ObjectName as charstring using the correct BACnet encoding
+	// Encode new ObjectName as charstring using the encoding package
 	newName := "UpdatedDevice"
-	valBytes, err := marshalPropertyValue(newName)
+	cs := encoding.NewCharacterString(newName)
+	valBytes, err := cs.MarshalPrimitive()
 	if err != nil {
-		t.Fatalf("marshalPropertyValue failed: %v", err)
+		t.Fatalf("MarshalPrimitive failed: %v", err)
 	}
 
 	if writeErr := client.WriteProperty(ctx, serverAddr,
@@ -159,8 +156,9 @@ func TestClientWriteProperty_ObjectName(t *testing.T) {
 	// Verify name was updated on the server
 	devObj := server.devices[0].DeviceObject()
 	nameProp := devObj.GetProperty(bacnet.ObjectName)
-	if nameProp.GetValue().(string) != newName {
-		t.Errorf("expected updated name %q, got %q", newName, nameProp.GetValue())
+	nameCS, ok := nameProp.GetValue().(*encoding.CharacterString)
+	if !ok || nameCS.Value() != newName {
+		t.Errorf("expected updated name %q, got %v", newName, nameProp.GetValue())
 	}
 }
 
@@ -217,11 +215,12 @@ func TestClientReadPropertyMultiple(t *testing.T) {
 		if len(rawVal) < 2 || (rawVal[0]>>4) != 7 {
 			t.Errorf("ObjectName: expected charstring tag, got bytes %v", rawVal)
 		} else {
-			decoded, err := decodePropertyValue(rawVal, "")
-			if err != nil {
-				t.Errorf("ObjectName decode failed: %v", err)
-			} else if decoded.(string) != "TestDevice" {
-				t.Errorf("ObjectName: expected 'TestDevice', got %q", decoded.(string))
+			var cs encoding.CharacterString
+			_, decErr := cs.Unmarshal(rawVal)
+			if decErr != nil {
+				t.Errorf("ObjectName decode failed: %v", decErr)
+			} else if cs.Value() != "TestDevice" {
+				t.Errorf("ObjectName: expected 'TestDevice', got %q", cs.Value())
 			}
 		}
 	}
@@ -321,7 +320,8 @@ func TestReadPropertyAckRoundTrip(t *testing.T) {
 	var ack ReadPropertyAck
 	ack.objectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
 	ack.propertyIdentifier.SetValue(uint32(bacnet.ObjectName))
-	nameBytes, _ := marshalPropertyValue("TestDevice")
+	nameCS := encoding.NewCharacterString("TestDevice")
+	nameBytes, _ := nameCS.MarshalPrimitive()
 	ack.propertyValue = encoding.NewAbstract(nameBytes)
 
 	data, err := ack.Marshal()
@@ -346,11 +346,12 @@ func TestReadPropertyAckRoundTrip(t *testing.T) {
 	if bacnet.PropertyIdentifier(ack2.propertyIdentifier.Value()) != bacnet.ObjectName {
 		t.Errorf("expected ObjectName")
 	}
-	decodedName, decErr := decodePropertyValue(ack2.propertyValue.Value(), "")
+	var decoded encoding.CharacterString
+	_, decErr := decoded.Unmarshal(ack2.propertyValue.Value())
 	if decErr != nil {
-		t.Fatalf("decodePropertyValue failed: %v", decErr)
+		t.Fatalf("CharacterString.Unmarshal failed: %v", decErr)
 	}
-	if decodedName.(string) != "TestDevice" {
-		t.Errorf("expected 'TestDevice', got %q", decodedName.(string))
+	if decoded.Value() != "TestDevice" {
+		t.Errorf("expected 'TestDevice', got %q", decoded.Value())
 	}
 }

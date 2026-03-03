@@ -42,6 +42,13 @@ type Unmarshalable interface {
 	Unmarshal([]byte) ([]byte, error)
 }
 
+// Marshalable is implemented by types that can be both serialised and
+// deserialised as BACnet application-tagged primitives.
+type Marshalable interface {
+	MarshalPrimitive() ([]byte, error)
+	Unmarshal([]byte) ([]byte, error)
+}
+
 type Optional[T Unmarshalable] struct {
 	present bool
 	value   T
@@ -266,11 +273,16 @@ func (i *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
 }
 
 func (i *BACnetObjectIdentifier) MarshalTagged(tag uint8) ([]byte, error) {
-	result := make([]byte, 0)
 	value := uint32(i.objType)<<22 | (i.instance & 0x3fffff)
-	result = append(result,
-		(0xf<<tagNumberShift)|0b100, // extended tag + len(4)
-		byte(tag),
+	var header []byte
+	if tag < 15 {
+		// context-class tag: (tagNum<<4) | classMask | len(4)
+		header = []byte{(tag << tagNumberShift) | classMask | 4}
+	} else {
+		// extended context-class tag
+		header = []byte{(0xf << tagNumberShift) | classMask | 4, tag}
+	}
+	result := append(header,
 		byte(value>>24),
 		byte(value>>16),
 		byte(value>>8),
@@ -315,6 +327,183 @@ func (e *Enumerated) MarshalTagged(tag uint) ([]byte, error) {
 
 type BACnetPropertyIdentifier = Enumerated
 type BACnetSegmentation = Enumerated
+
+// NewEnumerated creates an Enumerated with the given initial value.
+func NewEnumerated(v uint32) *Enumerated {
+	e := &Enumerated{}
+	e.SetValue(v)
+	return e
+}
+
+// CharacterString represents a BACnet application-tagged character string (tag 7).
+type CharacterString struct {
+	value string
+}
+
+func NewCharacterString(s string) *CharacterString { return &CharacterString{value: s} }
+func (cs *CharacterString) Value() string          { return cs.value }
+func (cs *CharacterString) SetValue(s string)      { cs.value = s }
+
+func (cs *CharacterString) MarshalPrimitive() ([]byte, error) {
+	encoded := append([]byte{0x00}, []byte(cs.value)...) // 0x00 = UTF-8 encoding indicator
+	result := createTagLen(applicationTagCharacterString, uint(len(encoded)))
+	return append(result, encoded...), nil
+}
+
+func (cs *CharacterString) MarshalTagged(tag uint) ([]byte, error) {
+	encoded := append([]byte{0x00}, []byte(cs.value)...)
+	result := createTagLen(byte(tag), uint(len(encoded)))
+	result[0] |= classMask
+	return append(result, encoded...), nil
+}
+
+func (cs *CharacterString) Unmarshal(buf []byte) ([]byte, error) {
+	if len(buf) == 0 {
+		return buf, fmt.Errorf("empty buffer")
+	}
+	tag := (buf[0] & tagNumberMask) >> tagNumberShift
+	if buf[0]&classMask == 0 && tag != applicationTagCharacterString {
+		return buf, fmt.Errorf("expected charstring tag %d, got %d", applicationTagCharacterString, tag)
+	}
+	data, remaining, err := parseVarLen(uint(tag), buf)
+	if err != nil {
+		return remaining, err
+	}
+	if len(data) < 1 {
+		return remaining, fmt.Errorf("charstring too short")
+	}
+	cs.value = string(data[1:]) // skip encoding indicator byte
+	return remaining, nil
+}
+
+// BitString represents a BACnet application-tagged bit string (tag 8).
+type BitString struct {
+	unusedBits uint8
+	octets     []byte
+}
+
+func NewBitString() *BitString { return &BitString{octets: make([]byte, 0)} }
+
+func (bs *BitString) SetBit(n uint) *BitString {
+	octetIndex := n / 8
+	bitIndex := 7 - (n % 8)
+	if octetIndex >= uint(len(bs.octets)) {
+		fill := make([]byte, int(octetIndex)-len(bs.octets)+1)
+		bs.octets = append(bs.octets, fill...)
+		bs.unusedBits = 8
+	}
+	bs.octets[len(bs.octets)-1] |= (1 << bitIndex)
+	if bs.unusedBits > uint8(bitIndex) {
+		bs.unusedBits = uint8(bitIndex)
+	}
+	return bs
+}
+
+func (bs *BitString) GetBit(n uint) bool {
+	octetIndex := n / 8
+	if octetIndex >= uint(len(bs.octets)) {
+		return false
+	}
+	bitIndex := 7 - (n % 8)
+	return bs.octets[octetIndex]&(1<<bitIndex) != 0
+}
+
+func (bs *BitString) UnusedBits() uint8 { return bs.unusedBits }
+func (bs *BitString) Octets() []byte    { return bs.octets }
+
+func (bs *BitString) MarshalPrimitive() ([]byte, error) {
+	data := append([]byte{bs.unusedBits}, bs.octets...)
+	result := createTagLen(applicationTagBitString, uint(len(data)))
+	return append(result, data...), nil
+}
+
+func (bs *BitString) MarshalTagged(tag uint) ([]byte, error) {
+	data := append([]byte{bs.unusedBits}, bs.octets...)
+	result := createTagLen(byte(tag), uint(len(data)))
+	result[0] |= classMask
+	return append(result, data...), nil
+}
+
+func (bs *BitString) Unmarshal(buf []byte) ([]byte, error) {
+	if len(buf) == 0 {
+		return buf, fmt.Errorf("empty buffer")
+	}
+	tag := (buf[0] & tagNumberMask) >> tagNumberShift
+	if buf[0]&classMask == 0 && tag != applicationTagBitString {
+		return buf, fmt.Errorf("expected bitstring tag %d, got %d", applicationTagBitString, tag)
+	}
+	data, remaining, err := parseVarLen(uint(tag), buf)
+	if err != nil {
+		return remaining, err
+	}
+	if len(data) < 1 {
+		return remaining, fmt.Errorf("bitstring too short")
+	}
+	bs.unusedBits = data[0]
+	bs.octets = make([]byte, len(data)-1)
+	copy(bs.octets, data[1:])
+	return remaining, nil
+}
+
+// BACnetArray is an ordered, resizable array of Marshalable elements.
+// BACnet array indices are 1-based; index 0 is used by the protocol to
+// query the element count.
+type BACnetArray[T Marshalable] struct {
+	elements []T
+}
+
+func NewBACnetArray[T Marshalable]() *BACnetArray[T] {
+	return &BACnetArray[T]{elements: make([]T, 0)}
+}
+
+func (a *BACnetArray[T]) Len() uint { return uint(len(a.elements)) }
+
+// Get returns the element at the given 1-based index.
+func (a *BACnetArray[T]) Get(index uint) (T, error) {
+	if index == 0 || int(index) > len(a.elements) {
+		var zero T
+		return zero, fmt.Errorf("index %d out of bounds (len=%d)", index, len(a.elements))
+	}
+	return a.elements[index-1], nil
+}
+
+// Set replaces all elements.
+func (a *BACnetArray[T]) Set(values ...T) {
+	a.elements = make([]T, len(values))
+	copy(a.elements, values)
+}
+
+// Append adds one element to the end of the array.
+func (a *BACnetArray[T]) Append(v T) {
+	a.elements = append(a.elements, v)
+}
+
+// MarshalPrimitive encodes all elements concatenated (no wrapping tag).
+func (a *BACnetArray[T]) MarshalPrimitive() ([]byte, error) {
+	var result []byte
+	for _, elem := range a.elements {
+		b, err := elem.MarshalPrimitive()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, b...)
+	}
+	return result, nil
+}
+
+// MarshalAt encodes the single element at the given 1-based index.
+func (a *BACnetArray[T]) MarshalAt(index uint) ([]byte, error) {
+	elem, err := a.Get(index)
+	if err != nil {
+		return nil, err
+	}
+	return elem.MarshalPrimitive()
+}
+
+// Unmarshal is not required for read-only array properties.
+func (a *BACnetArray[T]) Unmarshal(buf []byte) ([]byte, error) {
+	return buf, fmt.Errorf("BACnetArray.Unmarshal not implemented")
+}
 
 type Date struct {
 	value uint32

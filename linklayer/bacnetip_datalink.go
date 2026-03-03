@@ -161,7 +161,11 @@ mainloop:
 		logger.Trace("Waiting for UDP")
 		n, ctrlMsg, src, err := p.ReadFrom(buff)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			logger.Error("error reading from udp socket: ", err)
+			continue
 		}
 		if n > 0 {
 			logger.Trace("Read ", n, " bytes with dest ", ctrlMsg.Dst)

@@ -7,6 +7,7 @@ import (
 	"github.com/REQUEA/bacnet/applicationlayer"
 	"github.com/REQUEA/bacnet/internal/encoding"
 	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/objectmodel"
 )
 
 // PropertyReference refers to a single property of an object (used in RPM requests).
@@ -141,94 +142,93 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 		result = append(result, openingTag(1))
 
 		for _, ref := range spec.PropertyRefs {
-			// propertyIdentifier [2]
-			propIdBytes, err := ref.PropertyIdentifier.MarshalTagged(2)
-			if err != nil {
-				return nil, fmt.Errorf("could not marshal property-identifier: %v", err)
-			}
-			result = append(result, propIdBytes...)
-
-			// optional propertyArrayIndex [3]
-			if ref.PropertyArrayIndex.Present() {
-				idxBytes, err := ref.PropertyArrayIndex.Get().MarshalTagged(3)
-				if err != nil {
-					return nil, fmt.Errorf("could not marshal property-array-index: %v", err)
-				}
-				result = append(result, idxBytes...)
-			}
-
-			if device == nil {
-				// propertyAccessError [5]: unknown object
-				result = append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
-				continue
-			}
-
-			devObj := device.DeviceObject()
 			propId := bacnet.PropertyIdentifier(ref.PropertyIdentifier.Value())
-			prop := devObj.GetProperty(propId)
-			if prop == nil {
-				// propertyAccessError [5]: unknown property
-				result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.UnknownProperty)...)
+
+			// Expand All / Required / Optional selectors.
+			if propId == bacnet.All || propId == bacnet.Required || propId == bacnet.Optional {
+				if device == nil {
+					result = append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
+					continue
+				}
+				for _, id := range device.DeviceObject().AllPropertyIdentifiers() {
+					result = append(result, sh.marshalOnePropertyResult(device, id, ref.PropertyArrayIndex)...)
+				}
 				continue
 			}
 
-			var valBytes []byte
-			rawVal := prop.GetValue()
-			if ref.PropertyArrayIndex.Present() {
-				idx := uint(ref.PropertyArrayIndex.Get().Value())
-				switch v := rawVal.(type) {
-				case bacnet.BACnetArray[bacnet.BACnetObjectIdentifier]:
-					elem, err := v.Get(idx)
-					if err != nil {
-						result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.InvalidArrayIndex)...)
-						continue
-					}
-					if idx == 0 {
-						valBytes = marshalUnsignedVal(2, uint64(elem.(uint)))
-					} else {
-						valBytes, err = marshalPropertyValue(elem)
-						if err != nil {
-							result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)...)
-							continue
-						}
-					}
-				case bacnet.BACnetArray[bacnet.PropertyIdentifier]:
-					elem, err := v.Get(idx)
-					if err != nil {
-						result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.InvalidArrayIndex)...)
-						continue
-					}
-					if idx == 0 {
-						valBytes = marshalUnsignedVal(2, uint64(elem.(uint)))
-					} else {
-						valBytes, err = marshalPropertyValue(elem)
-						if err != nil {
-							result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)...)
-							continue
-						}
-					}
-				default:
-					result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.PropertyIsNotAnArray)...)
-					continue
-				}
-			} else {
-				valBytes, err = marshalPropertyValue(rawVal)
-				if err != nil {
-					result = append(result, marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)...)
-					continue
-				}
-			}
-
-			// propertyValue [4]: opening tag, app-tagged bytes, closing tag
-			result = append(result, openingTag(4))
-			result = append(result, valBytes...)
-			result = append(result, closingTag(4))
+			result = append(result, sh.marshalOnePropertyResult(device, propId, ref.PropertyArrayIndex)...)
 		}
 
 		// listOfResults [1]: closing tag
 		result = append(result, closingTag(1))
 	}
 	return result, nil
+}
+
+// marshalOnePropertyResult encodes a single property result entry (propertyIdentifier [2],
+// optional propertyArrayIndex [3], then propertyValue [4] or propertyAccessError [5]).
+func (sh *ServiceHandler) marshalOnePropertyResult(
+	device *objectmodel.Device,
+	propId bacnet.PropertyIdentifier,
+	arrayIndex encoding.Optional[*encoding.Unsigned],
+) []byte {
+	var result []byte
+
+	// propertyIdentifier [2]
+	var propIdEnc encoding.BACnetPropertyIdentifier
+	propIdEnc.SetValue(uint32(propId))
+	propIdBytes, err := propIdEnc.MarshalTagged(2)
+	if err != nil {
+		return marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)
+	}
+	result = append(result, propIdBytes...)
+
+	// optional propertyArrayIndex [3]
+	if arrayIndex.Present() {
+		idxBytes, err := arrayIndex.Get().MarshalTagged(3)
+		if err != nil {
+			return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)...)
+		}
+		result = append(result, idxBytes...)
+	}
+
+	if device == nil {
+		return append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
+	}
+
+	devObj := device.DeviceObject()
+	prop := devObj.GetProperty(propId)
+	if prop == nil {
+		return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.UnknownProperty)...)
+	}
+
+	var valBytes []byte
+	if arrayIndex.Present() {
+		idx := uint(arrayIndex.Get().Value())
+		arrayProp, ok := prop.(objectmodel.ArrayProperty)
+		if !ok {
+			return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.PropertyIsNotAnArray)...)
+		}
+		elem, err := arrayProp.GetAt(idx)
+		if err != nil {
+			return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.InvalidArrayIndex)...)
+		}
+		valBytes, err = elem.MarshalPrimitive()
+		if err != nil {
+			return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)...)
+		}
+	} else {
+		valBytes, err = prop.MarshalValue()
+		if err != nil {
+			return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)...)
+		}
+	}
+
+	// propertyValue [4]: opening tag, app-tagged bytes, closing tag
+	result = append(result, openingTag(4))
+	result = append(result, valBytes...)
+	result = append(result, closingTag(4))
+	return result
 }
 
 // marshalPropertyError encodes a propertyAccessError [5] result element.

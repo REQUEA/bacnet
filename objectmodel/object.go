@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/internal/encoding"
 )
 
 const (
@@ -20,9 +21,15 @@ type Property interface {
 	GetValue() any
 	SetValue(any) error
 	IsWritable() bool
+	// MarshalValue serialises the property's current value as application-tagged bytes.
+	MarshalValue() ([]byte, error)
+	// UnmarshalValue parses application-tagged bytes and updates the property value in place.
+	UnmarshalValue([]byte) error
 }
 
-type PropertyBase[T any] struct {
+// PropertyBase is the generic base for all scalar property types.
+// T must be a pointer to an encoding type that implements encoding.Marshalable.
+type PropertyBase[T encoding.Marshalable] struct {
 	value    T
 	readOnly bool
 }
@@ -47,111 +54,161 @@ func (p *PropertyBase[T]) SetValue(v any) error {
 	return nil
 }
 
-type ObjectIdentifierProperty = PropertyBase[bacnet.BACnetObjectIdentifier]
-
-func NewObjectIdentifierProperty(readOnly bool, id bacnet.BACnetObjectIdentifier) *ObjectIdentifierProperty {
-	return &ObjectIdentifierProperty{value: id, readOnly: readOnly}
+func (p *PropertyBase[T]) MarshalValue() ([]byte, error) {
+	return p.value.MarshalPrimitive()
 }
 
-type CharacterStringProperty = PropertyBase[string]
+func (p *PropertyBase[T]) UnmarshalValue(data []byte) error {
+	if p.readOnly {
+		return fmt.Errorf("trying to set a read only property")
+	}
+	_, err := p.value.Unmarshal(data)
+	return err
+}
+
+// --- Scalar property type aliases ---
+
+type ObjectIdentifierProperty = PropertyBase[*encoding.BACnetObjectIdentifier]
+
+func NewObjectIdentifierProperty(readOnly bool, objType uint16, instance uint32) *ObjectIdentifierProperty {
+	v := &encoding.BACnetObjectIdentifier{}
+	v.SetFromValues(objType, instance)
+	return &ObjectIdentifierProperty{value: v, readOnly: readOnly}
+}
+
+type CharacterStringProperty = PropertyBase[*encoding.CharacterString]
 
 func NewCharacterStringProperty(readOnly bool, s string) *CharacterStringProperty {
-	return &CharacterStringProperty{value: s, readOnly: readOnly}
+	return &CharacterStringProperty{value: encoding.NewCharacterString(s), readOnly: readOnly}
 }
 
-type ObjectTypeProperty = PropertyBase[bacnet.ObjectType]
+// EnumeratedProperty stores any BACnet enumerated or unsigned-integer value
+// (ObjectType, DeviceStatus, SegmentationSupport, PropertyIdentifier, …).
+type EnumeratedProperty = PropertyBase[*encoding.Enumerated]
 
-func NewObjectTypeProperty(readOnly bool, t bacnet.ObjectType) *ObjectTypeProperty {
-	return &ObjectTypeProperty{value: t, readOnly: readOnly}
+func NewEnumeratedProperty(readOnly bool, v uint32) *EnumeratedProperty {
+	return &EnumeratedProperty{value: encoding.NewEnumerated(v), readOnly: readOnly}
 }
 
-type DeviceStatusProperty = PropertyBase[bacnet.BACnetDeviceStatus]
-
-func NewDeviceStatusProperty(readOnly bool, s bacnet.BACnetDeviceStatus) *DeviceStatusProperty {
-	return &DeviceStatusProperty{value: s, readOnly: readOnly}
-}
-
-type Unsigned16Property = PropertyBase[uint16]
+type Unsigned16Property = PropertyBase[*encoding.Unsigned16]
 
 func NewUnsigned16Property(readOnly bool, u uint16) *Unsigned16Property {
-	return &Unsigned16Property{value: u, readOnly: readOnly}
+	v := &encoding.Unsigned16{}
+	v.SetValue(u)
+	return &Unsigned16Property{value: v, readOnly: readOnly}
 }
 
-type UnsignedProperty = PropertyBase[uint]
+type UnsignedProperty = PropertyBase[*encoding.Unsigned]
 
 func NewUnsignedProperty(readOnly bool, u uint) *UnsignedProperty {
-	return &UnsignedProperty{value: u, readOnly: readOnly}
+	v := &encoding.Unsigned{}
+	v.SetValue(uint64(u))
+	return &UnsignedProperty{value: v, readOnly: readOnly}
 }
 
-type ServicesSupportedProperty = PropertyBase[bacnet.BitString]
+type BitStringProperty = PropertyBase[*encoding.BitString]
 
+// NewServiceSupportedProperty builds a BitString property for ProtocolServicesSupported.
 func NewServiceSupportedProperty(
 	readOnly bool,
 	services ...bacnet.BACnetServicesSupported,
-) *ServicesSupportedProperty {
-	result := &ServicesSupportedProperty{
-		value:    *bacnet.NewBitString(),
-		readOnly: readOnly,
-	}
+) *BitStringProperty {
+	bs := encoding.NewBitString()
 	for _, s := range services {
-		result.value.SetBit(uint(s))
+		bs.SetBit(uint(s))
 	}
-	return result
+	return &BitStringProperty{value: bs, readOnly: readOnly}
 }
 
-type ObjectTypesSupportedProperty = PropertyBase[bacnet.BitString]
-
+// NewObjectTypesSupportedProperty builds a BitString property for ProtocolObjectTypesSupported.
 func NewObjectTypesSupportedProperty(
 	readOnly bool,
 	types ...bacnet.BACnetObjectTypesSupported,
-) *ObjectTypesSupportedProperty {
-	result := &ObjectTypesSupportedProperty{
-		value:    *bacnet.NewBitString(),
-		readOnly: readOnly,
-	}
+) *BitStringProperty {
+	bs := encoding.NewBitString()
 	for _, s := range types {
-		result.value.SetBit(uint(s))
+		bs.SetBit(uint(s))
 	}
-	return result
+	return &BitStringProperty{value: bs, readOnly: readOnly}
 }
 
-type SegmentationProperty = PropertyBase[bacnet.SegmentationSupport]
+// --- Array property ---
 
-func NewSegmentationProperty(readOnly bool, s bacnet.SegmentationSupport) *SegmentationProperty {
-	return &SegmentationProperty{value: s, readOnly: readOnly}
+// ArrayProperty is implemented by BACnetArrayProperty.
+// GetAt(0) returns the element count as *encoding.Unsigned.
+// GetAt(n) for n≥1 returns the n-th element (1-based).
+type ArrayProperty interface {
+	GetAt(position uint) (encoding.Marshalable, error)
+	SetAt(position uint, value encoding.Marshalable) error
 }
 
-type BACnetArrayProperty[T any] struct {
-	PropertyBase[bacnet.BACnetArray[T]]
+type BACnetArrayProperty[T encoding.Marshalable] struct {
+	PropertyBase[*encoding.BACnetArray[T]]
 }
 
-func NewBACnetArrayProperty[T any](readOnly bool, size int, writable bool) *BACnetArrayProperty[T] {
+func NewBACnetArrayProperty[T encoding.Marshalable](readOnly bool) *BACnetArrayProperty[T] {
 	return &BACnetArrayProperty[T]{
-		PropertyBase: PropertyBase[bacnet.BACnetArray[T]]{
-			value:    bacnet.NewBACnetArray[T](size, writable),
+		PropertyBase: PropertyBase[*encoding.BACnetArray[T]]{
+			value:    encoding.NewBACnetArray[T](),
 			readOnly: readOnly,
 		},
 	}
 }
 
-func (p *BACnetArrayProperty[T]) GetAt(position uint) (any, error) {
+func (p *BACnetArrayProperty[T]) GetAt(position uint) (encoding.Marshalable, error) {
+	if position == 0 {
+		count := &encoding.Unsigned{}
+		count.SetValue(uint64(p.value.Len()))
+		return count, nil
+	}
 	return p.value.Get(position)
 }
 
-func (p *BACnetArrayProperty[T]) SetAt(position uint, value any) error {
-	return p.value.SetAt(position, value)
+func (p *BACnetArrayProperty[T]) SetAt(position uint, value encoding.Marshalable) error {
+	if p.readOnly {
+		return fmt.Errorf("trying to set a read only property")
+	}
+	v, ok := value.(T)
+	if !ok {
+		return fmt.Errorf("wrong element type for array property")
+	}
+	_ = v
+	return fmt.Errorf("SetAt not fully implemented for BACnetArrayProperty")
 }
 
-type ArrayProperty interface {
-	GetAt(position uint) (any, error)
-	SetAt(position uint, value any) error
-}
+// --- List property (DeviceAddressBinding only; marshal not supported) ---
 
-type BACnetListProperty[T any] = PropertyBase[bacnet.BACnetList[T]]
+type BACnetListProperty[T any] struct {
+	value    bacnet.BACnetList[T]
+	readOnly bool
+}
 
 func NewBACnetListProperty[T any](readOnly bool) *BACnetListProperty[T] {
 	return &BACnetListProperty[T]{
 		value:    bacnet.NewBACnetList[T](),
 		readOnly: readOnly,
 	}
+}
+
+func (p *BACnetListProperty[T]) GetValue() any   { return p.value }
+func (p *BACnetListProperty[T]) IsWritable() bool { return !p.readOnly }
+
+func (p *BACnetListProperty[T]) SetValue(v any) error {
+	if p.readOnly {
+		return fmt.Errorf("trying to set a read only property")
+	}
+	newValue, ok := v.(bacnet.BACnetList[T])
+	if !ok {
+		return fmt.Errorf("wrong property value type")
+	}
+	p.value = newValue
+	return nil
+}
+
+func (p *BACnetListProperty[T]) MarshalValue() ([]byte, error) {
+	return nil, fmt.Errorf("marshal not supported for BACnetList properties")
+}
+
+func (p *BACnetListProperty[T]) UnmarshalValue([]byte) error {
+	return fmt.Errorf("unmarshal not supported for BACnetList properties")
 }
