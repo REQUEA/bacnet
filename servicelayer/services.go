@@ -42,6 +42,10 @@ func (sh *ServiceHandler) GetDevice(
 ) *objectmodel.Device {
 	service, ok := sh.confirmedServices[serviceChoice]
 	if !ok {
+		// Fall back to first registered device for built-in confirmed services.
+		if len(sh.devices) > 0 {
+			return sh.devices[0]
+		}
 		return nil
 	}
 	return service.GetDevice(request)
@@ -51,7 +55,23 @@ func (sh *ServiceHandler) HandleConfServIndication(
 	indication *applicationlayer.APDUIndication,
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 ) {
-	// TODO: implement in Phase 6
+	switch serviceChoice {
+	case bacnet.ConfirmedServiceChoiceReadProperty:
+		sh.handleReadProperty(indication)
+	case bacnet.ConfirmedServiceChoiceWriteProperty:
+		sh.handleWriteProperty(indication)
+	case bacnet.ConfirmedServiceChoiceReadPropertyMultiple:
+		sh.handleReadPropertyMultiple(indication)
+	default:
+		logger.Trace("unhandled confirmed service: ", serviceChoice)
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId,
+			indication.Source,
+			serviceChoice,
+			bacnet.ServicesError,
+			bacnet.ServiceRequestDenied,
+		)
+	}
 }
 
 func (sh *ServiceHandler) HandleConfServConfirm(
@@ -95,6 +115,366 @@ func (sh *ServiceHandler) HandleAbortIndication(
 	reason uint8,
 ) {
 	// TODO: implement
+}
+
+// findDeviceByObjectId returns the local device whose DeviceObject has the given type+instance.
+func (sh *ServiceHandler) findDeviceByObjectId(objType uint16, instance uint32) *objectmodel.Device {
+	for _, device := range sh.devices {
+		devObj := device.DeviceObject()
+		if devObj == nil {
+			continue
+		}
+		idProp := devObj.GetProperty(bacnet.ObjectIdentifier)
+		if idProp == nil {
+			continue
+		}
+		rawId, ok := idProp.GetValue().(bacnet.BACnetObjectIdentifier)
+		if !ok {
+			continue
+		}
+		devInstance := uint32(rawId) & uint32(bacnet.MaxInstance)
+		devType := uint16(rawId >> 22)
+		if devInstance == instance && devType == objType {
+			return device
+		}
+	}
+	return nil
+}
+
+// marshalUnsignedVal encodes a uint64 as a BACnet application-tagged unsigned or enumerated value.
+func marshalUnsignedVal(tag byte, v uint64) []byte {
+	var data []byte
+	tmp := v
+	for tmp > 0 {
+		data = append([]byte{byte(tmp)}, data...)
+		tmp >>= 8
+	}
+	l := len(data)
+	if l < 5 {
+		return append([]byte{(tag << 4) | byte(l)}, data...)
+	}
+	return append([]byte{(tag << 4) | 5, byte(l)}, data...)
+}
+
+// marshalPropertyValue encodes a property value as BACnet application-tagged bytes.
+// The returned bytes are suitable for use as the inner value of an encoding.Abstract.
+func marshalPropertyValue(val any) ([]byte, error) {
+	switch v := val.(type) {
+	case bacnet.BACnetObjectIdentifier:
+		raw := uint32(v)
+		return []byte{(12 << 4) | 4, byte(raw >> 24), byte(raw >> 16), byte(raw >> 8), byte(raw)}, nil
+	case string:
+		encoded := append([]byte{0x00}, []byte(v)...) // 0x00 = UTF-8 encoding indicator
+		l := len(encoded)
+		if l < 5 {
+			return append([]byte{(7 << 4) | byte(l)}, encoded...), nil
+		}
+		return append([]byte{(7 << 4) | 5, byte(l)}, encoded...), nil
+	case uint:
+		return marshalUnsignedVal(2, uint64(v)), nil
+	case uint16:
+		return marshalUnsignedVal(2, uint64(v)), nil
+	case bacnet.ObjectType:
+		return marshalUnsignedVal(9, uint64(v)), nil
+	case bacnet.BACnetDeviceStatus:
+		return marshalUnsignedVal(9, uint64(v)), nil
+	case bacnet.SegmentationSupport:
+		return marshalUnsignedVal(9, uint64(v)), nil
+	case bacnet.PropertyIdentifier:
+		return marshalUnsignedVal(9, uint64(v)), nil
+	case bacnet.BitString:
+		octets := v.Octets()
+		data := append([]byte{byte(v.UnusedBits())}, octets...)
+		l := len(data)
+		if l < 5 {
+			return append([]byte{(8 << 4) | byte(l)}, data...), nil
+		}
+		return append([]byte{(8 << 4) | 5, byte(l)}, data...), nil
+	case bacnet.BACnetArray[bacnet.BACnetObjectIdentifier]:
+		return marshalObjectIDArray(v)
+	case bacnet.BACnetArray[bacnet.PropertyIdentifier]:
+		return marshalPropertyIDArray(v)
+	default:
+		return nil, fmt.Errorf("unsupported property value type: %T", val)
+	}
+}
+
+func marshalObjectIDArray(arr bacnet.BACnetArray[bacnet.BACnetObjectIdentifier]) ([]byte, error) {
+	count, _ := arr.Get(0)
+	n := count.(uint)
+	var result []byte
+	for i := uint(1); i <= n; i++ {
+		elem, err := arr.Get(i)
+		if err != nil {
+			return nil, err
+		}
+		b, err := marshalPropertyValue(elem)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, b...)
+	}
+	return result, nil
+}
+
+func marshalPropertyIDArray(arr bacnet.BACnetArray[bacnet.PropertyIdentifier]) ([]byte, error) {
+	count, _ := arr.Get(0)
+	n := count.(uint)
+	var result []byte
+	for i := uint(1); i <= n; i++ {
+		elem, err := arr.Get(i)
+		if err != nil {
+			return nil, err
+		}
+		b, err := marshalPropertyValue(elem)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, b...)
+	}
+	return result, nil
+}
+
+// decodePropertyValue decodes application-tagged bytes from a WriteProperty request.
+// hint is the current value of the property (used to coerce to the correct type).
+func decodePropertyValue(data []byte, hint any) (any, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty property value data")
+	}
+	appTag := (data[0] & 0xF0) >> 4
+	lvt := data[0] & 0x07
+	var offset uint = 1
+	if lvt > 5 {
+		return nil, fmt.Errorf("unexpected LVT value %d", lvt)
+	}
+	length := uint(lvt)
+	if lvt == 5 {
+		if len(data) < 2 {
+			return nil, fmt.Errorf("buffer too short for extended length")
+		}
+		length = uint(data[1])
+		offset = 2
+	}
+	if int(offset+length) > len(data) {
+		return nil, fmt.Errorf("buffer too short")
+	}
+	valueBytes := data[offset : offset+length]
+	switch appTag {
+	case 2: // unsigned int
+		var v uint64
+		for _, b := range valueBytes {
+			v = (v << 8) | uint64(b)
+		}
+		switch hint.(type) {
+		case uint16:
+			return uint16(v), nil
+		case bacnet.SegmentationSupport:
+			return bacnet.SegmentationSupport(v), nil
+		case bacnet.BACnetDeviceStatus:
+			return bacnet.BACnetDeviceStatus(v), nil
+		case bacnet.ObjectType:
+			return bacnet.ObjectType(v), nil
+		default:
+			return uint(v), nil
+		}
+	case 7: // charstring
+		if len(valueBytes) < 1 {
+			return nil, fmt.Errorf("charstring too short")
+		}
+		return string(valueBytes[1:]), nil // skip encoding indicator byte
+	case 9: // enumerated
+		var v uint64
+		for _, b := range valueBytes {
+			v = (v << 8) | uint64(b)
+		}
+		switch hint.(type) {
+		case bacnet.SegmentationSupport:
+			return bacnet.SegmentationSupport(v), nil
+		case bacnet.BACnetDeviceStatus:
+			return bacnet.BACnetDeviceStatus(v), nil
+		case bacnet.ObjectType:
+			return bacnet.ObjectType(v), nil
+		default:
+			return uint(v), nil
+		}
+	default:
+		return nil, fmt.Errorf("unsupported application tag %d", appTag)
+	}
+}
+
+// handleReadProperty processes a confirmed ReadProperty request.
+func (sh *ServiceHandler) handleReadProperty(indication *applicationlayer.APDUIndication) {
+	var req ReadPropertyRequest
+	_, err := req.Unmarshal(indication.Data)
+	if err != nil {
+		logger.Error("could not unmarshal ReadProperty request: ", err)
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceReadProperty,
+			bacnet.ServicesError, bacnet.ServiceRequestDenied,
+		)
+		return
+	}
+	device := sh.findDeviceByObjectId(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
+	if device == nil {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceReadProperty,
+			bacnet.ObjectError, bacnet.UnknownObject,
+		)
+		return
+	}
+	devObj := device.DeviceObject()
+	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
+	prop := devObj.GetProperty(propId)
+	if prop == nil {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceReadProperty,
+			bacnet.PropertyError, bacnet.UnknownProperty,
+		)
+		return
+	}
+	rawVal := prop.GetValue()
+	var valBytes []byte
+	if req.propertyArrayIndex.Present() {
+		idx := uint(req.propertyArrayIndex.Get().Value())
+		var arrVal interface{ Get(uint) (any, error) }
+		switch v := rawVal.(type) {
+		case bacnet.BACnetArray[bacnet.BACnetObjectIdentifier]:
+			arrVal = &v
+		case bacnet.BACnetArray[bacnet.PropertyIdentifier]:
+			arrVal = &v
+		default:
+			sh.applicationEntity.SendErrorResponse(
+				indication.InvokeId, indication.Source,
+				bacnet.ConfirmedServiceChoiceReadProperty,
+				bacnet.PropertyError, bacnet.PropertyIsNotAnArray,
+			)
+			return
+		}
+		elem, err := arrVal.Get(idx)
+		if err != nil {
+			sh.applicationEntity.SendErrorResponse(
+				indication.InvokeId, indication.Source,
+				bacnet.ConfirmedServiceChoiceReadProperty,
+				bacnet.PropertyError, bacnet.InvalidArrayIndex,
+			)
+			return
+		}
+		if idx == 0 {
+			// array size as unsigned int
+			valBytes = marshalUnsignedVal(2, uint64(elem.(uint)))
+		} else {
+			valBytes, err = marshalPropertyValue(elem)
+			if err != nil {
+				sh.applicationEntity.SendErrorResponse(
+					indication.InvokeId, indication.Source,
+					bacnet.ConfirmedServiceChoiceReadProperty,
+					bacnet.PropertyError, bacnet.DatatypeNotSupported,
+				)
+				return
+			}
+		}
+	} else {
+		valBytes, err = marshalPropertyValue(rawVal)
+		if err != nil {
+			logger.Error("could not marshal property value: ", err)
+			sh.applicationEntity.SendErrorResponse(
+				indication.InvokeId, indication.Source,
+				bacnet.ConfirmedServiceChoiceReadProperty,
+				bacnet.PropertyError, bacnet.DatatypeNotSupported,
+			)
+			return
+		}
+	}
+	ack := ReadPropertyAck{}
+	ack.objectIdentifier.SetFromValues(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
+	ack.propertyIdentifier.SetValue(req.propertyIdentifier.Value())
+	if req.propertyArrayIndex.Present() {
+		ack.propertyArrayIndex = req.propertyArrayIndex
+	}
+	ack.propertyValue = encoding.NewAbstract(valBytes)
+	ackBytes, err := ack.Marshal()
+	if err != nil {
+		logger.Error("could not marshal ReadPropertyAck: ", err)
+		return
+	}
+	if err := sh.applicationEntity.SendConfServResponse(
+		indication.InvokeId, indication.Source,
+		bacnet.ConfirmedServiceChoiceReadProperty,
+		ackBytes,
+	); err != nil {
+		logger.Error("could not send ReadProperty response: ", err)
+	}
+}
+
+// handleWriteProperty processes a confirmed WriteProperty request.
+func (sh *ServiceHandler) handleWriteProperty(indication *applicationlayer.APDUIndication) {
+	var req WritePropertyRequest
+	_, err := req.Unmarshal(indication.Data)
+	if err != nil {
+		logger.Error("could not unmarshal WriteProperty request: ", err)
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			bacnet.ServicesError, bacnet.ServiceRequestDenied,
+		)
+		return
+	}
+	device := sh.findDeviceByObjectId(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
+	if device == nil {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			bacnet.ObjectError, bacnet.UnknownObject,
+		)
+		return
+	}
+	devObj := device.DeviceObject()
+	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
+	prop := devObj.GetProperty(propId)
+	if prop == nil {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			bacnet.PropertyError, bacnet.UnknownProperty,
+		)
+		return
+	}
+	if !prop.IsWritable() {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			bacnet.PropertyError, bacnet.WriteAccessDenied,
+		)
+		return
+	}
+	newVal, err := decodePropertyValue(req.propertyValue.Value(), prop.GetValue())
+	if err != nil {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			bacnet.PropertyError, bacnet.InvalidDataType,
+		)
+		return
+	}
+	if err := prop.SetValue(newVal); err != nil {
+		sh.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			bacnet.PropertyError, bacnet.WriteAccessDenied,
+		)
+		return
+	}
+	// SimpleAck
+	if err := sh.applicationEntity.SendConfServResponse(
+		indication.InvokeId, indication.Source,
+		bacnet.ConfirmedServiceChoiceWriteProperty,
+		nil,
+	); err != nil {
+		logger.Error("could not send WriteProperty response: ", err)
+	}
 }
 
 // handleWhoIs responds to a received WhoIs with an IAm for each matching local device.
@@ -511,5 +891,93 @@ func (a *ReadPropertyAck) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	result = append(result, tmp...)
+	return result, nil
+}
+
+// --- WritePropertyRequest ---
+
+type WritePropertyRequest struct {
+	objectIdentifier   encoding.BACnetObjectIdentifier
+	propertyIdentifier encoding.BACnetPropertyIdentifier
+	propertyArrayIndex encoding.Optional[*encoding.Unsigned]
+	propertyValue      encoding.Abstract
+	priority           encoding.Optional[*encoding.Unsigned]
+}
+
+func (r *WritePropertyRequest) Unmarshal(buf []byte) ([]byte, error) {
+	remaining := buf
+	for len(remaining) > 0 {
+		tag, err := encoding.ReadTag(remaining)
+		if err != nil {
+			return remaining, fmt.Errorf("failed to read tag: %v", err)
+		}
+		switch tag {
+		case 0:
+			remaining, err = r.objectIdentifier.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading object-identifier: %v", err)
+			}
+		case 1:
+			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
+			}
+		case 2:
+			var arrayIndex encoding.Unsigned
+			remaining, err = arrayIndex.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-array-index: %v", err)
+			}
+			r.propertyArrayIndex.Set(&arrayIndex)
+		case 3:
+			remaining, err = r.propertyValue.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading property-value: %v", err)
+			}
+		case 4:
+			var prio encoding.Unsigned
+			remaining, err = prio.Unmarshal(remaining)
+			if err != nil {
+				return remaining, fmt.Errorf("error reading priority: %v", err)
+			}
+			r.priority.Set(&prio)
+		default:
+			return remaining, fmt.Errorf("unexpected tag %v", tag)
+		}
+	}
+	return remaining, nil
+}
+
+func (r *WritePropertyRequest) Marshal() ([]byte, error) {
+	result := make([]byte, 0)
+	tmp, err := r.objectIdentifier.MarshalTagged(0)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	tmp, err = r.propertyIdentifier.MarshalTagged(1)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	if r.propertyArrayIndex.Present() {
+		tmp, err = r.propertyArrayIndex.Get().MarshalTagged(2)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, tmp...)
+	}
+	tmp, err = r.propertyValue.MarshalTagged(3)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, tmp...)
+	if r.priority.Present() {
+		tmp, err = r.priority.Get().MarshalTagged(4)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, tmp...)
+	}
 	return result, nil
 }

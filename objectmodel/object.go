@@ -19,6 +19,7 @@ type Object interface {
 type Property interface {
 	GetValue() any
 	SetValue(any) error
+	IsWritable() bool
 }
 
 type PropertyBase[T any] struct {
@@ -28,6 +29,10 @@ type PropertyBase[T any] struct {
 
 func (p *PropertyBase[T]) GetValue() any {
 	return p.value
+}
+
+func (p *PropertyBase[T]) IsWritable() bool {
+	return !p.readOnly
 }
 
 func (p *PropertyBase[T]) SetValue(v any) error {

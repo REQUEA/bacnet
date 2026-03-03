@@ -1,0 +1,356 @@
+package servicelayer
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/applicationlayer"
+	"github.com/REQUEA/bacnet/internal/encoding"
+	"github.com/REQUEA/bacnet/networklayer"
+)
+
+// loopbackNetwork routes NUnitDataRequest calls asynchronously to a peer ApplicationEntity.
+type loopbackNetwork struct {
+	selfAddr *bacnet.BACnetAddress
+	peer     *applicationlayer.ApplicationEntity
+}
+
+func (l *loopbackNetwork) NUnitDataRequest(
+	dadr *bacnet.BACnetAddress, der bool,
+	priority networklayer.NPDUPriority, payload []byte,
+) error {
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	ind := &networklayer.NPDUIndication{
+		Source:        l.selfAddr,
+		Dest:          dadr,
+		ExpectedReply: der,
+		Apdu:          cp,
+	}
+	go l.peer.HandleNUnitDataIndication(ind)
+	return nil
+}
+
+func (l *loopbackNetwork) NReleaseRequest(*bacnet.BACnetAddress) error                              { return nil }
+func (l *loopbackNetwork) GetMaxPDULength(bacnet.NetworkNumber) uint                                { return 480 }
+func (l *loopbackNetwork) NUnitDataIndication(*networklayer.Port, bacnet.MAC, bacnet.MAC, []byte) error {
+	return nil
+}
+
+// makeLoopbackPair creates a client and server ServiceHandler connected via loopback.
+// The server hosts device instance 1000.
+func makeLoopbackPair(t *testing.T) (client *ServiceHandler, server *ServiceHandler, serverAddr *bacnet.BACnetAddress) {
+	t.Helper()
+	clientAddr := &bacnet.BACnetAddress{Network: 0, Mac: &testMAC{addr: []byte{10, 0, 0, 1, 0xBA, 0xC0}}}
+	serverAddr = &bacnet.BACnetAddress{Network: 0, Mac: &testMAC{addr: []byte{10, 0, 0, 2, 0xBA, 0xC0}}}
+
+	clientAE := applicationlayer.NewApplicationEntity()
+	serverAE := applicationlayer.NewApplicationEntity()
+
+	clientAE.SetNetworkEntity(&loopbackNetwork{selfAddr: clientAddr, peer: serverAE})
+	serverAE.SetNetworkEntity(&loopbackNetwork{selfAddr: serverAddr, peer: clientAE})
+
+	client = NewServiceHandler(clientAE, makeTestDevice())
+	server = NewServiceHandler(serverAE, makeTestDevice())
+	return
+}
+
+func reqCtx(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	return context.WithTimeout(context.Background(), 500*time.Millisecond)
+}
+
+// --- ReadProperty tests ---
+
+func TestClientReadProperty_ObjectName(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	valBytes, err := client.ReadProperty(ctx, serverAddr,
+		uint16(bacnet.BacnetDevice), 1000, bacnet.ObjectName, nil)
+	if err != nil {
+		t.Fatalf("ReadProperty failed: %v", err)
+	}
+	// Decode using decodePropertyValue with string hint
+	decoded, err := decodePropertyValue(valBytes, "")
+	if err != nil {
+		t.Fatalf("decodePropertyValue failed: %v", err)
+	}
+	name, ok := decoded.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", decoded)
+	}
+	if name != "TestDevice" {
+		t.Errorf("expected ObjectName 'TestDevice', got %q", name)
+	}
+}
+
+func TestClientReadProperty_VendorIdentifier(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	valBytes, err := client.ReadProperty(ctx, serverAddr,
+		uint16(bacnet.BacnetDevice), 1000, bacnet.VendorIdentifier, nil)
+	if err != nil {
+		t.Fatalf("ReadProperty failed: %v", err)
+	}
+	// VendorIdentifier is uint16(99); marshaled as app-tag unsigned: [0x21, 0x63]
+	if len(valBytes) < 2 {
+		t.Fatalf("response too short: %v", valBytes)
+	}
+	if (valBytes[0]>>4) != 2 {
+		t.Errorf("expected unsigned app-tag 2, got %d", valBytes[0]>>4)
+	}
+	var vendorId uint64
+	for _, b := range valBytes[1:] {
+		vendorId = (vendorId << 8) | uint64(b)
+	}
+	if vendorId != 99 {
+		t.Errorf("expected VendorIdentifier 99, got %d", vendorId)
+	}
+}
+
+func TestClientReadProperty_UnknownObject(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	_, err := client.ReadProperty(ctx, serverAddr,
+		uint16(bacnet.BacnetDevice), 9999, bacnet.ObjectName, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown object, got nil")
+	}
+}
+
+func TestClientReadProperty_UnknownProperty(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	_, err := client.ReadProperty(ctx, serverAddr,
+		uint16(bacnet.BacnetDevice), 1000, bacnet.PropertyIdentifier(0xFFFF), nil)
+	if err == nil {
+		t.Fatal("expected error for unknown property, got nil")
+	}
+}
+
+// --- WriteProperty tests ---
+
+func TestClientWriteProperty_ObjectName(t *testing.T) {
+	client, server, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	// Encode new ObjectName as charstring using the correct BACnet encoding
+	newName := "UpdatedDevice"
+	valBytes, err := marshalPropertyValue(newName)
+	if err != nil {
+		t.Fatalf("marshalPropertyValue failed: %v", err)
+	}
+
+	if writeErr := client.WriteProperty(ctx, serverAddr,
+		uint16(bacnet.BacnetDevice), 1000, bacnet.ObjectName, nil, valBytes, nil); writeErr != nil {
+		t.Fatalf("WriteProperty failed: %v", writeErr)
+	}
+	// Verify name was updated on the server
+	devObj := server.devices[0].DeviceObject()
+	nameProp := devObj.GetProperty(bacnet.ObjectName)
+	if nameProp.GetValue().(string) != newName {
+		t.Errorf("expected updated name %q, got %q", newName, nameProp.GetValue())
+	}
+}
+
+func TestClientWriteProperty_ReadOnlyProperty(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	// VendorIdentifier is read-only
+	valBytes := []byte{0x21, 0x63} // unsigned 99
+
+	err := client.WriteProperty(ctx, serverAddr,
+		uint16(bacnet.BacnetDevice), 1000, bacnet.VendorIdentifier, nil, valBytes, nil)
+	if err == nil {
+		t.Fatal("expected error writing read-only property, got nil")
+	}
+}
+
+// --- ReadPropertyMultiple tests ---
+
+func TestClientReadPropertyMultiple(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	var spec ReadAccessSpec
+	spec.ObjectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
+
+	var ref1 PropertyReference
+	ref1.PropertyIdentifier.SetValue(uint32(bacnet.ObjectName))
+
+	var ref2 PropertyReference
+	ref2.PropertyIdentifier.SetValue(uint32(bacnet.VendorIdentifier))
+
+	spec.PropertyRefs = []PropertyReference{ref1, ref2}
+
+	results, err := client.ReadPropertyMultiple(ctx, serverAddr, []ReadAccessSpec{spec})
+	if err != nil {
+		t.Fatalf("ReadPropertyMultiple failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if len(results[0].PropertyResults) != 2 {
+		t.Fatalf("expected 2 property results, got %d", len(results[0].PropertyResults))
+	}
+
+	// ObjectName: should succeed with a charstring value
+	pr0 := results[0].PropertyResults[0]
+	if pr0.Value == nil {
+		t.Errorf("ObjectName result should have a value, got error %v/%v", pr0.ErrorClass, pr0.ErrorCode)
+	} else {
+		rawVal := pr0.Value.Value()
+		if len(rawVal) < 2 || (rawVal[0]>>4) != 7 {
+			t.Errorf("ObjectName: expected charstring tag, got bytes %v", rawVal)
+		} else {
+			decoded, err := decodePropertyValue(rawVal, "")
+			if err != nil {
+				t.Errorf("ObjectName decode failed: %v", err)
+			} else if decoded.(string) != "TestDevice" {
+				t.Errorf("ObjectName: expected 'TestDevice', got %q", decoded.(string))
+			}
+		}
+	}
+
+	// VendorIdentifier: should succeed with an unsigned int value
+	pr1 := results[0].PropertyResults[1]
+	if pr1.Value == nil {
+		t.Errorf("VendorIdentifier result should have a value, got error %v/%v", pr1.ErrorClass, pr1.ErrorCode)
+	} else {
+		rawVal := pr1.Value.Value()
+		if len(rawVal) < 2 || (rawVal[0]>>4) != 2 {
+			t.Errorf("VendorIdentifier: expected unsigned tag, got bytes %v", rawVal)
+		}
+	}
+}
+
+func TestClientReadPropertyMultiple_UnknownProperty(t *testing.T) {
+	client, _, serverAddr := makeLoopbackPair(t)
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	var spec ReadAccessSpec
+	spec.ObjectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
+
+	var ref1 PropertyReference
+	ref1.PropertyIdentifier.SetValue(uint32(bacnet.ObjectName))
+
+	var ref2 PropertyReference
+	ref2.PropertyIdentifier.SetValue(uint32(0xFFFF)) // unknown property
+
+	spec.PropertyRefs = []PropertyReference{ref1, ref2}
+
+	results, err := client.ReadPropertyMultiple(ctx, serverAddr, []ReadAccessSpec{spec})
+	if err != nil {
+		t.Fatalf("ReadPropertyMultiple failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	// First property (ObjectName) should succeed
+	pr0 := results[0].PropertyResults[0]
+	if pr0.Value == nil {
+		t.Errorf("ObjectName should have succeeded, got error")
+	}
+
+	// Second property (unknown) should have an error
+	pr1 := results[0].PropertyResults[1]
+	if pr1.ErrorClass == nil || pr1.ErrorCode == nil {
+		t.Errorf("unknown property should return an error result, got value")
+	}
+}
+
+// TestRPMRequestMarshalUnmarshal round-trips a ReadPropertyMultiple request.
+func TestRPMRequestMarshalUnmarshal(t *testing.T) {
+	var spec ReadAccessSpec
+	spec.ObjectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
+
+	var ref1 PropertyReference
+	ref1.PropertyIdentifier.SetValue(uint32(bacnet.ObjectName))
+
+	var ref2 PropertyReference
+	ref2.PropertyIdentifier.SetValue(uint32(bacnet.VendorIdentifier))
+
+	spec.PropertyRefs = []PropertyReference{ref1, ref2}
+
+	req := ReadPropertyMultipleRequest{AccessSpecs: []ReadAccessSpec{spec}}
+	data, err := req.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var req2 ReadPropertyMultipleRequest
+	remaining, err := req2.Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("unexpected remaining bytes: %v", remaining)
+	}
+	if len(req2.AccessSpecs) != 1 {
+		t.Fatalf("expected 1 spec, got %d", len(req2.AccessSpecs))
+	}
+	if len(req2.AccessSpecs[0].PropertyRefs) != 2 {
+		t.Fatalf("expected 2 refs, got %d", len(req2.AccessSpecs[0].PropertyRefs))
+	}
+	if bacnet.PropertyIdentifier(req2.AccessSpecs[0].PropertyRefs[0].PropertyIdentifier.Value()) != bacnet.ObjectName {
+		t.Errorf("expected ObjectName, got %v", req2.AccessSpecs[0].PropertyRefs[0].PropertyIdentifier.Value())
+	}
+	if bacnet.PropertyIdentifier(req2.AccessSpecs[0].PropertyRefs[1].PropertyIdentifier.Value()) != bacnet.VendorIdentifier {
+		t.Errorf("expected VendorIdentifier, got %v", req2.AccessSpecs[0].PropertyRefs[1].PropertyIdentifier.Value())
+	}
+}
+
+// TestReadPropertyAckRoundTrip round-trips a ReadPropertyAck.
+func TestReadPropertyAckRoundTrip(t *testing.T) {
+	var ack ReadPropertyAck
+	ack.objectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
+	ack.propertyIdentifier.SetValue(uint32(bacnet.ObjectName))
+	nameBytes, _ := marshalPropertyValue("TestDevice")
+	ack.propertyValue = encoding.NewAbstract(nameBytes)
+
+	data, err := ack.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var ack2 ReadPropertyAck
+	remaining, err := ack2.Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("unexpected remaining bytes: %v", remaining)
+	}
+	if ack2.objectIdentifier.ObjType() != uint16(bacnet.BacnetDevice) {
+		t.Errorf("expected BacnetDevice type")
+	}
+	if ack2.objectIdentifier.Instance() != 1000 {
+		t.Errorf("expected instance 1000")
+	}
+	if bacnet.PropertyIdentifier(ack2.propertyIdentifier.Value()) != bacnet.ObjectName {
+		t.Errorf("expected ObjectName")
+	}
+	decodedName, decErr := decodePropertyValue(ack2.propertyValue.Value(), "")
+	if decErr != nil {
+		t.Fatalf("decodePropertyValue failed: %v", decErr)
+	}
+	if decodedName.(string) != "TestDevice" {
+		t.Errorf("expected 'TestDevice', got %q", decodedName.(string))
+	}
+}

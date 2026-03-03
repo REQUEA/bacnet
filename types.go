@@ -438,6 +438,9 @@ func (s *BitString) UnsetBit(position uint) *BitString {
 	return s
 }
 
+func (s *BitString) UnusedBits() uint { return s.unusedBits }
+func (s *BitString) Octets() []byte   { return s.octets }
+
 func (s *BitString) IsBitSet(position uint) bool {
 	octetIndex := position / 8
 	if octetIndex >= uint(len(s.octets)) {

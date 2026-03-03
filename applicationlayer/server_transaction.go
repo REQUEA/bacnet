@@ -108,6 +108,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 		apduInd := APDUIndication{
 			Source:        indication.Source,
 			ExpectedReply: indication.ExpectedReply,
+			InvokeId:      tr.Id.InvokeId,
 			Data:          serviceRequest,
 		}
 		tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
@@ -292,6 +293,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 				apduInd := APDUIndication{
 					Source:        indication.Source,
 					ExpectedReply: indication.ExpectedReply,
+					InvokeId:      tr.Id.InvokeId,
 					Data:          data,
 				}
 				tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)

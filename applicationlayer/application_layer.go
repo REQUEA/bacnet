@@ -38,6 +38,7 @@ const (
 type APDUIndication struct {
 	Source        *bacnet.BACnetAddress
 	ExpectedReply bool
+	InvokeId      uint
 	Data          []byte
 }
 
@@ -422,6 +423,8 @@ func (ae *ApplicationEntity) SendConfServRequest(
 
 	transaction.serviceChoice = serviceChoice
 	transaction.requestPdu = data
+	transaction.RequestTimer = NewTransactionTimer(defaultClientApduTimeout, transaction.OnRequestTimerFired)
+	transaction.SegmentTimer = NewTransactionTimer(defaultClientSegmentTimeout, transaction.OnSegmentTimerFired)
 
 	future := &ConfServFuture{c: make(chan *ConfServResponse, 1)}
 	transaction.future = future
@@ -632,6 +635,12 @@ const (
 	// defaultMaxApduLength is the safe fallback when the remote device's max APDU length is unknown.
 	defaultMaxApduLength = 480
 
+	// defaultClientApduTimeout is the default timeout for client confirmed-service requests.
+	defaultClientApduTimeout = 3 * time.Second
+
+	// defaultClientSegmentTimeout is the default segment timer for client segmented transactions.
+	defaultClientSegmentTimeout = 5 * time.Second
+
 	complexAckUnsegHeaderLen = 3 // type+flags, invoke-id, service-ack-choice
 	complexAckSegHeaderLen   = 5 // type+flags, invoke-id, seq-no, window-size, service-ack-choice
 )
@@ -702,6 +711,31 @@ func (ae *ApplicationEntity) SendConfServResponse(
 	tr.state = segState
 	segState.sendNextSegments()
 	return nil
+}
+
+// SendErrorResponse sends a BACnet Error PDU in response to a confirmed-service request.
+func (ae *ApplicationEntity) SendErrorResponse(
+	invokeId uint,
+	source *bacnet.BACnetAddress,
+	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	errClass bacnet.ErrorClass,
+	errCode bacnet.ErrorCode,
+) error {
+	transactionId := NewTransactionId(source, invokeId)
+	tr := ae.getServerTransaction(&transactionId)
+	if tr != nil {
+		tr.RequestTimer.Stop()
+		ae.removeServerTransaction(&transactionId)
+	}
+	// Error PDU: type|flags, invoke-id, service-choice, error-class (enum), error-code (enum)
+	pdu := []byte{
+		uint8(Error << 4),
+		uint8(invokeId),
+		uint8(serviceChoice),
+		(9 << 4) | 1, byte(errClass),
+		(9 << 4) | 1, byte(errCode),
+	}
+	return ae.networkEntity.NUnitDataRequest(source, false, networklayer.NormalPriority, pdu)
 }
 
 // SendWhoIsRequest sends an unconfirmed WhoIs service request PDU. data is the pre-encoded WhoIsRequest payload.
