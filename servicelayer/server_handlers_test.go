@@ -150,124 +150,6 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// --- marshalPropertyValue unit tests ---
-
-func TestMarshalPropertyValue_ObjectID(t *testing.T) {
-	val := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | 1000)
-	got, err := marshalPropertyValue(val)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// application tag 12 (0xC4 = (12<<4)|4), 4 bytes: 0x02, 0x00, 0x03, 0xE8
-	want := []byte{0xC4, 0x02, 0x00, 0x03, 0xE8}
-	if string(got) != string(want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestMarshalPropertyValue_String(t *testing.T) {
-	val := "hi"
-	got, err := marshalPropertyValue(val)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// tag 7, length 3 (encoding byte + 2 chars): 0x73, 0x00, 'h', 'i'
-	want := []byte{0x73, 0x00, 'h', 'i'}
-	if string(got) != string(want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestMarshalPropertyValue_UintZero(t *testing.T) {
-	got, err := marshalPropertyValue(uint(0))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// tag 2, length 0: 0x20
-	want := []byte{0x20}
-	if string(got) != string(want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestMarshalPropertyValue_Uint(t *testing.T) {
-	got, err := marshalPropertyValue(uint(42))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// tag 2, length 1, value 42: 0x21, 0x2A
-	want := []byte{0x21, 42}
-	if string(got) != string(want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestMarshalPropertyValue_SegmentationSupport(t *testing.T) {
-	got, err := marshalPropertyValue(bacnet.SegmentationSupportNone)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// tag 9 (enumerated), length 1, value 3: 0x91, 0x03
-	want := []byte{0x91, 3}
-	if string(got) != string(want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestMarshalPropertyValue_BitString(t *testing.T) {
-	bs := bacnet.NewBitString()
-	bs.SetBit(0).SetBit(2)
-	got, err := marshalPropertyValue(*bs)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// BitString: unusedBits, octets. With bits 0 and 2 set in byte 0:
-	// bit 0 → octet[0] bit 7 (MSB), bit 2 → octet[0] bit 5
-	// octet[0] = 1010_0000 = 0xA0, unusedBits = 5
-	// tag 8, length 2 (unusedBits byte + 1 data byte): 0x82, 0x05, 0xA0
-	if len(got) < 3 {
-		t.Fatalf("BitString encoding too short: %v", got)
-	}
-	if got[0]&0xF0>>4 != 8 {
-		t.Errorf("expected application tag 8 (BitString), got %d", got[0]>>4)
-	}
-}
-
-// --- decodePropertyValue unit tests ---
-
-func TestDecodePropertyValue_Uint(t *testing.T) {
-	data := []byte{0x21, 99} // tag 2, length 1, value 99
-	got, err := decodePropertyValue(data, uint(0))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != uint(99) {
-		t.Errorf("got %v, want uint(99)", got)
-	}
-}
-
-func TestDecodePropertyValue_String(t *testing.T) {
-	data := []byte{0x73, 0x00, 'o', 'k'} // tag 7, length 3, encoding=0, "ok"
-	got, err := decodePropertyValue(data, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "ok" {
-		t.Errorf("got %q, want %q", got, "ok")
-	}
-}
-
-func TestDecodePropertyValue_Enumerated_Segmentation(t *testing.T) {
-	data := []byte{0x91, 1} // tag 9 (enumerated), length 1, value 1
-	got, err := decodePropertyValue(data, bacnet.SegmentationSupportNone)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != bacnet.SegmentationSupportTransmit {
-		t.Errorf("got %v, want SegmentationSupportTransmit", got)
-	}
-}
-
 // --- WritePropertyRequest encoding roundtrip ---
 
 func TestWritePropertyRequest_Unmarshal(t *testing.T) {
@@ -276,7 +158,8 @@ func TestWritePropertyRequest_Unmarshal(t *testing.T) {
 	objBytes := marshalContextObjectID(0, uint16(bacnet.BacnetDevice), 1000)
 	propBytes := marshalContextUnsigned(1, uint64(bacnet.ObjectName))
 	// propertyValue [3]: context opening tag 3 (0x3E), app-tagged string, closing tag 3 (0x3F)
-	strBytes, _ := marshalPropertyValue("NewName")
+	cs := encoding.NewCharacterString("NewName")
+	strBytes, _ := cs.MarshalPrimitive()
 	abstract := encoding.NewAbstract(strBytes)
 	valBytes, _ := abstract.MarshalTagged(3)
 	data := append(append(objBytes, propBytes...), valBytes...)
@@ -295,12 +178,13 @@ func TestWritePropertyRequest_Unmarshal(t *testing.T) {
 	if uint32(req.propertyIdentifier.Value()) != uint32(bacnet.ObjectName) {
 		t.Errorf("wrong property ID: %d", req.propertyIdentifier.Value())
 	}
-	decoded, err := decodePropertyValue(req.propertyValue.Value(), "")
-	if err != nil {
-		t.Fatalf("could not decode property value: %v", err)
+	var decoded encoding.CharacterString
+	_, decErr := decoded.Unmarshal(req.propertyValue.Value())
+	if decErr != nil {
+		t.Fatalf("could not decode property value: %v", decErr)
 	}
-	if decoded != "NewName" {
-		t.Errorf("decoded value = %q, want %q", decoded, "NewName")
+	if decoded.Value() != "NewName" {
+		t.Errorf("decoded value = %q, want %q", decoded.Value(), "NewName")
 	}
 }
 
@@ -363,8 +247,9 @@ func TestHandleWriteProperty_ReadOnly(t *testing.T) {
 	// ObjectType is read-only → expect WriteAccessDenied error
 	objBytes := marshalContextObjectID(0, uint16(bacnet.BacnetDevice), 1000)
 	propBytes := marshalContextUnsigned(1, uint64(bacnet.ObjectTypeProp))
-	valBytes := marshalUnsignedVal(9, uint64(bacnet.BacnetDevice))
-	abstract := encoding.NewAbstract(valBytes)
+	enumVal := encoding.NewEnumerated(uint32(bacnet.BacnetDevice))
+	valRaw, _ := enumVal.MarshalPrimitive()
+	abstract := encoding.NewAbstract(valRaw)
 	abstractBytes, _ := abstract.MarshalTagged(3)
 	payload := append(append(objBytes, propBytes...), abstractBytes...)
 
@@ -387,8 +272,9 @@ func TestHandleWriteProperty_Success(t *testing.T) {
 	newName := "NewName"
 	objBytes := marshalContextObjectID(0, uint16(bacnet.BacnetDevice), 1000)
 	propBytes := marshalContextUnsigned(1, uint64(bacnet.ObjectName))
-	valBytes, _ := marshalPropertyValue(newName)
-	abstract := encoding.NewAbstract(valBytes)
+	cs := encoding.NewCharacterString(newName)
+	valRaw, _ := cs.MarshalPrimitive()
+	abstract := encoding.NewAbstract(valRaw)
 	abstractBytes, _ := abstract.MarshalTagged(3)
 	payload := append(append(objBytes, propBytes...), abstractBytes...)
 
@@ -412,8 +298,9 @@ func TestHandleWriteProperty_Success(t *testing.T) {
 	if nameProp == nil {
 		t.Fatal("ObjectName property not found")
 	}
-	if nameProp.GetValue() != newName {
-		t.Errorf("expected ObjectName=%q, got %q", newName, nameProp.GetValue())
+	nameCS, ok := nameProp.GetValue().(*encoding.CharacterString)
+	if !ok || nameCS.Value() != newName {
+		t.Errorf("expected ObjectName=%q, got %v", newName, nameProp.GetValue())
 	}
 }
 

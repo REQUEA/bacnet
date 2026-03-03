@@ -1,6 +1,9 @@
 package objectmodel
 
-import "github.com/REQUEA/bacnet"
+import (
+	"github.com/REQUEA/bacnet"
+	"github.com/REQUEA/bacnet/internal/encoding"
+)
 
 type Device struct {
 	deviceObject *DeviceObject
@@ -42,11 +45,13 @@ func NewDeviceObject(
 ) *DeviceObject {
 	properties := make(map[bacnet.PropertyIdentifier]Property)
 
-	properties[bacnet.ObjectIdentifier] = NewObjectIdentifierProperty(true, id)
+	properties[bacnet.ObjectIdentifier] = NewObjectIdentifierProperty(
+		true, uint16(id>>22), uint32(id)&0x3fffff,
+	)
 	properties[bacnet.ObjectName] = NewCharacterStringProperty(false, objectName)
-	properties[bacnet.ObjectTypeProp] = NewObjectTypeProperty(true, bacnet.BacnetDevice)
+	properties[bacnet.ObjectTypeProp] = NewEnumeratedProperty(true, uint32(bacnet.BacnetDevice))
 
-	properties[bacnet.SystemStatus] = NewDeviceStatusProperty(false, deviceStatus)
+	properties[bacnet.SystemStatus] = NewEnumeratedProperty(false, uint32(deviceStatus))
 	properties[bacnet.VendorName] = NewCharacterStringProperty(false, vendorName)
 	properties[bacnet.VendorIdentifier] = NewUnsigned16Property(true, vendorId)
 	properties[bacnet.ModelName] = NewCharacterStringProperty(true, modelName)
@@ -56,9 +61,13 @@ func NewDeviceObject(
 	properties[bacnet.ProtocolRevision] = NewUnsignedProperty(true, ProtocolRevision)
 	properties[bacnet.ProtocolServicesSupported] = NewServiceSupportedProperty(true, servicesSupported...)
 	properties[bacnet.ProtocolObjectTypesSupported] = NewObjectTypesSupportedProperty(true, objectTypesSupported...)
-	properties[bacnet.ObjectList] = NewBACnetArrayProperty[bacnet.BACnetObjectIdentifier](true, 0, true)
+	objectList := NewBACnetArrayProperty[*encoding.BACnetObjectIdentifier](true)
+	selfId := &encoding.BACnetObjectIdentifier{}
+	selfId.SetFromValues(uint16(id>>22), uint32(id)&0x3fffff)
+	objectList.value.Append(selfId)
+	properties[bacnet.ObjectList] = objectList
 	properties[bacnet.MaxApduLengthAccepted] = NewUnsignedProperty(true, maxApduLenAccepted)
-	properties[bacnet.SegmentationSupported] = NewSegmentationProperty(true, segmentationSupported)
+	properties[bacnet.SegmentationSupported] = NewEnumeratedProperty(true, uint32(segmentationSupported))
 	properties[bacnet.ApduTimeout] = NewUnsignedProperty(true, apduTimeout)
 	properties[bacnet.NumberOfApduRetries] = NewUnsignedProperty(true, numberOfApduRetries)
 	properties[bacnet.DeviceAddressBinding] = NewBACnetListProperty[bacnet.BACnetAddresBinding](true)
@@ -69,38 +78,36 @@ func NewDeviceObject(
 	} else {
 		properties[bacnet.MaxSegmentsAccepted] = NewUnsignedProperty(true, maxSegmentsAccepted)
 	}
-	properties[bacnet.ApduSegmentTimeout] = NewUnsignedProperty(false, 5000) // 5 seconds default
+	properties[bacnet.ApduSegmentTimeout] = NewUnsignedProperty(false, 5000)
 
-	propertyList := NewBACnetArrayProperty[bacnet.PropertyIdentifier](true, 19, true)
+	propertyList := NewBACnetArrayProperty[*encoding.Enumerated](true)
 	properties[bacnet.PropertyList] = propertyList
 
-	propertyArray := propertyList.GetValue().(bacnet.BACnetArray[bacnet.PropertyIdentifier])
-	propertyArray.Set(
-		bacnet.SystemStatus,
-		bacnet.VendorName,
-		bacnet.VendorIdentifier,
-		bacnet.ModelName,
-		bacnet.FirmwareRevision,
-		bacnet.ApplicationSoftwareVersion,
-		bacnet.ProtocolVersion,
-		bacnet.ProtocolRevision,
-		bacnet.ProtocolServicesSupported,
-		bacnet.ProtocolObjectTypesSupported,
-		bacnet.ObjectList,
-		bacnet.MaxApduLengthAccepted,
-		bacnet.SegmentationSupported,
-		bacnet.ApduTimeout,
-		bacnet.NumberOfApduRetries,
-		bacnet.DeviceAddressBinding,
-		bacnet.DatabaseRevision,
-		bacnet.MaxSegmentsAccepted,
-		bacnet.ApduSegmentTimeout,
+	propertyList.value.Set(
+		encoding.NewEnumerated(uint32(bacnet.SystemStatus)),
+		encoding.NewEnumerated(uint32(bacnet.VendorName)),
+		encoding.NewEnumerated(uint32(bacnet.VendorIdentifier)),
+		encoding.NewEnumerated(uint32(bacnet.ModelName)),
+		encoding.NewEnumerated(uint32(bacnet.FirmwareRevision)),
+		encoding.NewEnumerated(uint32(bacnet.ApplicationSoftwareVersion)),
+		encoding.NewEnumerated(uint32(bacnet.ProtocolVersion)),
+		encoding.NewEnumerated(uint32(bacnet.ProtocolRevision)),
+		encoding.NewEnumerated(uint32(bacnet.ProtocolServicesSupported)),
+		encoding.NewEnumerated(uint32(bacnet.ProtocolObjectTypesSupported)),
+		encoding.NewEnumerated(uint32(bacnet.ObjectList)),
+		encoding.NewEnumerated(uint32(bacnet.MaxApduLengthAccepted)),
+		encoding.NewEnumerated(uint32(bacnet.SegmentationSupported)),
+		encoding.NewEnumerated(uint32(bacnet.ApduTimeout)),
+		encoding.NewEnumerated(uint32(bacnet.NumberOfApduRetries)),
+		encoding.NewEnumerated(uint32(bacnet.DeviceAddressBinding)),
+		encoding.NewEnumerated(uint32(bacnet.DatabaseRevision)),
+		encoding.NewEnumerated(uint32(bacnet.MaxSegmentsAccepted)),
+		encoding.NewEnumerated(uint32(bacnet.ApduSegmentTimeout)),
 	)
 
-	result := &DeviceObject{
+	return &DeviceObject{
 		properties: properties,
 	}
-	return result
 }
 
 func (o *DeviceObject) GetProperty(id bacnet.PropertyIdentifier) Property {
@@ -109,4 +116,13 @@ func (o *DeviceObject) GetProperty(id bacnet.PropertyIdentifier) Property {
 		return nil
 	}
 	return p
+}
+
+// AllPropertyIdentifiers returns all property identifiers present on the device object.
+func (o *DeviceObject) AllPropertyIdentifiers() []bacnet.PropertyIdentifier {
+	ids := make([]bacnet.PropertyIdentifier, 0, len(o.properties))
+	for id := range o.properties {
+		ids = append(ids, id)
+	}
+	return ids
 }
