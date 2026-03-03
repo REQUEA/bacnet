@@ -45,6 +45,7 @@ func (p *Port) SetNetworkEntity(e NetworkEntity) {
 func (p *Port) HandleNPDU(dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
 	// TODO: might have to place the incoming message in an input queue for
 	// the network entity
+	logger.Trace("Port.HandleNPDU(dadr: %v, sadr: %v, ...)", dadr, sadr)
 	return p.networkEntity.NUnitDataIndication(p, dadr, sadr, buf)
 }
 
@@ -406,11 +407,13 @@ func (npdu *NPDU) UnmarshalBinary(data []byte) error {
 			return fmt.Errorf("read NPDU dest Address.Len: %w", err)
 		}
 		destBytes := make([]byte, int(length))
-		err = binary.Read(buf, binary.BigEndian, &npdu.Destination.Mac)
+		err = binary.Read(buf, binary.BigEndian, destBytes)
 		if err != nil {
-			return fmt.Errorf("read NPDU dest Address.Net: %w", err)
+			return fmt.Errorf("read NPDU dest Address.MAC: %w", err)
 		}
-		npdu.Destination.Mac.FromBytes(destBytes)
+		destMac := bacnet.AbstractMAC{}
+		destMac.FromBytes(destBytes)
+		npdu.Destination.Mac = &destMac
 	}
 
 	if npdu.IsSourcePresent() {
@@ -425,11 +428,13 @@ func (npdu *NPDU) UnmarshalBinary(data []byte) error {
 			return fmt.Errorf("read NPDU src Address.Len: %w", err)
 		}
 		sourceBytes := make([]byte, int(length))
-		err = binary.Read(buf, binary.BigEndian, &npdu.Source.Mac)
+		err = binary.Read(buf, binary.BigEndian, sourceBytes)
 		if err != nil {
 			return fmt.Errorf("read NPDU src Address.Net: %w", err)
 		}
-		npdu.Source.Mac.FromBytes(sourceBytes)
+		sourceMac := bacnet.AbstractMAC{}
+		sourceMac.FromBytes(sourceBytes)
+		npdu.Source.Mac = &sourceMac
 	}
 
 	if npdu.IsDestPresent() {

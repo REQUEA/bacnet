@@ -1,6 +1,7 @@
 package objectmodel
 
 import (
+	"sync"
 	"time"
 
 	"github.com/REQUEA/bacnet"
@@ -58,10 +59,13 @@ func NewRemoteDevice(
 }
 
 type RemoteDeviceCache struct {
+	mu            sync.RWMutex
 	remoteDevices []*RemoteDevice
 }
 
 func (c *RemoteDeviceCache) Add(device RemoteDevice) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for i, d := range c.remoteDevices {
 		if d.address.Equal(device.address) {
 			c.remoteDevices[i] = &device
@@ -72,6 +76,8 @@ func (c *RemoteDeviceCache) Add(device RemoteDevice) {
 }
 
 func (c *RemoteDeviceCache) Get(addr *bacnet.BACnetAddress) *RemoteDevice {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, d := range c.remoteDevices {
 		if d.address.Equal(addr) {
 			return d

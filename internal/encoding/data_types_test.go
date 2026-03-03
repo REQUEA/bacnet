@@ -228,6 +228,47 @@ func TestParseVarLenExtended65536AndAbove(t *testing.T) {
 	}
 }
 
+func TestUnsigned16MarshalPrimitive(t *testing.T) {
+	u := Unsigned16{value: 0x1234}
+
+	// tag: application (0b0), number: 2 (unsigned int), len: 2
+	expected := []byte{0x22, 0x12, 0x34}
+
+	result, err := u.MarshalPrimitive()
+	if err != nil {
+		t.Fatalf("did not expect error: %v", err)
+	}
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("expected %v, got %v", expected, result)
+	}
+
+	u = Unsigned16{value: 0x0042}
+
+	// leading zero byte is stripped, len: 1
+	expected = []byte{0x21, 0x42}
+
+	result, err = u.MarshalPrimitive()
+	if err != nil {
+		t.Fatalf("did not expect error: %v", err)
+	}
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("expected %v, got %v", expected, result)
+	}
+
+	u = Unsigned16{value: 0x0000}
+
+	// zero value: must still encode as 1 byte per BACnet standard
+	expected = []byte{0x21, 0x00}
+
+	result, err = u.MarshalPrimitive()
+	if err != nil {
+		t.Fatalf("did not expect error: %v", err)
+	}
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("expected %v, got %v", expected, result)
+	}
+}
+
 func TestUnsignedMarshalPrimitive(t *testing.T) {
 	u := Unsigned{
 		value: uint64(0x1122334455667788),

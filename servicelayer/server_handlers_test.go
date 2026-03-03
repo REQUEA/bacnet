@@ -1,6 +1,7 @@
 package servicelayer
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 // mockNetworkEntity captures sent PDUs for testing.
 type mockNetworkEntity struct {
+	mu   sync.Mutex
 	sent [][]byte
 }
 
@@ -23,11 +25,21 @@ func (m *mockNetworkEntity) NUnitDataIndication(source *networklayer.Port, dadr 
 func (m *mockNetworkEntity) NUnitDataRequest(dadr *bacnet.BACnetAddress, der bool, priority networklayer.NPDUPriority, payload []byte) error {
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
+	m.mu.Lock()
 	m.sent = append(m.sent, cp)
+	m.mu.Unlock()
 	return nil
 }
 func (m *mockNetworkEntity) NReleaseRequest(dadr *bacnet.BACnetAddress) error { return nil }
 func (m *mockNetworkEntity) GetMaxPDULength(dnet bacnet.NetworkNumber) uint   { return 480 }
+
+func (m *mockNetworkEntity) getSent() [][]byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([][]byte, len(m.sent))
+	copy(result, m.sent)
+	return result
+}
 
 // testMAC is a minimal MAC implementation for tests.
 type testMAC struct {
@@ -301,10 +313,10 @@ func TestHandleReadProperty_ObjectName(t *testing.T) {
 	apdu := buildConfirmedServiceAPDU(1, bacnet.ConfirmedServiceChoiceReadProperty, payload)
 	injectAndWait(sh, apdu)
 
-	if len(mock.sent) == 0 {
+	if len(mock.getSent()) == 0 {
 		t.Fatal("no PDU was sent")
 	}
-	pdu := mock.sent[0]
+	pdu := mock.getSent()[0]
 	// Expected: ComplexAck (type 0x30) or SimpleAck (0x20)
 	pduType := pdu[0] & 0xF0
 	if pduType != 0x30 {
@@ -320,10 +332,10 @@ func TestHandleReadProperty_UnknownObject(t *testing.T) {
 	apdu := buildConfirmedServiceAPDU(1, bacnet.ConfirmedServiceChoiceReadProperty, payload)
 	injectAndWait(sh, apdu)
 
-	if len(mock.sent) == 0 {
+	if len(mock.getSent()) == 0 {
 		t.Fatal("no PDU was sent")
 	}
-	pdu := mock.sent[0]
+	pdu := mock.getSent()[0]
 	if pdu[0]&0xF0 != 0x50 {
 		t.Errorf("expected Error PDU type 0x50, got 0x%02X", pdu[0])
 	}
@@ -336,10 +348,10 @@ func TestHandleReadProperty_UnknownProperty(t *testing.T) {
 	apdu := buildConfirmedServiceAPDU(1, bacnet.ConfirmedServiceChoiceReadProperty, payload)
 	injectAndWait(sh, apdu)
 
-	if len(mock.sent) == 0 {
+	if len(mock.getSent()) == 0 {
 		t.Fatal("no PDU was sent")
 	}
-	pdu := mock.sent[0]
+	pdu := mock.getSent()[0]
 	if pdu[0]&0xF0 != 0x50 {
 		t.Errorf("expected Error PDU type 0x50, got 0x%02X", pdu[0])
 	}
@@ -359,10 +371,10 @@ func TestHandleWriteProperty_ReadOnly(t *testing.T) {
 	apdu := buildConfirmedServiceAPDU(2, bacnet.ConfirmedServiceChoiceWriteProperty, payload)
 	injectAndWait(sh, apdu)
 
-	if len(mock.sent) == 0 {
+	if len(mock.getSent()) == 0 {
 		t.Fatal("no PDU was sent")
 	}
-	pdu := mock.sent[0]
+	pdu := mock.getSent()[0]
 	if pdu[0]&0xF0 != 0x50 {
 		t.Errorf("expected Error PDU type 0x50, got 0x%02X", pdu[0])
 	}
@@ -383,10 +395,10 @@ func TestHandleWriteProperty_Success(t *testing.T) {
 	apdu := buildConfirmedServiceAPDU(3, bacnet.ConfirmedServiceChoiceWriteProperty, payload)
 	injectAndWait(sh, apdu)
 
-	if len(mock.sent) == 0 {
+	if len(mock.getSent()) == 0 {
 		t.Fatal("no PDU was sent")
 	}
-	pdu := mock.sent[0]
+	pdu := mock.getSent()[0]
 	if pdu[0]&0xF0 != 0x20 {
 		t.Errorf("expected SimpleAck PDU type 0x20, got 0x%02X", pdu[0])
 	}
@@ -422,10 +434,10 @@ func TestHandleReadPropertyMultiple(t *testing.T) {
 	apdu := buildConfirmedServiceAPDU(4, bacnet.ConfirmedServiceChoiceReadPropertyMultiple, payload)
 	injectAndWait(sh, apdu)
 
-	if len(mock.sent) == 0 {
+	if len(mock.getSent()) == 0 {
 		t.Fatal("no PDU was sent")
 	}
-	pdu := mock.sent[0]
+	pdu := mock.getSent()[0]
 	if pdu[0]&0xF0 != 0x30 {
 		t.Errorf("expected ComplexAck PDU type 0x30, got 0x%02X", pdu[0])
 	}

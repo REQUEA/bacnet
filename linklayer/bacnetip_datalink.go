@@ -203,10 +203,16 @@ mainloop:
 			}
 			switch bvlc.Function {
 			case BacFuncUnicast:
-				port.npduHandler.HandleNPDU(&dadr, &sadr, payload)
+				err := port.npduHandler.HandleNPDU(&dadr, &sadr, payload)
+				if err != nil {
+					logger.Error("handling NPDU failed: ", err)
+				}
 			case BacFuncBroadcast:
 				// TODO: check it is really what has to be done
-				port.npduHandler.HandleNPDU(&dadr, &sadr, payload)
+				err := port.npduHandler.HandleNPDU(&dadr, &sadr, payload)
+				if err != nil {
+					logger.Error("handling NPDU failed: ", err)
+				}
 			default:
 				logger.Error("unsupported BVLC function ", bvlc.Function)
 			}

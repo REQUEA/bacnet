@@ -50,8 +50,7 @@ func (p *PropertyBase[T]) SetValue(v any) error {
 type ObjectIdentifierProperty = PropertyBase[bacnet.BACnetObjectIdentifier]
 
 func NewObjectIdentifierProperty(readOnly bool, id bacnet.BACnetObjectIdentifier) *ObjectIdentifierProperty {
-	result := &ObjectIdentifierProperty{value: id, readOnly: readOnly}
-	return result
+	return &ObjectIdentifierProperty{value: id, readOnly: readOnly}
 }
 
 type CharacterStringProperty = PropertyBase[string]
@@ -122,13 +121,30 @@ func NewSegmentationProperty(readOnly bool, s bacnet.SegmentationSupport) *Segme
 	return &SegmentationProperty{value: s, readOnly: readOnly}
 }
 
-type BACnetArrayProperty[T any] = PropertyBase[bacnet.BACnetArray[T]]
+type BACnetArrayProperty[T any] struct {
+	PropertyBase[bacnet.BACnetArray[T]]
+}
 
 func NewBACnetArrayProperty[T any](readOnly bool, size int, writable bool) *BACnetArrayProperty[T] {
 	return &BACnetArrayProperty[T]{
-		value:    bacnet.NewBACnetArray[T](size, writable),
-		readOnly: readOnly,
+		PropertyBase: PropertyBase[bacnet.BACnetArray[T]]{
+			value:    bacnet.NewBACnetArray[T](size, writable),
+			readOnly: readOnly,
+		},
 	}
+}
+
+func (p *BACnetArrayProperty[T]) GetAt(position uint) (any, error) {
+	return p.value.Get(position)
+}
+
+func (p *BACnetArrayProperty[T]) SetAt(position uint, value any) error {
+	return p.value.SetAt(position, value)
+}
+
+type ArrayProperty interface {
+	GetAt(position uint) (any, error)
+	SetAt(position uint, value any) error
 }
 
 type BACnetListProperty[T any] = PropertyBase[bacnet.BACnetList[T]]
