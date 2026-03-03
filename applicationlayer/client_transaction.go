@@ -99,6 +99,34 @@ func (t *ClientTransaction) resolveFuture(resp *ConfServResponse) {
 	}
 }
 
+func (t *ClientTransaction) OnRequestTimerFired() {
+	t.events <- &clientRequestTimerEvent{transaction: t}
+}
+
+func (t *ClientTransaction) OnSegmentTimerFired() {
+	t.events <- &clientSegmentTimerEvent{transaction: t}
+}
+
+type clientRequestTimerEvent struct {
+	transaction *ClientTransaction
+}
+
+func (e *clientRequestTimerEvent) Exec() {
+	tr := e.transaction
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: nil})
+	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
+
+type clientSegmentTimerEvent struct {
+	transaction *ClientTransaction
+}
+
+func (e *clientSegmentTimerEvent) Exec() {
+	tr := e.transaction
+	tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: nil})
+	tr.applicationEntity.removeClientTransaction(tr.Id)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // IDLE State
 ////////////////////////////////////////////////////////////////////////////////

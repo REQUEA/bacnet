@@ -95,7 +95,9 @@ func (t *TransactionTimer) Start() {
 func (t *TransactionTimer) Stop() {
 	t.Lock()
 	defer t.Unlock()
-	t.timer.Stop()
+	if t.timer != nil {
+		t.timer.Stop()
+	}
 	t.stopped = true
 }
 

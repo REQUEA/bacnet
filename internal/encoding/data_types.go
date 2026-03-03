@@ -56,7 +56,45 @@ type LengthValueType interface {
 	getClass() tagClass
 }
 
-type UnsignedBase[T uint8 | uint16 | uint32 | uint64] struct {
+type Unsigned8 struct {
+	value uint8
+}
+
+func (u *Unsigned8) Value() uint8 {
+	return u.value
+}
+
+func (u *Unsigned8) SetValue(v uint8) {
+	u.value = v
+}
+
+func (u *Unsigned8) Unmarshal(buf []byte) ([]byte, error) {
+	tag := (buf[0] & tagNumberMask) >> tagNumberShift
+	data, remaining, err := parseVarLen(uint(tag), buf)
+	if err != nil {
+		return remaining, err
+	}
+	if len(data) > 1 {
+		return remaining, fmt.Errorf("data too long for %T", u.value)
+	}
+	u.value = data[0]
+	return remaining, nil
+}
+
+func (u *Unsigned8) MarshalPrimitive() ([]byte, error) {
+	return u.MarshalTagged(uint(applicationTagUnsignedInt))
+}
+
+func (u *Unsigned8) MarshalTagged(tag uint) ([]byte, error) {
+	data := make([]byte, 0)
+	result := make([]byte, 0)
+	tagLen := createTagLen(byte(tag), uint(len(data)))
+	result = append(result, tagLen...)
+	result = append(result, u.value)
+	return result, nil
+}
+
+type UnsignedBase[T uint16 | uint32 | uint64] struct {
 	value T
 }
 
@@ -102,7 +140,7 @@ func (u *UnsignedBase[T]) MarshalTagged(tag uint) ([]byte, error) {
 		shift -= 8
 	}
 	result := make([]byte, 0)
-	tagLen := createTagLen(applicationTagUnsignedInt, uint(len(data)))
+	tagLen := createTagLen(byte(tag), uint(len(data)))
 	result = append(result, tagLen...)
 	result = append(result, data...)
 	return result, nil
@@ -164,7 +202,6 @@ func (i *Integer16) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
-type Unsigned8 = UnsignedBase[uint8]
 type Unsigned16 = UnsignedBase[uint16]
 type Unsigned32 = UnsignedBase[uint16]
 type Unsigned64 = UnsignedBase[uint64]
@@ -188,7 +225,7 @@ func (u *BACnetObjectIdentifier) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
-func (i *BACnetObjectIdentifier) ObjType() uint16 { return i.objType }
+func (i *BACnetObjectIdentifier) ObjType() uint16  { return i.objType }
 func (i *BACnetObjectIdentifier) Instance() uint32 { return i.instance }
 func (i *BACnetObjectIdentifier) SetFromValues(objType uint16, instance uint32) {
 	i.objType = objType
@@ -291,6 +328,16 @@ type Abstract struct {
 	value []byte
 }
 
+// NewAbstract creates an Abstract with pre-set raw application-tagged bytes.
+func NewAbstract(data []byte) Abstract {
+	return Abstract{value: data}
+}
+
+// Value returns the raw inner bytes of the Abstract (without context tag wrapper).
+func (a *Abstract) Value() []byte {
+	return a.value
+}
+
 func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 	// extract original tag
 	if buf[0]&classMask == 0 {
@@ -307,6 +354,7 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 	}
 	tagStack := []byte{tag}
 	endOffset := startOffset
+	valueEnd := startOffset
 	for endOffset < uint(len(buf)) {
 		if buf[endOffset]&classMask == 0 {
 			currentTag := (buf[endOffset] & tagNumberMask) >> tagNumberShift
@@ -356,7 +404,8 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 					return buf, fmt.Errorf("tag mismatch at offset %d", endOffset)
 				}
 				if len(tagStack) == 0 {
-					endOffset += offset
+					valueEnd = endOffset // value ends before the closing tag
+					endOffset += offset  // advance past closing tag
 					break
 				}
 			} else if length == 6 {
@@ -386,7 +435,7 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 	if len(tagStack) != 0 {
 		return buf, fmt.Errorf("end of buffer before closing tag")
 	}
-	a.value = buf[startOffset:endOffset]
+	a.value = buf[startOffset:valueEnd]
 	// return the remaining data of buf
 	return buf[endOffset:], nil
 }
