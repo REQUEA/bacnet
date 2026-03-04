@@ -230,6 +230,19 @@ func (i *Integer16) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
+func (i *Integer16) Value() int16    { return i.value }
+func (i *Integer16) SetValue(v int16) { i.value = v }
+
+func (i *Integer16) MarshalPrimitive() ([]byte, error) {
+	if i.value >= -128 && i.value <= 127 {
+		return []byte{(applicationTagSignedInt << tagNumberShift) | 1, byte(i.value)}, nil
+	}
+	return []byte{
+		(applicationTagSignedInt << tagNumberShift) | 2,
+		byte(uint16(i.value) >> 8), byte(i.value),
+	}, nil
+}
+
 type Unsigned16 = UnsignedBase[uint16]
 type Unsigned32 = UnsignedBase[uint16]
 type Unsigned64 = UnsignedBase[uint64]
@@ -611,6 +624,13 @@ func (d *Date) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
+func (d *Date) MarshalPrimitive() ([]byte, error) {
+	return []byte{
+		(applicationTagDate << tagNumberShift) | 4,
+		byte(d.value >> 24), byte(d.value >> 16), byte(d.value >> 8), byte(d.value),
+	}, nil
+}
+
 type Time struct {
 	Hour     uint8
 	Minute   uint8
@@ -634,6 +654,13 @@ func (t *Time) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
+func (t *Time) MarshalPrimitive() ([]byte, error) {
+	return []byte{
+		(applicationTagTime << tagNumberShift) | 4,
+		t.Hour, t.Minute, t.Second, t.Hundreth,
+	}, nil
+}
+
 type BACnetDateTime struct {
 	date Date
 	time Time
@@ -649,6 +676,18 @@ func (t *BACnetDateTime) Unmarshal(buf []byte) ([]byte, error) {
 		return remaining, fmt.Errorf("could not unmarshal time: %v", err)
 	}
 	return remaining, nil
+}
+
+func (t *BACnetDateTime) MarshalPrimitive() ([]byte, error) {
+	dateBytes, err := t.date.MarshalPrimitive()
+	if err != nil {
+		return nil, err
+	}
+	timeBytes, err := t.time.MarshalPrimitive()
+	if err != nil {
+		return nil, err
+	}
+	return append(dateBytes, timeBytes...), nil
 }
 
 type Abstract struct {

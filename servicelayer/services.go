@@ -38,6 +38,8 @@ func NewServiceHandler(ae *applicationlayer.ApplicationEntity, device *objectmod
 	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceReadProperty, &ReadPropertyService{sh})
 	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceWriteProperty, &WritePropertyService{sh})
 	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceReadPropertyMultiple, &ReadPropertyMultipleService{sh})
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceWritePropertyMultiple, &WritePropertyMultipleService{sh})
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceReadRange, &ReadRangeService{sh})
 	sh.RegisterUnconfirmedService(bacnet.UnconfirmedServiceChoiceWhoIs, &WhoIsService{sh})
 	sh.RegisterUnconfirmedService(bacnet.UnconfirmedServiceChoiceIAm, &IAmService{sh})
 	ae.SetServiceLayer(sh)

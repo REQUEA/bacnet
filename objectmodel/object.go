@@ -197,6 +197,24 @@ func (p *BACnetArrayProperty[T]) SetAt(position uint, value encoding.Marshalable
 	return fmt.Errorf("SetAt not fully implemented for BACnetArrayProperty")
 }
 
+// --- Range property ---
+
+// RangeReadResult holds the result of a ReadRange operation.
+type RangeReadResult struct {
+	Items               [][]byte // each item as application-tagged bytes
+	FirstItem           bool
+	LastItem            bool
+	MoreItems           bool
+	FirstSequenceNumber *uint32 // non-nil for BySequenceNumber/ByTime reads
+}
+
+// RangeProperty is implemented by properties that support ReadRange.
+type RangeProperty interface {
+	ReadByPosition(referenceIndex uint32, count int32) (*RangeReadResult, error)
+	ReadBySequenceNumber(seqNum uint32, count int32) (*RangeReadResult, error)
+	ReadByTime(refTime encoding.BACnetDateTime, count int32) (*RangeReadResult, error)
+}
+
 // --- List property (DeviceAddressBinding only; marshal not supported) ---
 
 type BACnetListProperty[T any] struct {

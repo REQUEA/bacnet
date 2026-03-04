@@ -6,6 +6,76 @@ import (
 	"github.com/REQUEA/bacnet/internal/encoding"
 )
 
+func (r *ReadRangeRequest) Marshal() ([]byte, error) {
+	var result []byte
+
+	b, err := r.objectIdentifier.MarshalTagged(0)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal objectIdentifier: %v", err)
+	}
+	result = append(result, b...)
+
+	b, err = r.propertyIdentifier.MarshalTagged(1)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal propertyIdentifier: %v", err)
+	}
+	result = append(result, b...)
+
+	if r.propertyArrayIndex.Present() {
+		b, err = r.propertyArrayIndex.Get().MarshalTagged(2)
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal propertyArrayIndex: %v", err)
+		}
+		result = append(result, b...)
+	}
+
+	if r.rangeByPosition.Present() {
+		p := r.rangeByPosition.Get()
+		result = append(result, openingTag(3))
+		b, err = p.referenceIndex.MarshalPrimitive()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal byPosition.referenceIndex: %v", err)
+		}
+		result = append(result, b...)
+		b, err = p.count.MarshalPrimitive()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal byPosition.count: %v", err)
+		}
+		result = append(result, b...)
+		result = append(result, closingTag(3))
+	} else if r.rangeBySequenceNumber.Present() {
+		p := r.rangeBySequenceNumber.Get()
+		result = append(result, openingTag(6))
+		b, err = p.referenceSequenceNumber.MarshalPrimitive()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal bySequenceNumber.referenceSequenceNumber: %v", err)
+		}
+		result = append(result, b...)
+		b, err = p.count.MarshalPrimitive()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal bySequenceNumber.count: %v", err)
+		}
+		result = append(result, b...)
+		result = append(result, closingTag(6))
+	} else if r.rangeByTime.Present() {
+		p := r.rangeByTime.Get()
+		result = append(result, openingTag(7))
+		b, err = p.referenceTime.MarshalPrimitive()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal byTime.referenceTime: %v", err)
+		}
+		result = append(result, b...)
+		b, err = p.count.MarshalPrimitive()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal byTime.count: %v", err)
+		}
+		result = append(result, b...)
+		result = append(result, closingTag(7))
+	}
+
+	return result, nil
+}
+
 type byPosition struct {
 	referenceIndex encoding.Unsigned
 	count          encoding.Integer16
@@ -97,27 +167,51 @@ func (r *ReadRangeRequest) Unmarshal(buf []byte) ([]byte, error) {
 			}
 			r.propertyArrayIndex.Set(&propertyArrayIndex)
 		case 3:
+			if len(remaining) < 1 || remaining[0] != openingTag(3) {
+				return remaining, fmt.Errorf("expected opening tag [3] for byPosition")
+			}
+			remaining = remaining[1:]
 			var rangeByPosition byPosition
 			remaining, err = rangeByPosition.Unmarshal(remaining)
 			if err != nil {
 				return remaining, fmt.Errorf("error reading range.byPosition field: %v", err)
 			}
+			if len(remaining) < 1 || remaining[0] != closingTag(3) {
+				return remaining, fmt.Errorf("expected closing tag [3] for byPosition")
+			}
+			remaining = remaining[1:]
 			r.rangeByPosition.Set(&rangeByPosition)
 			rangeEltCount++
 		case 6:
+			if len(remaining) < 1 || remaining[0] != openingTag(6) {
+				return remaining, fmt.Errorf("expected opening tag [6] for bySequenceNumber")
+			}
+			remaining = remaining[1:]
 			var rangeBySequenceNumber bySequenceNumber
-			remaining, err = rangeBySequenceNumber.Unmarshal(buf)
+			remaining, err = rangeBySequenceNumber.Unmarshal(remaining)
 			if err != nil {
 				return remaining, fmt.Errorf("error reading range.bySequenceNumber field: %v", err)
 			}
+			if len(remaining) < 1 || remaining[0] != closingTag(6) {
+				return remaining, fmt.Errorf("expected closing tag [6] for bySequenceNumber")
+			}
+			remaining = remaining[1:]
 			r.rangeBySequenceNumber.Set(&rangeBySequenceNumber)
 			rangeEltCount++
 		case 7:
+			if len(remaining) < 1 || remaining[0] != openingTag(7) {
+				return remaining, fmt.Errorf("expected opening tag [7] for byTime")
+			}
+			remaining = remaining[1:]
 			var rangeTime byTime
-			remaining, err = rangeTime.Unmarshal(buf)
+			remaining, err = rangeTime.Unmarshal(remaining)
 			if err != nil {
 				return remaining, fmt.Errorf("error reading range.byTime field: %v", err)
 			}
+			if len(remaining) < 1 || remaining[0] != closingTag(7) {
+				return remaining, fmt.Errorf("expected closing tag [7] for byTime")
+			}
+			remaining = remaining[1:]
 			r.rangeByTime.Set(&rangeTime)
 			rangeEltCount++
 		default:
