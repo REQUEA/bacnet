@@ -47,11 +47,19 @@ func main() {
 			bacnet.ServicesSupportedWriteProperty,
 			bacnet.ServicesSupportedReadPropertyMultiple,
 		},
-		[]bacnet.BACnetObjectTypesSupported{bacnet.ObjectTypesSupportedDevice},
+		[]bacnet.BACnetObjectTypesSupported{
+			bacnet.ObjectTypesSupportedDevice,
+			bacnet.ObjectTypesSupportedAnalogInput,
+		},
 		1476, bacnet.SegmentationSupportNone,
 		3000, 3, 0, 1,
 	)
 	device := objectmodel.NewDevice(devObj)
+
+	// Add an analog input representing a room temperature sensor.
+	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.UnitsDegreesCelsius)
+	roomTemp.SetPresentValue(21.5)
+	device.AddObject(roomTemp)
 
 	// Open UDP socket.
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: *port})

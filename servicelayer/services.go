@@ -139,6 +139,28 @@ func (sh *ServiceHandler) findDeviceByObjectId(objType uint16, instance uint32) 
 	return nil
 }
 
+// propertySource is satisfied by DeviceObject and any Object (AnalogInput, etc.).
+type propertySource interface {
+	GetProperty(bacnet.PropertyIdentifier) objectmodel.Property
+	AllPropertyIdentifiers() []bacnet.PropertyIdentifier
+}
+
+// resolveObject finds the property source for the given object identifier across all
+// registered devices, checking device objects first then non-device objects.
+func (sh *ServiceHandler) resolveObject(objType uint16, instance uint32) (propertySource, *objectmodel.Device) {
+	device := sh.findDeviceByObjectId(objType, instance)
+	if device != nil {
+		return device.DeviceObject(), device
+	}
+	for _, dev := range sh.devices {
+		obj := dev.GetObject(bacnet.ObjectType(objType), instance)
+		if obj != nil {
+			return obj, dev
+		}
+	}
+	return nil, nil
+}
+
 
 // handleReadProperty processes a confirmed ReadProperty request.
 func (sh *ServiceHandler) handleReadProperty(indication *applicationlayer.APDUIndication) {
@@ -153,8 +175,8 @@ func (sh *ServiceHandler) handleReadProperty(indication *applicationlayer.APDUIn
 		)
 		return
 	}
-	device := sh.findDeviceByObjectId(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
-	if device == nil {
+	src, _ := sh.resolveObject(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
+	if src == nil {
 		sh.applicationEntity.SendErrorResponse(
 			indication.InvokeId, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadProperty,
@@ -162,9 +184,8 @@ func (sh *ServiceHandler) handleReadProperty(indication *applicationlayer.APDUIn
 		)
 		return
 	}
-	devObj := device.DeviceObject()
 	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
-	prop := devObj.GetProperty(propId)
+	prop := src.GetProperty(propId)
 	if prop == nil {
 		sh.applicationEntity.SendErrorResponse(
 			indication.InvokeId, indication.Source,
@@ -250,8 +271,8 @@ func (sh *ServiceHandler) handleWriteProperty(indication *applicationlayer.APDUI
 		)
 		return
 	}
-	device := sh.findDeviceByObjectId(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
-	if device == nil {
+	src, _ := sh.resolveObject(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
+	if src == nil {
 		sh.applicationEntity.SendErrorResponse(
 			indication.InvokeId, indication.Source,
 			bacnet.ConfirmedServiceChoiceWriteProperty,
@@ -259,9 +280,8 @@ func (sh *ServiceHandler) handleWriteProperty(indication *applicationlayer.APDUI
 		)
 		return
 	}
-	devObj := device.DeviceObject()
 	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
-	prop := devObj.GetProperty(propId)
+	prop := src.GetProperty(propId)
 	if prop == nil {
 		sh.applicationEntity.SendErrorResponse(
 			indication.InvokeId, indication.Source,
