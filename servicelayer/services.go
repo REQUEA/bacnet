@@ -2,6 +2,7 @@ package servicelayer
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/REQUEA/bacnet"
@@ -21,6 +22,9 @@ type ServiceHandler struct {
 	remoteDeviceCache   *objectmodel.RemoteDeviceCache
 	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ConfirmedService
 	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]UnconfirmedService
+	covSubscriptions    []*covSubscription
+	covMu               sync.Mutex
+	covNotifyCallback   func(COVNotificationRequest)
 }
 
 // NewServiceHandler creates a ServiceHandler for the given device and wires it into the ApplicationEntity.
@@ -62,6 +66,12 @@ func (sh *ServiceHandler) HandleConfServIndication(
 		sh.handleWriteProperty(indication)
 	case bacnet.ConfirmedServiceChoiceReadPropertyMultiple:
 		sh.handleReadPropertyMultiple(indication)
+	case bacnet.ConfirmedServiceChoiceSubscribeCov:
+		sh.handleSubscribeCOV(indication)
+	case bacnet.ConfirmedServiceChoiceSubscribeCovProperty:
+		sh.handleSubscribeCOVProperty(indication)
+	case bacnet.ConfirmedServiceChoiceConfirmedCovNotification:
+		sh.handleIncomingConfirmedCOVNotification(indication)
 	default:
 		logger.Trace("unhandled confirmed service: ", serviceChoice)
 		sh.applicationEntity.SendErrorResponse(
@@ -90,6 +100,8 @@ func (sh *ServiceHandler) HandleUnconfServIndication(
 		sh.handleWhoIs(indication)
 	case bacnet.UnconfirmedServiceChoiceIAm:
 		sh.handleIAm(indication)
+	case bacnet.UnconfirmedServiceChoiceUnconfirmedCovNotification:
+		sh.handleIncomingUnconfirmedCOVNotification(indication)
 	default:
 		logger.Trace("unconfirmed service not handled: ", serviceChoice)
 	}
@@ -306,6 +318,10 @@ func (sh *ServiceHandler) handleWriteProperty(indication *applicationlayer.APDUI
 		)
 		return
 	}
+	// Trigger COV notifications if applicable.
+	if covSrc, ok := src.(covCapable); ok {
+		sh.CheckAndNotifyCOV(covSrc, propId)
+	}
 	// SimpleAck
 	if err := sh.applicationEntity.SendConfServResponse(
 		indication.InvokeId, indication.Source,
@@ -420,6 +436,22 @@ func (sh *ServiceHandler) sendIAmForDevice(device *objectmodel.Device) error {
 	}
 	dest := &bacnet.BACnetAddress{Network: bacnet.BroadcastDNET}
 	return sh.applicationEntity.SendIAmRequest(dest, networklayer.NormalPriority, data)
+}
+
+// SetCOVNotificationCallback registers a callback invoked when this stack
+// receives a COV notification (confirmed or unconfirmed).
+func (sh *ServiceHandler) SetCOVNotificationCallback(cb func(COVNotificationRequest)) {
+	sh.covMu.Lock()
+	sh.covNotifyCallback = cb
+	sh.covMu.Unlock()
+}
+
+// Device returns the first local device registered with this handler.
+func (sh *ServiceHandler) Device() *objectmodel.Device {
+	if len(sh.devices) > 0 {
+		return sh.devices[0]
+	}
+	return nil
 }
 
 // WhoIs sends a WhoIs broadcast. Pass nil for both limits to query all devices.

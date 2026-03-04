@@ -28,6 +28,7 @@ func NewAnalogInputObject(
 	properties[bacnet.EventState] = NewEnumeratedProperty(true, uint32(bacnet.EventStateNormal))
 	properties[bacnet.OutOfService] = NewBooleanProperty(false, false)
 	properties[bacnet.Units] = NewEnumeratedProperty(false, uint32(units))
+	properties[bacnet.CovIncrement] = NewRealProperty(false, 0.0)
 
 	propertyList := NewBACnetArrayProperty[*encoding.Enumerated](true)
 	propertyList.value.Set(
@@ -57,6 +58,11 @@ func (ai *AnalogInputObject) AllPropertyIdentifiers() []bacnet.PropertyIdentifie
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// COVProperties returns PresentValue and StatusFlags as the COV-triggering properties.
+func (ai *AnalogInputObject) COVProperties() []bacnet.PropertyIdentifier {
+	return []bacnet.PropertyIdentifier{bacnet.PresentValue, bacnet.StatusFlags}
 }
 
 // Typed accessors.

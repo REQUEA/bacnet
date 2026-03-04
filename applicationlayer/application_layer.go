@@ -740,6 +740,21 @@ func (ae *ApplicationEntity) SendErrorResponse(
 	return ae.networkEntity.NUnitDataRequest(source, false, networklayer.NormalPriority, pdu)
 }
 
+// SendUnconfirmedService sends a generic unconfirmed service request PDU.
+// data is the pre-encoded service payload.
+func (ae *ApplicationEntity) SendUnconfirmedService(
+	serviceChoice bacnet.BACnetUnconfirmedServiceChoice,
+	dest *bacnet.BACnetAddress,
+	priority networklayer.NPDUPriority,
+	data []byte,
+) error {
+	apdu := make([]byte, 0, 2+len(data))
+	apdu = append(apdu, byte(UnconfirmedServiceRequest<<pduTypeShift))
+	apdu = append(apdu, byte(serviceChoice))
+	apdu = append(apdu, data...)
+	return ae.networkEntity.NUnitDataRequest(dest, false, priority, apdu)
+}
+
 // SendWhoIsRequest sends an unconfirmed WhoIs service request PDU. data is the pre-encoded WhoIsRequest payload.
 func (ae *ApplicationEntity) SendWhoIsRequest(dest *bacnet.BACnetAddress, priority networklayer.NPDUPriority, data []byte) error {
 	apdu := make([]byte, 0, 2+len(data))

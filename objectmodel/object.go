@@ -16,6 +16,9 @@ type Object interface {
 	GetOwner() *Device
 	GetProperty(bacnet.PropertyIdentifier) Property
 	AllPropertyIdentifiers() []bacnet.PropertyIdentifier
+	// COVProperties returns the property identifiers that trigger COV notifications.
+	// Returns nil if the object does not support COV.
+	COVProperties() []bacnet.PropertyIdentifier
 	setOwner(*Device)
 }
 
