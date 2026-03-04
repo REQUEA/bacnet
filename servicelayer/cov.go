@@ -523,9 +523,41 @@ func (r *COVNotificationRequest) Marshal() ([]byte, error) {
 	return result, nil
 }
 
-// --- Server handlers ---
+// --- COV service structs ---
 
-func (sh *ServiceHandler) handleSubscribeCOV(indication *applicationlayer.APDUIndication) {
+// findDeviceForCOVRequest decodes a SubscribeCOVRequest from request bytes and returns
+// the device that owns the monitored object. SubscribeCOV has process-id at tag 0 and
+// monitored-object-id at tag 1, so findDeviceForRequest (which expects an OID first)
+// cannot be reused.
+func findDeviceForCOVRequest(sh *ServiceHandler, request []byte) *objectmodel.Device {
+	var req SubscribeCOVRequest
+	if _, err := req.Unmarshal(request); err != nil {
+		return nil
+	}
+	objType := req.monitoredObjectIdentifier.ObjType()
+	instance := req.monitoredObjectIdentifier.Instance()
+	if d := sh.findDeviceByObjectId(objType, instance); d != nil {
+		return d
+	}
+	for _, dev := range sh.devices {
+		if obj := dev.GetObject(bacnet.ObjectType(objType), instance); obj != nil {
+			return obj.GetOwner()
+		}
+	}
+	return nil
+}
+
+// SubscribeCOVService handles SubscribeCOV confirmed service requests.
+type SubscribeCOVService struct {
+	serviceHandler *ServiceHandler
+}
+
+func (s *SubscribeCOVService) GetDevice(request []byte) *objectmodel.Device {
+	return findDeviceForCOVRequest(s.serviceHandler, request)
+}
+
+func (s *SubscribeCOVService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
+	sh := s.serviceHandler
 	var req SubscribeCOVRequest
 	if _, err := req.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal SubscribeCOV: ", err)
@@ -596,7 +628,17 @@ func (sh *ServiceHandler) handleSubscribeCOV(indication *applicationlayer.APDUIn
 	)
 }
 
-func (sh *ServiceHandler) handleSubscribeCOVProperty(indication *applicationlayer.APDUIndication) {
+// SubscribeCOVPropertyService handles SubscribeCOVProperty confirmed service requests.
+type SubscribeCOVPropertyService struct {
+	serviceHandler *ServiceHandler
+}
+
+func (s *SubscribeCOVPropertyService) GetDevice(request []byte) *objectmodel.Device {
+	return findDeviceForCOVRequest(s.serviceHandler, request)
+}
+
+func (s *SubscribeCOVPropertyService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
+	sh := s.serviceHandler
 	var req SubscribeCOVPropertyRequest
 	if _, err := req.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal SubscribeCOVProperty: ", err)
@@ -687,7 +729,17 @@ func (sh *ServiceHandler) handleSubscribeCOVProperty(indication *applicationlaye
 	)
 }
 
-func (sh *ServiceHandler) handleIncomingConfirmedCOVNotification(indication *applicationlayer.APDUIndication) {
+// ConfirmedCOVNotificationService handles incoming ConfirmedCOVNotification requests.
+type ConfirmedCOVNotificationService struct {
+	serviceHandler *ServiceHandler
+}
+
+func (s *ConfirmedCOVNotificationService) GetDevice(_ []byte) *objectmodel.Device {
+	return s.serviceHandler.Device()
+}
+
+func (s *ConfirmedCOVNotificationService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
+	sh := s.serviceHandler
 	var notif COVNotificationRequest
 	if _, err := notif.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal ConfirmedCOVNotification: ", err)
@@ -710,7 +762,13 @@ func (sh *ServiceHandler) handleIncomingConfirmedCOVNotification(indication *app
 	)
 }
 
-func (sh *ServiceHandler) handleIncomingUnconfirmedCOVNotification(indication *applicationlayer.APDUIndication) {
+// UnconfirmedCOVNotificationService handles incoming UnconfirmedCOVNotification requests.
+type UnconfirmedCOVNotificationService struct {
+	serviceHandler *ServiceHandler
+}
+
+func (s *UnconfirmedCOVNotificationService) HandleUnconfServIndication(indication *applicationlayer.APDUIndication) {
+	sh := s.serviceHandler
 	var notif COVNotificationRequest
 	if _, err := notif.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal UnconfirmedCOVNotification: ", err)

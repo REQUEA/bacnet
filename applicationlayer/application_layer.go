@@ -537,7 +537,12 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	// Find device from service to populate transaction timers
 	device := ae.serviceLayer.GetDevice(header.ServiceChoice, serviceRequest)
 	if device == nil {
-		return fmt.Errorf("no device found for service choice %d", header.ServiceChoice)
+		ae.SendErrorResponse(
+			uint(header.InvokeId), indication.Source,
+			header.ServiceChoice,
+			bacnet.ObjectError, bacnet.UnknownObject,
+		)
+		return nil
 	}
 	tr.Device = device
 
