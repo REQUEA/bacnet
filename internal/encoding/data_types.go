@@ -3,6 +3,7 @@ package encoding
 import (
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 )
 
@@ -232,6 +233,91 @@ func (i *Integer16) Unmarshal(buf []byte) ([]byte, error) {
 type Unsigned16 = UnsignedBase[uint16]
 type Unsigned32 = UnsignedBase[uint16]
 type Unsigned64 = UnsignedBase[uint64]
+
+// Real represents a BACnet REAL value (IEEE 754 float32, application tag 4).
+type Real struct{ value float32 }
+
+func (r *Real) Value() float32     { return r.value }
+func (r *Real) SetValue(v float32) { r.value = v }
+
+func (r *Real) MarshalPrimitive() ([]byte, error) {
+	bits := math.Float32bits(r.value)
+	return []byte{
+		(applicationTagReal << tagNumberShift) | 4,
+		byte(bits >> 24), byte(bits >> 16), byte(bits >> 8), byte(bits),
+	}, nil
+}
+
+func (r *Real) MarshalTagged(tag uint) ([]byte, error) {
+	bits := math.Float32bits(r.value)
+	result := make([]byte, 0, 6)
+	if tag < 15 {
+		result = append(result, byte(tag<<4)|classMask|4)
+	} else {
+		result = append(result, byte(0xf<<4)|classMask|4, byte(tag))
+	}
+	return append(result, byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits)), nil
+}
+
+func (r *Real) Unmarshal(buf []byte) ([]byte, error) {
+	if len(buf) < 5 {
+		return buf, fmt.Errorf("buffer too short for Real")
+	}
+	tagByte := buf[0]
+	tag := (tagByte & tagNumberMask) >> tagNumberShift
+	if tagByte&classMask == 0 && tag != applicationTagReal {
+		return buf, fmt.Errorf("expected real tag %d, got %d", applicationTagReal, tag)
+	}
+	length := tagByte & lvtMask
+	if length != 4 {
+		return buf, fmt.Errorf("expected length 4 for Real, got %d", length)
+	}
+	bits := uint32(buf[1])<<24 | uint32(buf[2])<<16 | uint32(buf[3])<<8 | uint32(buf[4])
+	r.value = math.Float32frombits(bits)
+	return buf[5:], nil
+}
+
+// Boolean represents a BACnet BOOLEAN value (application tag 1).
+// The value is encoded inside the tag byte's LVT field (0=false, 1=true).
+type Boolean struct{ value bool }
+
+func (b *Boolean) Value() bool     { return b.value }
+func (b *Boolean) SetValue(v bool) { b.value = v }
+
+func (b *Boolean) lvt() byte {
+	if b.value {
+		return 1
+	}
+	return 0
+}
+
+func (b *Boolean) MarshalPrimitive() ([]byte, error) {
+	return []byte{(applicationTagBoolean << tagNumberShift) | b.lvt()}, nil
+}
+
+func (b *Boolean) MarshalTagged(tag uint) ([]byte, error) {
+	return []byte{byte(tag<<4) | classMask | b.lvt()}, nil
+}
+
+func (b *Boolean) Unmarshal(buf []byte) ([]byte, error) {
+	if len(buf) < 1 {
+		return buf, fmt.Errorf("buffer too short for Boolean")
+	}
+	tagByte := buf[0]
+	tag := (tagByte & tagNumberMask) >> tagNumberShift
+	if tagByte&classMask == 0 && tag != applicationTagBoolean {
+		return buf, fmt.Errorf("expected boolean tag %d, got %d", applicationTagBoolean, tag)
+	}
+	switch tagByte & lvtMask {
+	case 0:
+		b.value = false
+	case 1:
+		b.value = true
+	default:
+		return buf, fmt.Errorf("invalid LVT %d for Boolean", tagByte&lvtMask)
+	}
+	return buf[1:], nil
+}
 
 type BACnetObjectIdentifier struct {
 	objType  uint16

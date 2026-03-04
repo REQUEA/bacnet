@@ -14,7 +14,9 @@ const (
 
 type Object interface {
 	GetOwner() *Device
-	GetProperty(bacnet.PropertyIdentifier) *Property
+	GetProperty(bacnet.PropertyIdentifier) Property
+	AllPropertyIdentifiers() []bacnet.PropertyIdentifier
+	setOwner(*Device)
 }
 
 type Property interface {
@@ -107,6 +109,22 @@ func NewUnsignedProperty(readOnly bool, u uint) *UnsignedProperty {
 }
 
 type BitStringProperty = PropertyBase[*encoding.BitString]
+
+type RealProperty = PropertyBase[*encoding.Real]
+
+func NewRealProperty(readOnly bool, v float32) *RealProperty {
+	r := &encoding.Real{}
+	r.SetValue(v)
+	return &RealProperty{value: r, readOnly: readOnly}
+}
+
+type BooleanProperty = PropertyBase[*encoding.Boolean]
+
+func NewBooleanProperty(readOnly bool, v bool) *BooleanProperty {
+	b := &encoding.Boolean{}
+	b.SetValue(v)
+	return &BooleanProperty{value: b, readOnly: readOnly}
+}
 
 // NewServiceSupportedProperty builds a BitString property for ProtocolServicesSupported.
 func NewServiceSupportedProperty(
@@ -206,7 +224,7 @@ func (p *BACnetListProperty[T]) SetValue(v any) error {
 }
 
 func (p *BACnetListProperty[T]) MarshalValue() ([]byte, error) {
-	return nil, fmt.Errorf("marshal not supported for BACnetList properties")
+	return []byte{}, nil
 }
 
 func (p *BACnetListProperty[T]) UnmarshalValue([]byte) error {

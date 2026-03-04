@@ -21,6 +21,36 @@ func (d *Device) DeviceObject() *DeviceObject {
 	return d.deviceObject
 }
 
+// AddObject registers a non-device object with this device and appends its
+// identifier to the device object's ObjectList property.
+func (d *Device) AddObject(obj Object) {
+	obj.setOwner(d)
+	d.objects = append(d.objects, obj)
+	if p := obj.GetProperty(bacnet.ObjectIdentifier); p != nil {
+		if id, ok := p.GetValue().(*encoding.BACnetObjectIdentifier); ok {
+			d.deviceObject.appendToObjectList(id)
+		}
+	}
+}
+
+// GetObject returns the first object matching the given type and instance, or nil.
+func (d *Device) GetObject(objType bacnet.ObjectType, instance uint32) Object {
+	for _, obj := range d.objects {
+		p := obj.GetProperty(bacnet.ObjectIdentifier)
+		if p == nil {
+			continue
+		}
+		id, ok := p.GetValue().(*encoding.BACnetObjectIdentifier)
+		if !ok {
+			continue
+		}
+		if id.ObjType() == uint16(objType) && id.Instance() == instance {
+			return obj
+		}
+	}
+	return nil
+}
+
 type DeviceObject struct {
 	properties map[bacnet.PropertyIdentifier]Property
 }
@@ -116,6 +146,12 @@ func (o *DeviceObject) GetProperty(id bacnet.PropertyIdentifier) Property {
 		return nil
 	}
 	return p
+}
+
+func (o *DeviceObject) appendToObjectList(id *encoding.BACnetObjectIdentifier) {
+	if p, ok := o.properties[bacnet.ObjectList].(*BACnetArrayProperty[*encoding.BACnetObjectIdentifier]); ok {
+		p.value.Append(id)
+	}
 }
 
 // AllPropertyIdentifiers returns all property identifiers present on the device object.

@@ -129,7 +129,7 @@ func (r *ReadPropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) {
 	var result []byte
 	for _, spec := range specs {
-		device := sh.findDeviceByObjectId(spec.ObjectIdentifier.ObjType(), spec.ObjectIdentifier.Instance())
+		src, _ := sh.resolveObject(spec.ObjectIdentifier.ObjType(), spec.ObjectIdentifier.Instance())
 
 		// object-identifier [0]: context tag 0, ObjectID (4 bytes)
 		objIDBytes, err := spec.ObjectIdentifier.MarshalTagged(0)
@@ -146,17 +146,17 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 
 			// Expand All / Required / Optional selectors.
 			if propId == bacnet.All || propId == bacnet.Required || propId == bacnet.Optional {
-				if device == nil {
+				if src == nil {
 					result = append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
 					continue
 				}
-				for _, id := range device.DeviceObject().AllPropertyIdentifiers() {
-					result = append(result, sh.marshalOnePropertyResult(device, id, ref.PropertyArrayIndex)...)
+				for _, id := range src.AllPropertyIdentifiers() {
+					result = append(result, sh.marshalOnePropertyResult(src, id, ref.PropertyArrayIndex)...)
 				}
 				continue
 			}
 
-			result = append(result, sh.marshalOnePropertyResult(device, propId, ref.PropertyArrayIndex)...)
+			result = append(result, sh.marshalOnePropertyResult(src, propId, ref.PropertyArrayIndex)...)
 		}
 
 		// listOfResults [1]: closing tag
@@ -168,7 +168,7 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 // marshalOnePropertyResult encodes a single property result entry (propertyIdentifier [2],
 // optional propertyArrayIndex [3], then propertyValue [4] or propertyAccessError [5]).
 func (sh *ServiceHandler) marshalOnePropertyResult(
-	device *objectmodel.Device,
+	src propertySource,
 	propId bacnet.PropertyIdentifier,
 	arrayIndex encoding.Optional[*encoding.Unsigned],
 ) []byte {
@@ -192,12 +192,11 @@ func (sh *ServiceHandler) marshalOnePropertyResult(
 		result = append(result, idxBytes...)
 	}
 
-	if device == nil {
+	if src == nil {
 		return append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
 	}
 
-	devObj := device.DeviceObject()
-	prop := devObj.GetProperty(propId)
+	prop := src.GetProperty(propId)
 	if prop == nil {
 		return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.UnknownProperty)...)
 	}
