@@ -154,6 +154,11 @@ func (o *DeviceObject) appendToObjectList(id *encoding.BACnetObjectIdentifier) {
 	}
 }
 
+// COVProperties returns nil because device objects do not publish COV notifications.
+func (o *DeviceObject) COVProperties() []bacnet.PropertyIdentifier {
+	return nil
+}
+
 // AllPropertyIdentifiers returns all property identifiers present on the device object.
 func (o *DeviceObject) AllPropertyIdentifiers() []bacnet.PropertyIdentifier {
 	ids := make([]bacnet.PropertyIdentifier, 0, len(o.properties))
