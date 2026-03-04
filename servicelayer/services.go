@@ -96,7 +96,14 @@ func (sh *ServiceHandler) HandleConfServConfirm(
 	indication *applicationlayer.APDUIndication,
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 ) {
-	// TODO: implement in Phase 7
+	srv, ok := sh.confirmedServices[serviceChoice]
+	if ok {
+		if h, ok := srv.(ConfirmedServiceConfirmHandler); ok {
+			h.HandleConfServConfirm(indication)
+			return
+		}
+	}
+	logger.Trace("confirmed service confirm not handled: ", serviceChoice)
 }
 
 func (sh *ServiceHandler) HandleUnconfServIndication(
@@ -287,6 +294,12 @@ type ConfirmedService interface {
 
 type UnconfirmedService interface {
 	HandleUnconfServIndication(*applicationlayer.APDUIndication)
+}
+
+// ConfirmedServiceConfirmHandler is an optional extension of ConfirmedService
+// for services that must observe when their outgoing request is acknowledged.
+type ConfirmedServiceConfirmHandler interface {
+	HandleConfServConfirm(*applicationlayer.APDUIndication)
 }
 
 // Helpers
