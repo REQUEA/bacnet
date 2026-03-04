@@ -738,6 +738,12 @@ func (s *ConfirmedCOVNotificationService) GetDevice(_ []byte) *objectmodel.Devic
 	return s.serviceHandler.Device()
 }
 
+func (s *ConfirmedCOVNotificationService) HandleConfServConfirm(
+	indication *applicationlayer.APDUIndication,
+) {
+	logger.Trace("confirmed COV notification acknowledged by ", indication.Source)
+}
+
 func (s *ConfirmedCOVNotificationService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
 	sh := s.serviceHandler
 	var notif COVNotificationRequest
