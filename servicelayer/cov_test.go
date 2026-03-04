@@ -12,9 +12,18 @@ import (
 
 // makeLoopbackPairWithAI creates a client/server pair where the server has an
 // AnalogInput object with instance 1.
+func registerCOVServices(sh *ServiceHandler) {
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceSubscribeCov, &SubscribeCOVService{sh})
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceSubscribeCovProperty, &SubscribeCOVPropertyService{sh})
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceConfirmedCovNotification, &ConfirmedCOVNotificationService{sh})
+	sh.RegisterUnconfirmedService(bacnet.UnconfirmedServiceChoiceUnconfirmedCovNotification, &UnconfirmedCOVNotificationService{sh})
+}
+
 func makeLoopbackPairWithAI(t *testing.T) (client *ServiceHandler, server *ServiceHandler, serverAddr *bacnet.BACnetAddress) {
 	t.Helper()
 	client, server, serverAddr = makeLoopbackPair(t)
+	registerCOVServices(client)
+	registerCOVServices(server)
 	ai := objectmodel.NewAnalogInputObject(1, "AI1", bacnet.UnitsNoUnits)
 	server.devices[0].AddObject(ai)
 	return

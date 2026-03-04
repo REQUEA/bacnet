@@ -10,6 +10,45 @@ import (
 	"github.com/REQUEA/bacnet/objectmodel"
 )
 
+type ReadPropertyMultipleService struct {
+	serviceHandler *ServiceHandler
+}
+
+func (s *ReadPropertyMultipleService) GetDevice(request []byte) *objectmodel.Device {
+	return s.serviceHandler.findDeviceForRequest(request)
+}
+
+func (s *ReadPropertyMultipleService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
+	var req ReadPropertyMultipleRequest
+	_, err := req.Unmarshal(indication.Data)
+	if err != nil {
+		logger.Error("could not unmarshal ReadPropertyMultiple request: ", err)
+		s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
+			bacnet.ServicesError, bacnet.ServiceRequestDenied,
+		)
+		return
+	}
+	ackBytes, err := s.serviceHandler.marshalRPMAck(req.AccessSpecs)
+	if err != nil {
+		logger.Error("could not marshal ReadPropertyMultiple ACK: ", err)
+		s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeId, indication.Source,
+			bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
+			bacnet.ServicesError, bacnet.ServiceRequestDenied,
+		)
+		return
+	}
+	if err := s.serviceHandler.applicationEntity.SendConfServResponse(
+		indication.InvokeId, indication.Source,
+		bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
+		ackBytes,
+	); err != nil {
+		logger.Error("could not send ReadPropertyMultiple response: ", err)
+	}
+}
+
 // PropertyReference refers to a single property of an object (used in RPM requests).
 type PropertyReference struct {
 	PropertyIdentifier encoding.BACnetPropertyIdentifier
@@ -18,20 +57,14 @@ type PropertyReference struct {
 
 // ReadAccessSpec is a single object with a list of property references (used in RPM requests).
 type ReadAccessSpec struct {
-	ObjectIdentifier  encoding.BACnetObjectIdentifier
-	PropertyRefs      []PropertyReference
+	ObjectIdentifier encoding.BACnetObjectIdentifier
+	PropertyRefs     []PropertyReference
 }
 
 // ReadPropertyMultipleRequest is the RPM service request.
 type ReadPropertyMultipleRequest struct {
 	AccessSpecs []ReadAccessSpec
 }
-
-// openingTag returns the byte for a context-class opening tag with the given tag number.
-func openingTag(n byte) byte { return (n << 4) | 0x0E }
-
-// closingTag returns the byte for a context-class closing tag with the given tag number.
-func closingTag(n byte) byte { return (n << 4) | 0x0F }
 
 func (r *ReadPropertyMultipleRequest) Marshal() ([]byte, error) {
 	var result []byte
@@ -151,12 +184,12 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 					continue
 				}
 				for _, id := range src.AllPropertyIdentifiers() {
-					result = append(result, sh.marshalOnePropertyResult(src, id, ref.PropertyArrayIndex)...)
+					result = append(result, marshalOnePropertyResult(src, id, ref.PropertyArrayIndex)...)
 				}
 				continue
 			}
 
-			result = append(result, sh.marshalOnePropertyResult(src, propId, ref.PropertyArrayIndex)...)
+			result = append(result, marshalOnePropertyResult(src, propId, ref.PropertyArrayIndex)...)
 		}
 
 		// listOfResults [1]: closing tag
@@ -167,7 +200,7 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 
 // marshalOnePropertyResult encodes a single property result entry (propertyIdentifier [2],
 // optional propertyArrayIndex [3], then propertyValue [4] or propertyAccessError [5]).
-func (sh *ServiceHandler) marshalOnePropertyResult(
+func marshalOnePropertyResult(
 	src propertySource,
 	propId bacnet.PropertyIdentifier,
 	arrayIndex encoding.Optional[*encoding.Unsigned],
@@ -235,7 +268,7 @@ func marshalPropertyError(errClass bacnet.ErrorClass, errCode bacnet.ErrorCode) 
 	return []byte{
 		openingTag(5),
 		(9 << 4) | 1, byte(errClass), // error-class: enumerated
-		(9 << 4) | 1, byte(errCode),  // error-code: enumerated
+		(9 << 4) | 1, byte(errCode), // error-code: enumerated
 		closingTag(5),
 	}
 }
@@ -362,36 +395,4 @@ func UnmarshalRPMAck(buf []byte) ([]ReadAccessResult, error) {
 		results = append(results, res)
 	}
 	return results, nil
-}
-
-// handleReadPropertyMultiple processes a confirmed ReadPropertyMultiple request.
-func (sh *ServiceHandler) handleReadPropertyMultiple(indication *applicationlayer.APDUIndication) {
-	var req ReadPropertyMultipleRequest
-	_, err := req.Unmarshal(indication.Data)
-	if err != nil {
-		logger.Error("could not unmarshal ReadPropertyMultiple request: ", err)
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
-			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
-		return
-	}
-	ackBytes, err := sh.marshalRPMAck(req.AccessSpecs)
-	if err != nil {
-		logger.Error("could not marshal ReadPropertyMultiple ACK: ", err)
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
-			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
-		return
-	}
-	if err := sh.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
-		bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
-		ackBytes,
-	); err != nil {
-		logger.Error("could not send ReadPropertyMultiple response: ", err)
-	}
 }
