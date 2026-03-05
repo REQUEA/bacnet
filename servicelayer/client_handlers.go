@@ -10,10 +10,10 @@ import (
 	"github.com/REQUEA/bacnet/networklayer"
 )
 
-// ReadProperty sends a ReadProperty request to dest and waits for the response.
+// ReadPropertyRaw sends a ReadProperty request to dest and waits for the response.
 // On success, returns the raw application-tagged property value bytes from the ACK.
 // Pass nil for arrayIndex to read the whole property.
-func (sh *ServiceHandler) ReadProperty(
+func (sh *ServiceHandler) ReadPropertyRaw(
 	ctx context.Context,
 	dest *bacnet.BACnetAddress,
 	objType uint16,
@@ -49,6 +49,24 @@ func (sh *ServiceHandler) ReadProperty(
 		return nil, fmt.Errorf("ReadProperty: could not unmarshal ACK: %w", err)
 	}
 	return ack.propertyValue.Value(), nil
+}
+
+// ReadProperty sends a ReadProperty request and returns the decoded Go value.
+// The concrete type depends on the BACnet application tag in the response
+// (float32 for Real, bool for Boolean, uint64 for Unsigned, string for CharacterString, etc.).
+func (sh *ServiceHandler) ReadProperty(
+	ctx context.Context,
+	dest *bacnet.BACnetAddress,
+	objType uint16,
+	instance uint32,
+	propId bacnet.PropertyIdentifier,
+	arrayIndex *uint,
+) (interface{}, error) {
+	raw, err := sh.ReadPropertyRaw(ctx, dest, objType, instance, propId, arrayIndex)
+	if err != nil {
+		return nil, err
+	}
+	return encoding.DecodeApplicationValue(raw)
 }
 
 // WriteProperty sends a WriteProperty request to dest and waits for the response.

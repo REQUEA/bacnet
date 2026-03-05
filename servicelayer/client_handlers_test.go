@@ -69,18 +69,17 @@ func TestClientReadProperty_ObjectName(t *testing.T) {
 	ctx, cancel := reqCtx(t)
 	defer cancel()
 
-	valBytes, err := client.ReadProperty(ctx, serverAddr,
+	val, err := client.ReadProperty(ctx, serverAddr,
 		uint16(bacnet.BacnetDevice), 1000, bacnet.ObjectName, nil)
 	if err != nil {
 		t.Fatalf("ReadProperty failed: %v", err)
 	}
-	var cs encoding.CharacterString
-	_, decErr := cs.Unmarshal(valBytes)
-	if decErr != nil {
-		t.Fatalf("CharacterString.Unmarshal failed: %v", decErr)
+	name, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T: %v", val, val)
 	}
-	if cs.Value() != "TestDevice" {
-		t.Errorf("expected ObjectName 'TestDevice', got %q", cs.Value())
+	if name != "TestDevice" {
+		t.Errorf("expected ObjectName 'TestDevice', got %q", name)
 	}
 }
 
@@ -89,21 +88,15 @@ func TestClientReadProperty_VendorIdentifier(t *testing.T) {
 	ctx, cancel := reqCtx(t)
 	defer cancel()
 
-	valBytes, err := client.ReadProperty(ctx, serverAddr,
+	val, err := client.ReadProperty(ctx, serverAddr,
 		uint16(bacnet.BacnetDevice), 1000, bacnet.VendorIdentifier, nil)
 	if err != nil {
 		t.Fatalf("ReadProperty failed: %v", err)
 	}
-	// VendorIdentifier is uint16(99); marshaled as app-tag unsigned: [0x21, 0x63]
-	if len(valBytes) < 2 {
-		t.Fatalf("response too short: %v", valBytes)
-	}
-	if (valBytes[0]>>4) != 2 {
-		t.Errorf("expected unsigned app-tag 2, got %d", valBytes[0]>>4)
-	}
-	var vendorId uint64
-	for _, b := range valBytes[1:] {
-		vendorId = (vendorId << 8) | uint64(b)
+	// VendorIdentifier is an unsigned integer; ReadProperty decodes it as uint64.
+	vendorId, ok := val.(uint64)
+	if !ok {
+		t.Fatalf("expected uint64, got %T: %v", val, val)
 	}
 	if vendorId != 99 {
 		t.Errorf("expected VendorIdentifier 99, got %d", vendorId)

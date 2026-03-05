@@ -22,6 +22,12 @@ type Object interface {
 	setOwner(*Device)
 }
 
+// PresentValueSetter is implemented by BACnet objects that expose a writable
+// float32 present value (e.g. AnalogInput, AnalogValue, AnalogOutput, …).
+type PresentValueSetter interface {
+	SetPresentValue(float32)
+}
+
 type Property interface {
 	GetValue() any
 	SetValue(any) error

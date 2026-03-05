@@ -290,6 +290,40 @@ func (r *Real) Unmarshal(buf []byte) ([]byte, error) {
 	return buf[5:], nil
 }
 
+// Double represents a BACnet DOUBLE value (IEEE 754 float64, application tag 5).
+type Double struct{ value float64 }
+
+func (d *Double) Value() float64     { return d.value }
+func (d *Double) SetValue(v float64) { d.value = v }
+
+func (d *Double) MarshalPrimitive() ([]byte, error) {
+	bits := math.Float64bits(d.value)
+	return []byte{
+		(applicationTagDouble << tagNumberShift) | 8,
+		byte(bits >> 56), byte(bits >> 48), byte(bits >> 40), byte(bits >> 32),
+		byte(bits >> 24), byte(bits >> 16), byte(bits >> 8), byte(bits),
+	}, nil
+}
+
+func (d *Double) Unmarshal(buf []byte) ([]byte, error) {
+	if len(buf) < 9 {
+		return buf, fmt.Errorf("buffer too short for Double")
+	}
+	tagByte := buf[0]
+	tag := (tagByte & tagNumberMask) >> tagNumberShift
+	if tagByte&classMask == 0 && tag != applicationTagDouble {
+		return buf, fmt.Errorf("expected double tag %d, got %d", applicationTagDouble, tag)
+	}
+	length := tagByte & lvtMask
+	if length != 8 {
+		return buf, fmt.Errorf("expected length 8 for Double, got %d", length)
+	}
+	bits := uint64(buf[1])<<56 | uint64(buf[2])<<48 | uint64(buf[3])<<40 | uint64(buf[4])<<32 |
+		uint64(buf[5])<<24 | uint64(buf[6])<<16 | uint64(buf[7])<<8 | uint64(buf[8])
+	d.value = math.Float64frombits(bits)
+	return buf[9:], nil
+}
+
 // Boolean represents a BACnet BOOLEAN value (application tag 1).
 // The value is encoded inside the tag byte's LVT field (0=false, 1=true).
 type Boolean struct{ value bool }
@@ -822,99 +856,68 @@ func (a *Abstract) MarshalTagged(tag uint8) ([]byte, error) {
 	return result, nil
 }
 
-type PrimitiveData struct {
-	tag   uint
-	value uint
-	data  []byte
-}
-
-type ConstructedData struct {
-	tag             uint
-	applicationTags []PrimitiveData
-	constructedTags map[uint]ConstructedData
-}
-
-func (c *ConstructedData) Marshal() ([]byte, error) {
-	result := make([]byte, 0)
-	err := c.marshalHelper(result)
-	if err != nil {
-		return nil, err
+// DecodeApplicationValue decodes one BACnet application-tagged primitive value
+// from b and returns a Go-native value:
+//
+//	Null → nil, Boolean → bool, Unsigned → uint64, Signed → int64,
+//	Real → float32, Double → float64, CharacterString → string,
+//	Enumerated → uint32, ObjectIdentifier → uint32, other → []byte
+func DecodeApplicationValue(b []byte) (interface{}, error) {
+	if len(b) == 0 {
+		return nil, fmt.Errorf("DecodeApplicationValue: empty buffer")
 	}
-	return result, nil
-}
-
-func (c *ConstructedData) marshalHelper(result []byte) error {
-	if c.tag < 15 {
-		result = append(result, uint8(c.tag)<<tagNumberShift|0b1110)
-	} else {
-		result = append(result, 0b11111110, uint8(c.tag))
+	tagByte := b[0]
+	if tagByte&classMask != 0 {
+		return b, nil // context/constructed data: return raw bytes
 	}
-	for _, p := range c.applicationTags {
-		p.value = 0
-	}
-
-	if c.tag < 15 {
-		result = append(result, uint8(c.tag)<<tagNumberShift|0b1111)
-	} else {
-		result = append(result, 0b11111111, uint8(c.tag))
-	}
-	return nil
-}
-
-func parsePrimitive(buf []byte) (*PrimitiveData, []byte, error) {
-	tag := ((buf[0] & tagNumberMask) >> tagNumberShift)
+	tag := (tagByte & tagNumberMask) >> tagNumberShift
 	switch tag {
 	case applicationTagNull:
-		return &PrimitiveData{tag: uint(applicationTagNull)}, buf[1:], nil
+		return nil, nil
 	case applicationTagBoolean:
-		lenValTyp := (buf[0] & lvtMask)
-		if lenValTyp != 0 && lenValTyp != 1 {
-			return nil, buf, fmt.Errorf("wrong value for boolean tag")
-		}
-		result := &PrimitiveData{
-			tag:   uint(applicationTagBoolean),
-			value: uint(lenValTyp),
-		}
-		return result, buf[1:], nil
-	case applicationTagUnsignedInt,
-		applicationTagSignedInt,
-		applicationTagReal,
-		applicationTagDouble,
-		applicationTagOctetString,
-		applicationTagCharacterString,
-		applicationTagBitString,
-		applicationTagEnumerated,
-		applicationTagDate,
-		applicationTagTime,
-		applicationTagObjectID:
-		data, remaining, err := parseVarLen(uint(tag), buf)
+		var v Boolean
+		_, err := v.Unmarshal(b)
+		return v.Value(), err
+	case applicationTagUnsignedInt:
+		var v Unsigned
+		_, err := v.Unmarshal(b)
+		return v.Value(), err
+	case applicationTagSignedInt:
+		data, _, err := parseVarLen(uint(tag), b)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		result := &PrimitiveData{
-			tag:  uint(tag),
-			data: data,
+		var result int64
+		if len(data) > 0 && data[0]&0x80 != 0 {
+			result = -1 // sign-extend
 		}
-		return result, remaining, nil
+		for _, byt := range data {
+			result = (result << 8) | int64(byt)
+		}
+		return result, nil
+	case applicationTagReal:
+		var v Real
+		_, err := v.Unmarshal(b)
+		return v.Value(), err
+	case applicationTagDouble:
+		var v Double
+		_, err := v.Unmarshal(b)
+		return v.Value(), err
+	case applicationTagCharacterString:
+		var v CharacterString
+		_, err := v.Unmarshal(b)
+		return v.Value(), err
+	case applicationTagEnumerated:
+		var v Enumerated
+		_, err := v.Unmarshal(b)
+		return uint32(v.Value()), err
+	case applicationTagObjectID:
+		var v BACnetObjectIdentifier
+		_, err := v.Unmarshal(b)
+		return uint32(v.ObjType())<<22 | (v.Instance() & 0x3fffff), err
 	default:
-		// tag field == 15, this is not allowed by the standard
-		return nil, buf, fmt.Errorf("tag value 15 is not valid for a primitive type")
+		return b, nil // BitString, Date, Time, OctetString → raw bytes
 	}
-}
-
-func parseConstructed(buf []byte) (*ConstructedData, []byte, error) {
-	result := ConstructedData{}
-	tag := uint((buf[0] & tagNumberMask) >> tagNumberShift)
-	if tag < 15 {
-		result.tag = tag
-	} else {
-		result.tag = uint(buf[1])
-		_, _, err := parseVarLen(tag, buf)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	return nil, nil, errors.New("not implemented")
 }
 
 func ReadTag(buf []byte) (uint, error) {
@@ -964,22 +967,3 @@ func parseVarLen(tag uint, buf []byte) ([]byte, []byte, error) {
 	return buf[offset : offset+length], buf[offset+length:], nil
 }
 
-/*
-
-Input: APDU payload []byte
-Output: {
-	applicationTags : []PrimitiveData
-	contextTags : map[uint]ConstrutedData
-}
-parsePayload(buf []byte) {
-    remaining := buf
-	result := parsePayloadResult{
-		applicationTags: make([]TLV, 0)
-		contextTags: make(map[uint]TLV)
-	}
-	while not finished {
-		TLV, remaining, err = parse(remaining)
-	}
-}
-
-*/

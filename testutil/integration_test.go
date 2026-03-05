@@ -98,16 +98,16 @@ func TestIntegrationReadProperty(t *testing.T) {
 	ctx, cancel := reqCtx(t)
 	defer cancel()
 
-	valBytes, err := a.ServiceHandler().ReadProperty(ctx, b.Addr(),
+	val, err := a.ServiceHandler().ReadProperty(ctx, b.Addr(),
 		uint16(bacnet.BacnetDevice), 200, bacnet.ObjectName, nil)
 	if err != nil {
 		t.Fatalf("ReadProperty failed: %v", err)
 	}
 
-	// ObjectName is encoded as a charstring (application tag 7).
-	name, ok := decodeCharstring(valBytes)
+	// ObjectName is decoded as a string by ReadProperty.
+	name, ok := val.(string)
 	if !ok {
-		t.Fatalf("expected charstring, got bytes %v", valBytes)
+		t.Fatalf("expected string, got %T: %v", val, val)
 	}
 	if name != "DeviceB" {
 		t.Errorf("expected ObjectName %q, got %q", "DeviceB", name)
@@ -138,14 +138,14 @@ func TestIntegrationWriteProperty(t *testing.T) {
 	ctx2, cancel2 := reqCtx(t)
 	defer cancel2()
 
-	readBytes, err := a.ServiceHandler().ReadProperty(ctx2, b.Addr(),
+	readVal, err := a.ServiceHandler().ReadProperty(ctx2, b.Addr(),
 		uint16(bacnet.BacnetDevice), 200, bacnet.ObjectName, nil)
 	if err != nil {
 		t.Fatalf("ReadProperty after write failed: %v", err)
 	}
-	name, ok := decodeCharstring(readBytes)
+	name, ok := readVal.(string)
 	if !ok {
-		t.Fatalf("expected charstring after write, got bytes %v", readBytes)
+		t.Fatalf("expected string after write, got %T: %v", readVal, readVal)
 	}
 	if name != newName {
 		t.Errorf("expected %q, got %q", newName, name)
