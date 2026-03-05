@@ -85,3 +85,24 @@ func (c *RemoteDeviceCache) Get(addr *bacnet.BACnetAddress) *RemoteDevice {
 	}
 	return nil
 }
+
+// GetByInstance returns the first remote device with the given device instance number, or nil.
+func (c *RemoteDeviceCache) GetByInstance(instance uint32) *RemoteDevice {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, d := range c.remoteDevices {
+		if uint32(d.deviceObjectId)&0x3fffff == instance {
+			return d
+		}
+	}
+	return nil
+}
+
+// GetAll returns a snapshot of all known remote devices.
+func (c *RemoteDeviceCache) GetAll() []*RemoteDevice {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make([]*RemoteDevice, len(c.remoteDevices))
+	copy(result, c.remoteDevices)
+	return result
+}

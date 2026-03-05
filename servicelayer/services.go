@@ -268,6 +268,11 @@ func (sh *ServiceHandler) Device() *objectmodel.Device {
 	return nil
 }
 
+// AddDevice appends an additional local device to this service handler.
+func (sh *ServiceHandler) AddDevice(device *objectmodel.Device) {
+	sh.devices = append(sh.devices, device)
+}
+
 // WhoIs sends a WhoIs broadcast. Pass nil for both limits to query all devices.
 func (sh *ServiceHandler) WhoIs(lowLimit, highLimit *uint32) error {
 	req := NewWhoIsRequest(lowLimit, highLimit)

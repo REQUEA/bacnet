@@ -12,7 +12,7 @@ func (NoOpLogger) Info(...interface{})  {}
 func (NoOpLogger) Error(...interface{}) {}
 func (NoOpLogger) Trace(...interface{}) {}
 
-var logger Logger
+var logger Logger = NoOpLogger{}
 
 func SetLogger(l Logger) {
 	logger = l
