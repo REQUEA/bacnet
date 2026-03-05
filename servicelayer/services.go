@@ -3,8 +3,10 @@ package servicelayer
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/REQUEA/bacnet"
+
 	"github.com/REQUEA/bacnet/applicationlayer"
 	"github.com/REQUEA/bacnet/internal/encoding"
 	"github.com/REQUEA/bacnet/logger"
@@ -258,6 +260,22 @@ func (sh *ServiceHandler) SetCOVNotificationCallback(cb func(COVNotificationRequ
 	sh.covMu.Lock()
 	sh.covNotifyCallback = cb
 	sh.covMu.Unlock()
+}
+
+// FindDevice returns the remote device with the given instance, using the
+// cache when possible or broadcasting WhoIs and waiting up to timeout.
+func (sh *ServiceHandler) FindDevice(instance uint32, timeout time.Duration) (*objectmodel.RemoteDevice, error) {
+	if dev := sh.remoteDeviceCache.GetByInstance(instance); dev != nil {
+		return dev, nil
+	}
+	if err := sh.WhoIs(&instance, &instance); err != nil {
+		return nil, err
+	}
+	time.Sleep(timeout)
+	if dev := sh.remoteDeviceCache.GetByInstance(instance); dev != nil {
+		return dev, nil
+	}
+	return nil, fmt.Errorf("device instance %d not found", instance)
 }
 
 // Device returns the first local device registered with this handler.
