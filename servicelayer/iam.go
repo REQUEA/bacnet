@@ -23,17 +23,17 @@ func (s *IAmService) HandleUnconfServIndication(indication *applicationlayer.APD
 		logger.Error("could not unmarshal IAm request: ", err)
 		return
 	}
-	rawId := bacnet.BACnetObjectIdentifier(
+	rawID := bacnet.BACnetObjectIdentifier(
 		uint32(req.iAmDeviceIdentifier.ObjType())<<22 | req.iAmDeviceIdentifier.Instance(),
 	)
 	segVal := bacnet.SegmentationSupport(req.segmentationSupported.Value())
 	segSupported := segVal == bacnet.SegmentationSupportBoth || segVal == bacnet.SegmentationSupportReceive
 	device := objectmodel.NewRemoteDevice(
-		rawId,
+		rawID,
 		indication.Source,
 		uint(req.maxApduLengthAccepted.Value()),
 		segSupported,
-		req.vendorId.Value(),
+		req.vendorID.Value(),
 		time.Now(),
 	)
 	s.serviceHandler.remoteDeviceCache.Add(device)
@@ -45,35 +45,35 @@ type IAmRequest struct {
 	iAmDeviceIdentifier   encoding.BACnetObjectIdentifier
 	maxApduLengthAccepted encoding.Unsigned
 	segmentationSupported encoding.BACnetSegmentation
-	vendorId              encoding.Unsigned16
+	vendorID              encoding.Unsigned16
 }
 
 // NewIAmRequest creates an IAmRequest ready for marshaling.
-func NewIAmRequest(objType uint16, instance uint32, maxApduLengthAccepted uint64, segmentation uint32, vendorId uint16) *IAmRequest {
+func NewIAmRequest(objType uint16, instance uint32, maxApduLengthAccepted uint64, segmentation uint32, vendorID uint16) *IAmRequest {
 	r := &IAmRequest{}
 	r.iAmDeviceIdentifier.SetFromValues(objType, instance)
 	r.maxApduLengthAccepted.SetValue(maxApduLengthAccepted)
 	r.segmentationSupported.SetValue(segmentation)
-	r.vendorId.SetValue(vendorId)
+	r.vendorID.SetValue(vendorID)
 	return r
 }
 
 func (r *IAmRequest) Unmarshal(buf []byte) ([]byte, error) {
 	remaining, err := r.iAmDeviceIdentifier.Unmarshal(buf)
 	if err != nil {
-		return remaining, fmt.Errorf("could not read device identifier: %v", err)
+		return remaining, fmt.Errorf("could not read device identifier: %w", err)
 	}
 	remaining, err = r.maxApduLengthAccepted.Unmarshal(remaining)
 	if err != nil {
-		return remaining, fmt.Errorf("could not read max APDU length: %v", err)
+		return remaining, fmt.Errorf("could not read max APDU length: %w", err)
 	}
 	remaining, err = r.segmentationSupported.Unmarshal(remaining)
 	if err != nil {
-		return remaining, fmt.Errorf("could not read segmentation supported: %v", err)
+		return remaining, fmt.Errorf("could not read segmentation supported: %w", err)
 	}
-	remaining, err = r.vendorId.Unmarshal(remaining)
+	remaining, err = r.vendorID.Unmarshal(remaining)
 	if err != nil {
-		return remaining, fmt.Errorf("could not read vendor ID: %v", err)
+		return remaining, fmt.Errorf("could not read vendor ID: %w", err)
 	}
 	return remaining, nil
 }
@@ -95,7 +95,7 @@ func (r *IAmRequest) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	result = append(result, tmp...)
-	tmp, err = r.vendorId.MarshalPrimitive()
+	tmp, err = r.vendorID.MarshalPrimitive()
 	if err != nil {
 		return nil, err
 	}

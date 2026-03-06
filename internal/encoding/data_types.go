@@ -1,13 +1,11 @@
 package encoding
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"reflect"
 )
 
-// nolint: deadcode, varcheck
 const (
 	applicationTagNull            byte = 0x00
 	applicationTagBoolean         byte = 0x01
@@ -30,13 +28,6 @@ const (
 	classMask      uint8 = 0x08
 	classShift           = 3
 	lvtMask        uint8 = 0x07
-)
-
-type tagClass bool
-
-const (
-	applicationClass = false
-	contextClass     = true
 )
 
 type Unmarshalable interface {
@@ -66,19 +57,6 @@ func (o *Optional[T]) Present() bool {
 
 func (o *Optional[T]) Get() T {
 	return o.value
-}
-
-type TagValue struct {
-	Tag   uint8
-	Value Unmarshalable
-}
-
-func ReadContextValues(buf []byte, expected []TagValue) error {
-	return errors.New("not implemented")
-}
-
-type LengthValueType interface {
-	getClass() tagClass
 }
 
 type Unsigned8 struct {
@@ -179,10 +157,10 @@ func createTagLen(tag byte, length uint) []byte {
 	if length < 5 {
 		if tag > 14 {
 			// extended tag
-			result = append(result, (0xf<<tagNumberShift)|(uint8(length)&lvtMask))
+			result = append(result, (0xf<<tagNumberShift)|(uint8(length)&lvtMask)) //nolint:gosec
 			result = append(result, tag)
 		} else {
-			result = append(result, (tag<<tagNumberShift)|(uint8(length)&lvtMask))
+			result = append(result, (tag<<tagNumberShift)|(uint8(length)&lvtMask)) //nolint:gosec
 		}
 		return result
 	}
@@ -281,17 +259,17 @@ func (i *Integer) MarshalPrimitive() ([]byte, error) {
 	case v >= -32768 && v <= 32767:
 		return []byte{
 			(applicationTagSignedInt << tagNumberShift) | 2,
-			byte(uint32(v) >> 8), byte(v),
+			byte(uint32(v) >> 8), byte(v), //nolint:gosec
 		}, nil
 	case v >= -8388608 && v <= 8388607:
 		return []byte{
 			(applicationTagSignedInt << tagNumberShift) | 3,
-			byte(uint32(v) >> 16), byte(uint32(v) >> 8), byte(v),
+			byte(uint32(v) >> 16), byte(uint32(v) >> 8), byte(v), //nolint:gosec
 		}, nil
 	default:
 		return []byte{
 			(applicationTagSignedInt << tagNumberShift) | 4,
-			byte(uint32(v) >> 24), byte(uint32(v) >> 16), byte(uint32(v) >> 8), byte(v),
+			byte(uint32(v) >> 24), byte(uint32(v) >> 16), byte(uint32(v) >> 8), byte(v), //nolint:gosec
 		}, nil
 	}
 }
@@ -438,16 +416,16 @@ func (u *BACnetObjectIdentifier) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
-func (i *BACnetObjectIdentifier) ObjType() uint16  { return i.objType }
-func (i *BACnetObjectIdentifier) Instance() uint32 { return i.instance }
-func (i *BACnetObjectIdentifier) SetFromValues(objType uint16, instance uint32) {
-	i.objType = objType
-	i.instance = instance
+func (u *BACnetObjectIdentifier) ObjType() uint16  { return u.objType }
+func (u *BACnetObjectIdentifier) Instance() uint32 { return u.instance }
+func (u *BACnetObjectIdentifier) SetFromValues(objType uint16, instance uint32) {
+	u.objType = objType
+	u.instance = instance
 }
 
-func (i *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
+func (u *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
 	result := make([]byte, 0)
-	value := uint32(i.objType)<<22 | (i.instance & 0x3fffff)
+	value := uint32(u.objType)<<22 | (u.instance & 0x3fffff)
 	result = append(result,
 		(applicationTagObjectID<<tagNumberShift)|0b100, // tag + len(4)
 		byte(value>>24),
@@ -458,8 +436,8 @@ func (i *BACnetObjectIdentifier) MarshalPrimitive() ([]byte, error) {
 	return result, nil
 }
 
-func (i *BACnetObjectIdentifier) MarshalTagged(tag uint8) ([]byte, error) {
-	value := uint32(i.objType)<<22 | (i.instance & 0x3fffff)
+func (u *BACnetObjectIdentifier) MarshalTagged(tag uint8) ([]byte, error) {
+	value := uint32(u.objType)<<22 | (u.instance & 0x3fffff)
 	var header []byte
 	if tag < 15 {
 		// context-class tag: (tagNum<<4) | classMask | len(4)
@@ -574,13 +552,13 @@ func (bs *BitString) SetBit(n uint) *BitString {
 	octetIndex := n / 8
 	bitIndex := 7 - (n % 8)
 	if octetIndex >= uint(len(bs.octets)) {
-		fill := make([]byte, int(octetIndex)-len(bs.octets)+1)
+		fill := make([]byte, int(octetIndex)-len(bs.octets)+1) //nolint:gosec
 		bs.octets = append(bs.octets, fill...)
 		bs.unusedBits = 8
 	}
 	bs.octets[len(bs.octets)-1] |= (1 << bitIndex)
-	if bs.unusedBits > uint8(bitIndex) {
-		bs.unusedBits = uint8(bitIndex)
+	if bs.unusedBits > uint8(bitIndex) { //nolint:gosec
+		bs.unusedBits = uint8(bitIndex) //nolint:gosec
 	}
 	return bs
 }
@@ -646,7 +624,7 @@ func (a *BACnetArray[T]) Len() uint { return uint(len(a.elements)) }
 
 // Get returns the element at the given 1-based index.
 func (a *BACnetArray[T]) Get(index uint) (T, error) {
-	if index == 0 || int(index) > len(a.elements) {
+	if index == 0 || int(index) > len(a.elements) { //nolint:gosec
 		var zero T
 		return zero, fmt.Errorf("index %d out of bounds (len=%d)", index, len(a.elements))
 	}
@@ -756,11 +734,11 @@ type BACnetDateTime struct {
 func (t *BACnetDateTime) Unmarshal(buf []byte) ([]byte, error) {
 	remaining, err := t.date.Unmarshal(buf)
 	if err != nil {
-		return remaining, fmt.Errorf("could not unmarshal date: %v", err)
+		return remaining, fmt.Errorf("could not unmarshal date: %w", err)
 	}
 	remaining, err = t.time.Unmarshal(remaining)
 	if err != nil {
-		return remaining, fmt.Errorf("could not unmarshal time: %v", err)
+		return remaining, fmt.Errorf("could not unmarshal time: %w", err)
 	}
 	return remaining, nil
 }
@@ -823,7 +801,7 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 					offset += length
 				} else if length == 5 {
 					length = uint(buf[endOffset+offset])
-					offset += 1 // now pointing right after length byte
+					offset++ // now pointing right after length byte
 					if length < 254 {
 						offset += length
 					} else if length < 65536 {
@@ -832,7 +810,7 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 					} else {
 						length = uint(0)
 						for i := range 4 {
-							length = (length << 8) | uint(buf[endOffset+offset+uint(i)])
+							length = (length << 8) | uint(buf[endOffset+offset+uint(i)]) //nolint:gosec
 						}
 						offset += 4 + length
 					}
@@ -866,7 +844,7 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 				tagStack = append(tagStack, currentTag)
 			} else if length == 5 {
 				length = uint(buf[endOffset+offset])
-				offset += 1 // now pointing right after length byte
+				offset++ // now pointing right after length byte
 				if length < 254 {
 					offset += length
 				} else if length < 65536 {
@@ -875,7 +853,7 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 				} else {
 					length = uint(0)
 					for i := range 4 {
-						length = (length << 8) | uint(buf[endOffset+offset+uint(i)])
+						length = (length << 8) | uint(buf[endOffset+offset+uint(i)]) //nolint:gosec
 					}
 					offset += 4 + length
 				}
@@ -896,15 +874,15 @@ func (a *Abstract) Unmarshal(buf []byte) ([]byte, error) {
 func (a *Abstract) MarshalTagged(tag uint8) ([]byte, error) {
 	result := make([]byte, 0)
 	if tag < 15 {
-		result = append(result, uint8(tag)<<tagNumberShift|0b1110)
+		result = append(result, tag<<tagNumberShift|0b1110)
 	} else {
-		result = append(result, uint8(0xf)<<tagNumberShift|0b1110, uint8(tag))
+		result = append(result, uint8(0xf)<<tagNumberShift|0b1110, tag)
 	}
 	result = append(result, a.value...)
 	if tag < 15 {
-		result = append(result, uint8(tag)<<tagNumberShift|0b1111)
+		result = append(result, tag<<tagNumberShift|0b1111)
 	} else {
-		result = append(result, uint8(0xf)<<tagNumberShift|0b1111, uint8(tag))
+		result = append(result, uint8(0xf)<<tagNumberShift|0b1111, tag)
 	}
 	return result, nil
 }
@@ -963,7 +941,7 @@ func DecodeApplicationValue(b []byte) (interface{}, error) {
 	case applicationTagEnumerated:
 		var v Enumerated
 		_, err := v.Unmarshal(b)
-		return uint32(v.Value()), err
+		return v.Value(), err
 	case applicationTagObjectID:
 		var v BACnetObjectIdentifier
 		_, err := v.Unmarshal(b)
@@ -979,7 +957,7 @@ func ReadTag(buf []byte) (uint, error) {
 	}
 	tag := uint((buf[0] & tagNumberMask) >> tagNumberShift)
 	if tag < 15 {
-		return uint(tag), nil
+		return tag, nil
 	}
 	if len(buf) < 2 {
 		return 0, fmt.Errorf("cannot read extended tag")
@@ -996,11 +974,17 @@ func parseVarLen(tag uint, buf []byte) ([]byte, []byte, error) {
 	if length > 5 {
 		return nil, nil, fmt.Errorf("wrong value for length/value/type field (%d)", length)
 	} else if length == 5 {
+		if uint(len(buf)) <= offset {
+			return nil, nil, fmt.Errorf("buffer too short for extended length")
+		}
 		if buf[offset] < 254 {
-			length = uint(buf[offset])
+			length = uint(buf[offset]) //nolint:gosec
 			offset++
-		} else if buf[offset] == 254 {
+		} else if buf[offset] == 254 { //nolint:gosec
 			offset++
+			if uint(len(buf)) <= offset+1 {
+				return nil, nil, fmt.Errorf("buffer too short for 2-byte extended length")
+			}
 			length = uint(buf[offset])
 			offset++
 			length = (length << 8) | uint(buf[offset])
@@ -1008,15 +992,17 @@ func parseVarLen(tag uint, buf []byte) ([]byte, []byte, error) {
 		} else {
 			length = 0
 			offset++
+			if uint(len(buf)) <= offset+3 {
+				return nil, nil, fmt.Errorf("buffer too short for 4-byte extended length")
+			}
 			for range 4 {
 				length = (length << 8) | uint(buf[offset])
 				offset++
 			}
 		}
 	}
-	if len(buf)-int(offset) < int(length) {
+	if len(buf)-int(offset) < int(length) { //nolint:gosec
 		return nil, buf, fmt.Errorf("buffer too short")
 	}
 	return buf[offset : offset+length], buf[offset+length:], nil
 }
-

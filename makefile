@@ -1,4 +1,4 @@
-.PHONY: test build lint
+.PHONY: test build lint golangci
 
 test:
 	go test -race -timeout 30s ./...
@@ -10,3 +10,6 @@ build:
 
 lint:
 	go vet ./...
+
+golangci:
+	golangci-lint run ./...

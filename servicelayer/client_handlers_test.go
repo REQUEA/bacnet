@@ -19,7 +19,7 @@ type loopbackNetwork struct {
 
 func (l *loopbackNetwork) NUnitDataRequest(
 	dadr *bacnet.BACnetAddress, der bool,
-	priority networklayer.NPDUPriority, payload []byte,
+	_ networklayer.NPDUPriority, payload []byte,
 ) error {
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
@@ -33,8 +33,8 @@ func (l *loopbackNetwork) NUnitDataRequest(
 	return nil
 }
 
-func (l *loopbackNetwork) NReleaseRequest(*bacnet.BACnetAddress) error                              { return nil }
-func (l *loopbackNetwork) GetMaxPDULength(bacnet.NetworkNumber) uint                                { return 480 }
+func (l *loopbackNetwork) NReleaseRequest(*bacnet.BACnetAddress) error { return nil }
+func (l *loopbackNetwork) GetMaxPDULength(bacnet.NetworkNumber) uint   { return 480 }
 func (l *loopbackNetwork) NUnitDataIndication(*networklayer.Port, bacnet.MAC, bacnet.MAC, []byte) error {
 	return nil
 }
@@ -78,8 +78,8 @@ func TestClientReadProperty_ObjectName(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected string, got %T: %v", val, val)
 	}
-	if name != "TestDevice" {
-		t.Errorf("expected ObjectName 'TestDevice', got %q", name)
+	if name != testDeviceName {
+		t.Errorf("expected ObjectName %q, got %q", testDeviceName, name)
 	}
 }
 
@@ -94,12 +94,12 @@ func TestClientReadProperty_VendorIdentifier(t *testing.T) {
 		t.Fatalf("ReadProperty failed: %v", err)
 	}
 	// VendorIdentifier is an unsigned integer; ReadProperty decodes it as uint64.
-	vendorId, ok := val.(uint64)
+	vendorID, ok := val.(uint64)
 	if !ok {
 		t.Fatalf("expected uint64, got %T: %v", val, val)
 	}
-	if vendorId != 99 {
-		t.Errorf("expected VendorIdentifier 99, got %d", vendorId)
+	if vendorID != 99 {
+		t.Errorf("expected VendorIdentifier 99, got %d", vendorID)
 	}
 }
 
@@ -212,8 +212,8 @@ func TestClientReadPropertyMultiple(t *testing.T) {
 			_, decErr := cs.Unmarshal(rawVal)
 			if decErr != nil {
 				t.Errorf("ObjectName decode failed: %v", decErr)
-			} else if cs.Value() != "TestDevice" {
-				t.Errorf("ObjectName: expected 'TestDevice', got %q", cs.Value())
+			} else if cs.Value() != testDeviceName {
+				t.Errorf("ObjectName: expected %q, got %q", testDeviceName, cs.Value())
 			}
 		}
 	}
@@ -313,7 +313,7 @@ func TestReadPropertyAckRoundTrip(t *testing.T) {
 	var ack ReadPropertyAck
 	ack.objectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
 	ack.propertyIdentifier.SetValue(uint32(bacnet.ObjectName))
-	nameCS := encoding.NewCharacterString("TestDevice")
+	nameCS := encoding.NewCharacterString(testDeviceName)
 	nameBytes, _ := nameCS.MarshalPrimitive()
 	ack.propertyValue = encoding.NewAbstract(nameBytes)
 
@@ -344,7 +344,7 @@ func TestReadPropertyAckRoundTrip(t *testing.T) {
 	if decErr != nil {
 		t.Fatalf("CharacterString.Unmarshal failed: %v", decErr)
 	}
-	if decoded.Value() != "TestDevice" {
-		t.Errorf("expected 'TestDevice', got %q", decoded.Value())
+	if decoded.Value() != testDeviceName {
+		t.Errorf("expected %q, got %q", testDeviceName, decoded.Value())
 	}
 }

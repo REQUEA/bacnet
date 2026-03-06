@@ -41,8 +41,8 @@ func (o *RangeListObject) AppendItem(item []byte) {
 	o.listProp.items = append(o.listProp.items, item)
 }
 
-func (o *RangeListObject) GetOwner() *Device                      { return o.owner }
-func (o *RangeListObject) setOwner(d *Device)                     { o.owner = d }
+func (o *RangeListObject) GetOwner() *Device                          { return o.owner }
+func (o *RangeListObject) setOwner(d *Device)                         { o.owner = d }
 func (o *RangeListObject) COVProperties() []bacnet.PropertyIdentifier { return nil }
 
 func (o *RangeListObject) GetProperty(id bacnet.PropertyIdentifier) Property {
@@ -62,8 +62,8 @@ type RangeListProperty struct {
 	items [][]byte
 }
 
-func (p *RangeListProperty) GetValue() any     { return p.items }
-func (p *RangeListProperty) IsWritable() bool  { return false }
+func (p *RangeListProperty) GetValue() any      { return p.items }
+func (p *RangeListProperty) IsWritable() bool   { return false }
 func (p *RangeListProperty) SetValue(any) error { return fmt.Errorf("read-only") }
 
 func (p *RangeListProperty) MarshalValue() ([]byte, error) {
@@ -102,6 +102,6 @@ func (p *RangeListProperty) ReadBySequenceNumber(seqNum uint32, count int32) (*R
 	return p.ReadByPosition(seqNum, count)
 }
 
-func (p *RangeListProperty) ReadByTime(refTime encoding.BACnetDateTime, count int32) (*RangeReadResult, error) {
+func (p *RangeListProperty) ReadByTime(_ encoding.BACnetDateTime, count int32) (*RangeReadResult, error) {
 	return p.ReadByPosition(1, count)
 }

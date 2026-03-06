@@ -36,8 +36,8 @@ func (s *WhoIsService) HandleUnconfServIndication(indication *applicationlayer.A
 		}
 		instance := oid.Instance()
 		if req.deviceInstanceRangeLow.Present() && req.deviceInstanceRangeHigh.Present() {
-			low := uint32(req.deviceInstanceRangeLow.Get().Value())
-			high := uint32(req.deviceInstanceRangeHigh.Get().Value())
+			low := uint32(req.deviceInstanceRangeLow.Get().Value())   //nolint:gosec
+			high := uint32(req.deviceInstanceRangeHigh.Get().Value()) //nolint:gosec
 			if instance < low || instance > high {
 				continue
 			}
@@ -77,14 +77,14 @@ func (r *WhoIsRequest) Unmarshal(buf []byte) ([]byte, error) {
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("failed to read tag: %v", err)
+			return remaining, fmt.Errorf("failed to read tag: %w", err)
 		}
 		switch tag {
 		case 0:
 			var low encoding.Unsigned
 			remaining, err = low.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading low: %v", err)
+				return remaining, fmt.Errorf("error reading low: %w", err)
 			}
 			r.deviceInstanceRangeLow.Set(&low)
 			eltCount++
@@ -92,7 +92,7 @@ func (r *WhoIsRequest) Unmarshal(buf []byte) ([]byte, error) {
 			var high encoding.Unsigned
 			remaining, err = high.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading high: %v", err)
+				return remaining, fmt.Errorf("error reading high: %w", err)
 			}
 			r.deviceInstanceRangeHigh.Set(&high)
 			eltCount++

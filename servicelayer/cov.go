@@ -23,15 +23,15 @@ type covCapable interface {
 // --- Subscription storage ---
 
 type covSubscription struct {
-	subscriberProcessId uint32
+	subscriberProcessID uint32
 	subscriber          *bacnet.BACnetAddress
 	objectType          uint16
 	objectInstance      uint32
-	propertyId          *bacnet.PropertyIdentifier // nil = all COV properties (SubscribeCOV)
+	propertyID          *bacnet.PropertyIdentifier // nil = all COV properties (SubscribeCOV)
 	propertyArrayIndex  *uint
-	covIncrement        *float32    // non-nil: apply COV-increment threshold for Real properties
+	covIncrement        *float32 // non-nil: apply COV-increment threshold for Real properties
 	confirmed           bool
-	expiresAt           time.Time   // zero = permanent
+	expiresAt           time.Time // zero = permanent
 	lastNotifiedValues  map[bacnet.PropertyIdentifier][]byte
 }
 
@@ -46,8 +46,8 @@ func (sub *covSubscription) timeRemaining() uint32 {
 	return uint32(remaining.Seconds())
 }
 
-func covSubMatchesKey(sub *covSubscription, addr *bacnet.BACnetAddress, processId uint32, objType uint16, objInstance uint32) bool {
-	return sub.subscriberProcessId == processId &&
+func covSubMatchesKey(sub *covSubscription, addr *bacnet.BACnetAddress, processID uint32, objType uint16, objInstance uint32) bool {
+	return sub.subscriberProcessID == processID &&
 		sub.objectType == objType &&
 		sub.objectInstance == objInstance &&
 		sub.subscriber.Equal(addr)
@@ -60,7 +60,7 @@ func (sh *ServiceHandler) addOrUpdateSubscription(sub *covSubscription) {
 		if existing == nil {
 			continue
 		}
-		if covSubMatchesKey(existing, sub.subscriber, sub.subscriberProcessId, sub.objectType, sub.objectInstance) {
+		if covSubMatchesKey(existing, sub.subscriber, sub.subscriberProcessID, sub.objectType, sub.objectInstance) {
 			sh.covSubscriptions[i] = sub
 			return
 		}
@@ -76,11 +76,11 @@ func (sh *ServiceHandler) addOrUpdateSubscription(sub *covSubscription) {
 	}
 }
 
-func (sh *ServiceHandler) removeSubscription(addr *bacnet.BACnetAddress, processId uint32, objType uint16, objInstance uint32) {
+func (sh *ServiceHandler) removeSubscription(addr *bacnet.BACnetAddress, processID uint32, objType uint16, objInstance uint32) {
 	sh.covMu.Lock()
 	defer sh.covMu.Unlock()
 	for i, sub := range sh.covSubscriptions {
-		if sub != nil && covSubMatchesKey(sub, addr, processId, objType, objInstance) {
+		if sub != nil && covSubMatchesKey(sub, addr, processID, objType, objInstance) {
 			sh.covSubscriptions[i] = nil
 			return
 		}
@@ -135,7 +135,7 @@ func skipTag(buf []byte) []byte {
 	if len(buf) < 1 {
 		return buf
 	}
-	if (buf[0]>>4) == 0x0F {
+	if (buf[0] >> 4) == 0x0F {
 		if len(buf) >= 2 {
 			return buf[2:]
 		}
@@ -556,7 +556,7 @@ func findDeviceForCOVRequest(sh *ServiceHandler, request []byte) *objectmodel.De
 	}
 	objType := req.monitoredObjectIdentifier.ObjType()
 	instance := req.monitoredObjectIdentifier.Instance()
-	if d := sh.findDeviceByObjectId(objType, instance); d != nil {
+	if d := sh.findDeviceByObjectID(objType, instance); d != nil {
 		return d
 	}
 	for _, dev := range sh.devices {
@@ -581,11 +581,13 @@ func (s *SubscribeCOVService) HandleConfServIndication(indication *applicationla
 	var req SubscribeCOVRequest
 	if _, err := req.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal SubscribeCOV: ", err)
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCov,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	objType := req.monitoredObjectIdentifier.ObjType()
@@ -593,39 +595,43 @@ func (s *SubscribeCOVService) HandleConfServIndication(indication *applicationla
 
 	src, _ := sh.resolveObject(objType, objInstance)
 	if src == nil {
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCov,
 			bacnet.ObjectError, bacnet.UnknownObject,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	covSrc, ok := src.(covCapable)
 	if !ok || len(covSrc.COVProperties()) == 0 {
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCov,
 			bacnet.ServicesError, bacnet.OptionalFunctionalityNotSupported,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
-	processId := uint32(req.subscriberProcessIdentifier.Value())
+	processID := uint32(req.subscriberProcessIdentifier.Value()) //nolint:gosec
 
 	if req.IsCancel() {
-		sh.removeSubscription(indication.Source, processId, objType, objInstance)
+		sh.removeSubscription(indication.Source, processID, objType, objInstance)
 		_ = sh.applicationEntity.SendConfServResponse(
-			indication.InvokeId, indication.Source,
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCov, nil,
 		)
 		return
 	}
 
 	confirmed := req.issueConfirmedNotifications.Get().Value()
-	lifetime := uint32(req.lifetime.Get().Value())
+	lifetime := uint32(req.lifetime.Get().Value()) //nolint:gosec
 
 	sub := &covSubscription{
-		subscriberProcessId: processId,
+		subscriberProcessID: processID,
 		subscriber:          indication.Source,
 		objectType:          objType,
 		objectInstance:      objInstance,
@@ -643,7 +649,7 @@ func (s *SubscribeCOVService) HandleConfServIndication(indication *applicationla
 	}
 
 	_ = sh.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceSubscribeCov, nil,
 	)
 }
@@ -662,11 +668,13 @@ func (s *SubscribeCOVPropertyService) HandleConfServIndication(indication *appli
 	var req SubscribeCOVPropertyRequest
 	if _, err := req.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal SubscribeCOVProperty: ", err)
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCovProperty,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	objType := req.monitoredObjectIdentifier.ObjType()
@@ -674,54 +682,60 @@ func (s *SubscribeCOVPropertyService) HandleConfServIndication(indication *appli
 
 	src, _ := sh.resolveObject(objType, objInstance)
 	if src == nil {
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCovProperty,
 			bacnet.ObjectError, bacnet.UnknownObject,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	covSrc, ok := src.(covCapable)
 	if !ok || len(covSrc.COVProperties()) == 0 {
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCovProperty,
 			bacnet.ServicesError, bacnet.OptionalFunctionalityNotSupported,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
-	processId := uint32(req.subscriberProcessIdentifier.Value())
-	propId := bacnet.PropertyIdentifier(req.monitoredPropertyReference.propertyIdentifier.Value())
+	processID := uint32(req.subscriberProcessIdentifier.Value()) //nolint:gosec
+	propID := bacnet.PropertyIdentifier(req.monitoredPropertyReference.propertyIdentifier.Value())
 
 	if req.IsCancel() {
-		sh.removeSubscription(indication.Source, processId, objType, objInstance)
+		sh.removeSubscription(indication.Source, processID, objType, objInstance)
 		_ = sh.applicationEntity.SendConfServResponse(
-			indication.InvokeId, indication.Source,
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCovProperty, nil,
 		)
 		return
 	}
 
 	// Validate that the requested property exists on the object.
-	if covSrc.GetProperty(propId) == nil {
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+	if covSrc.GetProperty(propID) == nil {
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceSubscribeCovProperty,
 			bacnet.PropertyError, bacnet.UnknownProperty,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
 	confirmed := req.issueConfirmedNotifications.Get().Value()
-	lifetime := uint32(req.lifetime.Get().Value())
+	lifetime := uint32(req.lifetime.Get().Value()) //nolint:gosec
 
 	sub := &covSubscription{
-		subscriberProcessId: processId,
+		subscriberProcessID: processID,
 		subscriber:          indication.Source,
 		objectType:          objType,
 		objectInstance:      objInstance,
-		propertyId:          &propId,
+		propertyID:          &propID,
 		confirmed:           confirmed,
 		lastNotifiedValues:  make(map[bacnet.PropertyIdentifier][]byte),
 	}
@@ -744,7 +758,7 @@ func (s *SubscribeCOVPropertyService) HandleConfServIndication(indication *appli
 	}
 
 	_ = sh.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceSubscribeCovProperty, nil,
 	)
 }
@@ -769,11 +783,13 @@ func (s *ConfirmedCOVNotificationService) HandleConfServIndication(indication *a
 	var notif COVNotificationRequest
 	if _, err := notif.Unmarshal(indication.Data); err != nil {
 		logger.Error("could not unmarshal ConfirmedCOVNotification: ", err)
-		sh.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := sh.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceConfirmedCovNotification,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	sh.covMu.Lock()
@@ -783,7 +799,7 @@ func (s *ConfirmedCOVNotificationService) HandleConfServIndication(indication *a
 		cb(notif)
 	}
 	_ = sh.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceConfirmedCovNotification, nil,
 	)
 }
@@ -812,15 +828,15 @@ func (s *UnconfirmedCOVNotificationService) HandleUnconfServIndication(indicatio
 
 // CheckAndNotifyCOV sends COV notifications to all matching subscribers after
 // a property value has changed. Call this after a successful WriteProperty.
-func (sh *ServiceHandler) CheckAndNotifyCOV(src covCapable, changedPropId bacnet.PropertyIdentifier) {
+func (sh *ServiceHandler) CheckAndNotifyCOV(src covCapable, changedPropID bacnet.PropertyIdentifier) {
 	covProps := src.COVProperties()
 	if len(covProps) == 0 {
 		return
 	}
-	// Check if changedPropId is in the object's COV property list.
+	// Check if changedPropID is in the object's COV property list.
 	found := false
 	for _, pid := range covProps {
-		if pid == changedPropId {
+		if pid == changedPropID {
 			found = true
 			break
 		}
@@ -854,16 +870,16 @@ func (sh *ServiceHandler) CheckAndNotifyCOV(src covCapable, changedPropId bacnet
 			continue
 		}
 		// For SubscribeCOVProperty: only fire when the specific property changed.
-		if sub.propertyId != nil && *sub.propertyId != changedPropId {
+		if sub.propertyID != nil && *sub.propertyID != changedPropID {
 			continue
 		}
 		// COV-increment check for Real properties.
 		if sub.covIncrement != nil && *sub.covIncrement > 0 {
-			prop := src.GetProperty(changedPropId)
+			prop := src.GetProperty(changedPropID)
 			if prop != nil {
 				curBytes, err := prop.MarshalValue()
 				if err == nil {
-					lastBytes := sub.lastNotifiedValues[changedPropId]
+					lastBytes := sub.lastNotifiedValues[changedPropID]
 					if lastBytes != nil && len(curBytes) >= 5 && len(lastBytes) >= 5 {
 						curBits := uint32(curBytes[1])<<24 | uint32(curBytes[2])<<16 | uint32(curBytes[3])<<8 | uint32(curBytes[4])
 						lastBits := uint32(lastBytes[1])<<24 | uint32(lastBytes[2])<<16 | uint32(lastBytes[3])<<8 | uint32(lastBytes[4])
@@ -918,13 +934,13 @@ func (sh *ServiceHandler) buildCOVNotification(sub *covSubscription, src covCapa
 
 	// Determine which properties to include.
 	covProps := src.COVProperties()
-	propIds := covProps
-	if sub.propertyId != nil {
-		propIds = []bacnet.PropertyIdentifier{*sub.propertyId}
+	propIDs := covProps
+	if sub.propertyID != nil {
+		propIDs = []bacnet.PropertyIdentifier{*sub.propertyID}
 	}
 
-	values := make([]COVPropertyValue, 0, len(propIds))
-	for _, pid := range propIds {
+	values := make([]COVPropertyValue, 0, len(propIDs))
+	for _, pid := range propIDs {
 		prop := src.GetProperty(pid)
 		if prop == nil {
 			continue
@@ -941,7 +957,7 @@ func (sh *ServiceHandler) buildCOVNotification(sub *covSubscription, src covCapa
 	}
 
 	var notif COVNotificationRequest
-	notif.subscriberProcessIdentifier.SetValue(uint64(sub.subscriberProcessId))
+	notif.subscriberProcessIdentifier.SetValue(uint64(sub.subscriberProcessID))
 	notif.initiatingDeviceIdentifier.SetFromValues(devOid.ObjType(), devOid.Instance())
 	notif.monitoredObjectIdentifier.SetFromValues(sub.objectType, sub.objectInstance)
 	notif.timeRemaining.SetValue(uint64(sub.timeRemaining()))
@@ -956,14 +972,14 @@ func (sh *ServiceHandler) buildCOVNotification(sub *covSubscription, src covCapa
 func (sh *ServiceHandler) SubscribeCOV(
 	ctx context.Context,
 	dest *bacnet.BACnetAddress,
-	processId uint32,
+	processID uint32,
 	objType uint16,
 	objInstance uint32,
 	confirmed bool,
 	lifetime uint32,
 ) error {
 	var req SubscribeCOVRequest
-	req.subscriberProcessIdentifier.SetValue(uint64(processId))
+	req.subscriberProcessIdentifier.SetValue(uint64(processID))
 	req.monitoredObjectIdentifier.SetFromValues(objType, objInstance)
 	var confirmedBool encoding.Boolean
 	confirmedBool.SetValue(confirmed)
@@ -994,12 +1010,12 @@ func (sh *ServiceHandler) SubscribeCOV(
 func (sh *ServiceHandler) CancelCOV(
 	ctx context.Context,
 	dest *bacnet.BACnetAddress,
-	processId uint32,
+	processID uint32,
 	objType uint16,
 	objInstance uint32,
 ) error {
 	var req SubscribeCOVRequest
-	req.subscriberProcessIdentifier.SetValue(uint64(processId))
+	req.subscriberProcessIdentifier.SetValue(uint64(processID))
 	req.monitoredObjectIdentifier.SetFromValues(objType, objInstance)
 	// No issueConfirmedNotifications and no lifetime → cancel.
 
@@ -1025,17 +1041,17 @@ func (sh *ServiceHandler) CancelCOV(
 func (sh *ServiceHandler) SubscribeCOVProperty(
 	ctx context.Context,
 	dest *bacnet.BACnetAddress,
-	processId uint32,
+	processID uint32,
 	objType uint16,
 	objInstance uint32,
-	propId bacnet.PropertyIdentifier,
+	propID bacnet.PropertyIdentifier,
 	propArrayIndex *uint,
 	covIncrement *float32,
 	confirmed bool,
 	lifetime uint32,
 ) error {
 	var req SubscribeCOVPropertyRequest
-	req.subscriberProcessIdentifier.SetValue(uint64(processId))
+	req.subscriberProcessIdentifier.SetValue(uint64(processID))
 	req.monitoredObjectIdentifier.SetFromValues(objType, objInstance)
 	var confirmedBool encoding.Boolean
 	confirmedBool.SetValue(confirmed)
@@ -1043,7 +1059,7 @@ func (sh *ServiceHandler) SubscribeCOVProperty(
 	var lt encoding.Unsigned
 	lt.SetValue(uint64(lifetime))
 	req.lifetime.Set(&lt)
-	req.monitoredPropertyReference.propertyIdentifier.SetValue(uint32(propId))
+	req.monitoredPropertyReference.propertyIdentifier.SetValue(uint32(propID))
 	if propArrayIndex != nil {
 		var idx encoding.Unsigned
 		idx.SetValue(uint64(*propArrayIndex))

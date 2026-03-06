@@ -331,7 +331,7 @@ func (o ObjectID) Encode() (uint32, error) {
 
 func ObjectIDFromUint32(v uint32) ObjectID {
 	return ObjectID{
-		Type:     ObjectType(v >> instanceBits),
+		Type:     ObjectType(v >> instanceBits), //nolint:gosec
 		Instance: BACnetObjectIdentifier(v & MaxInstance),
 	}
 }
@@ -365,6 +365,28 @@ const (
 	SegmentationSupportTransmit SegmentationSupport = 0x01
 	SegmentationSupportReceive  SegmentationSupport = 0x02
 	SegmentationSupportNone     SegmentationSupport = 0x03
+)
+
+// NbSegmentsAccepted* constants encode the MaxSegmentsAccepted field of a confirmed-request APDU header.
+const (
+	NbSegmentsAcceptedUnspecified = 0b000
+	NbSegmentsAccepted2           = 0b001
+	NbSegmentsAccepted4           = 0b010
+	NbSegmentsAccepted8           = 0b011
+	NbSegmentsAccepted16          = 0b100
+	NbSegmentsAccepted32          = 0b101
+	NbSegmentsAccepted64          = 0b110
+	NbSegmentsAcceptedOver64      = 0b111
+)
+
+// MaxApduLen* constants encode the MaxAPDU length accepted field of a confirmed-request APDU header.
+const (
+	MaxApduLenMinimum = 0b0000
+	MaxApduLen128     = 0b0001
+	MaxApduLen206     = 0b0010
+	MaxApduLen480     = 0b0011
+	MaxApduLen1024    = 0b0100
+	MaxApduLen1476    = 0b0101
 )
 
 // PropertyIdentifierComplex is used to control a ReadProperty request
@@ -419,7 +441,7 @@ func (s *BitString) SetBit(position uint) *BitString {
 	bitIndex := 7 - (position % 8)
 	if octetIndex >= uint(len(s.octets)) {
 		// need to grow octets
-		fill := make([]byte, int(octetIndex)-len(s.octets)+1)
+		fill := make([]byte, int(octetIndex)-len(s.octets)+1) //nolint:gosec
 		s.octets = append(s.octets, fill...)
 		s.unusedBits = 8
 	}
@@ -505,9 +527,9 @@ func (a *BACnetArray[T]) SetAt(position uint, v any) error {
 		if !ok {
 			return fmt.Errorf("new size should be an unsigned int")
 		}
-		if int(newSize) < len(a.array) {
+		if int(newSize) < len(a.array) { //nolint:gosec
 			a.array = a.array[:newSize]
-		} else if int(newSize) > len(a.array) {
+		} else if int(newSize) > len(a.array) { //nolint:gosec
 			arrayCopy := make([]T, newSize)
 			copy(arrayCopy, a.array)
 			a.array = arrayCopy
@@ -515,7 +537,7 @@ func (a *BACnetArray[T]) SetAt(position uint, v any) error {
 		return nil
 	}
 	index := position - 1
-	if int(index) >= len(a.array) {
+	if int(index) >= len(a.array) { //nolint:gosec
 		return fmt.Errorf("out of bound")
 	}
 	newValue, ok := v.(T)
@@ -530,7 +552,7 @@ func (a *BACnetArray[T]) Get(position uint) (any, error) {
 	if position == 0 {
 		return uint(len(a.array)), nil
 	}
-	index := int(position - 1)
+	index := int(position - 1) //nolint:gosec
 	if index >= len(a.array) {
 		return nil, fmt.Errorf("out of bound")
 	}

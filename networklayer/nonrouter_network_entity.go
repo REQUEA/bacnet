@@ -25,7 +25,7 @@ func NewNonRouterNetworkEntity(p *Port) *NonRouterNetworkEntity {
 	}
 }
 
-func (ne *NonRouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
+func (ne *NonRouterNetworkEntity) NUnitDataIndication(sport *Port, _ bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
 	if buf[0] != uint8(Version1) {
 		return fmt.Errorf("incorrect bacnet version: %d", buf[0])
 	}
@@ -34,26 +34,25 @@ func (ne *NonRouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.M
 	if err != nil {
 		return err
 	}
-	logger.Trace("Handle(", sport.Id, ", ", npdu, ")")
+	logger.Trace("Handle(", sport.ID, ", ", npdu, ")")
 	if !npdu.IsDestPresent() || npdu.Destination.Network == bacnet.BroadcastDNET {
 		if npdu.IsNetworkMessage() {
 			logger.Trace("Handle: network message payload")
 			return ne.handleNetworkLayerMessage(sport, sadr, npdu)
-		} else {
-			logger.Trace("Handle: application message payload")
-			indication := NPDUIndication{Apdu: npdu.data}
-			if npdu.IsSourcePresent() {
-				indication.Source = npdu.Source
-			} else {
-				indication.Source = &bacnet.BACnetAddress{Mac: sadr}
-			}
-			if npdu.IsDestPresent() {
-				indication.Dest = npdu.Destination
-			} else {
-				indication.Dest = &bacnet.BACnetAddress{Mac: sadr}
-			}
-			ne.apduHandler.HandleNUnitDataIndication(&indication)
 		}
+		logger.Trace("Handle: application message payload")
+		indication := NPDUIndication{Apdu: npdu.data}
+		if npdu.IsSourcePresent() {
+			indication.Source = npdu.Source
+		} else {
+			indication.Source = &bacnet.BACnetAddress{Mac: sadr}
+		}
+		if npdu.IsDestPresent() {
+			indication.Dest = npdu.Destination
+		} else {
+			indication.Dest = &bacnet.BACnetAddress{Mac: sadr}
+		}
+		ne.apduHandler.HandleNUnitDataIndication(&indication)
 	}
 	// In other cases a node that is not a router must discard the message
 	return nil
@@ -75,7 +74,6 @@ func (ne *NonRouterNetworkEntity) handleIAmRouterToNetwork(sport *Port, sadr bac
 		return fmt.Errorf("malformed I-Am-Router-To-Network payload")
 	}
 	data := bytes.NewBuffer(npdu.data)
-	dnets := make([]bacnet.NetworkNumber, 0)
 	for {
 		var net bacnet.NetworkNumber
 		err := binary.Read(data, binary.BigEndian, net)
@@ -86,7 +84,6 @@ func (ne *NonRouterNetworkEntity) handleIAmRouterToNetwork(sport *Port, sadr bac
 			return fmt.Errorf("error while parsing I-Am-Router-To-Network payload: %w", err)
 		}
 		ne.updateRoutingTable(net, sadr, sport)
-		dnets = append(dnets, net)
 	}
 	return nil
 }
@@ -127,10 +124,10 @@ func (ne *NonRouterNetworkEntity) NUnitDataRequest(
 		}
 	default:
 		// transmission to remote network
-		entry, ok := ne.routingTable[bacnet.NetworkNumber(dadr.Network)]
+		entry, ok := ne.routingTable[dadr.Network]
 		if !ok {
 			// TODO: drop or queue the message?
-			npdu := NewWhoIsRouterToNetworkNPDU(bacnet.NetworkNumber(dadr.Network))
+			npdu := NewWhoIsRouterToNetworkNPDU(dadr.Network)
 			err := ne.port.Broadcast(npdu)
 			if err != nil {
 				return fmt.Errorf("sending Who-Is-Router-To-Network %d failed: %w",

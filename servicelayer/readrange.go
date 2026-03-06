@@ -32,14 +32,14 @@ func (a *ReadRangeAck) Marshal() ([]byte, error) {
 	// [0] objectIdentifier
 	b, err := a.ObjectIdentifier.MarshalTagged(0)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal objectIdentifier: %v", err)
+		return nil, fmt.Errorf("could not marshal objectIdentifier: %w", err)
 	}
 	result = append(result, b...)
 
 	// [1] propertyIdentifier
 	b, err = a.PropertyIdentifier.MarshalTagged(1)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal propertyIdentifier: %v", err)
+		return nil, fmt.Errorf("could not marshal propertyIdentifier: %w", err)
 	}
 	result = append(result, b...)
 
@@ -47,7 +47,7 @@ func (a *ReadRangeAck) Marshal() ([]byte, error) {
 	if a.PropertyArrayIndex.Present() {
 		b, err = a.PropertyArrayIndex.Get().MarshalTagged(2)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal propertyArrayIndex: %v", err)
+			return nil, fmt.Errorf("could not marshal propertyArrayIndex: %w", err)
 		}
 		result = append(result, b...)
 	}
@@ -70,7 +70,7 @@ func (a *ReadRangeAck) Marshal() ([]byte, error) {
 	itemCount.SetValue(uint64(a.ItemCount))
 	b, err = itemCount.MarshalTagged(4)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal itemCount: %v", err)
+		return nil, fmt.Errorf("could not marshal itemCount: %w", err)
 	}
 	result = append(result, b...)
 
@@ -83,7 +83,7 @@ func (a *ReadRangeAck) Marshal() ([]byte, error) {
 	if a.FirstSequenceNumber.Present() {
 		b, err = a.FirstSequenceNumber.Get().MarshalTagged(6)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal firstSequenceNumber: %v", err)
+			return nil, fmt.Errorf("could not marshal firstSequenceNumber: %w", err)
 		}
 		result = append(result, b...)
 	}
@@ -98,7 +98,7 @@ func UnmarshalReadRangeAck(buf []byte) (*ReadRangeAck, error) {
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return nil, fmt.Errorf("error reading ReadRange ACK tag: %v", err)
+			return nil, fmt.Errorf("error reading ReadRange ACK tag: %w", err)
 		}
 		switch tag {
 		case 0:
@@ -128,7 +128,7 @@ func UnmarshalReadRangeAck(buf []byte) (*ReadRangeAck, error) {
 			var count encoding.Unsigned
 			remaining, err = count.Unmarshal(remaining)
 			if err == nil {
-				ack.ItemCount = uint32(count.Value())
+				ack.ItemCount = uint32(count.Value()) //nolint:gosec
 			}
 		case 5:
 			// itemData: opening/closing context tags, raw bytes inside
@@ -147,7 +147,7 @@ func UnmarshalReadRangeAck(buf []byte) (*ReadRangeAck, error) {
 			return nil, fmt.Errorf("unexpected tag %d in ReadRange ACK", tag)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("error parsing ReadRange ACK field [%d]: %v", tag, err)
+			return nil, fmt.Errorf("error parsing ReadRange ACK field [%d]: %w", tag, err)
 		}
 	}
 	return &ack, nil
@@ -167,52 +167,60 @@ func (s *ReadRangeService) HandleConfServIndication(indication *applicationlayer
 	_, err := req.Unmarshal(indication.Data)
 	if err != nil {
 		logger.Error("could not unmarshal ReadRange request: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadRange,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
 	src, _ := s.serviceHandler.resolveObject(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
 	if src == nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadRange,
 			bacnet.ObjectError, bacnet.UnknownObject,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
-	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
-	prop := src.GetProperty(propId)
+	propID := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
+	prop := src.GetProperty(propID)
 	if prop == nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadRange,
 			bacnet.PropertyError, bacnet.UnknownProperty,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
 	rangeProp, ok := prop.(objectmodel.RangeProperty)
 	if !ok {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadRange,
 			bacnet.PropertyError, bacnet.ReadAccessDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
 	var result *objectmodel.RangeReadResult
 	if req.rangeByPosition.Present() {
 		p := req.rangeByPosition.Get()
-		result, err = rangeProp.ReadByPosition(uint32(p.referenceIndex.Value()), int32(p.count.Value()))
+		result, err = rangeProp.ReadByPosition(uint32(p.referenceIndex.Value()), int32(p.count.Value())) //nolint:gosec
 	} else if req.rangeBySequenceNumber.Present() {
 		p := req.rangeBySequenceNumber.Get()
-		result, err = rangeProp.ReadBySequenceNumber(uint32(p.referenceSequenceNumber.Value()), int32(p.count.Value()))
+		result, err = rangeProp.ReadBySequenceNumber(uint32(p.referenceSequenceNumber.Value()), int32(p.count.Value())) //nolint:gosec
 	} else if req.rangeByTime.Present() {
 		p := req.rangeByTime.Get()
 		result, err = rangeProp.ReadByTime(p.referenceTime, int32(p.count.Value()))
@@ -222,27 +230,31 @@ func (s *ReadRangeService) HandleConfServIndication(indication *applicationlayer
 
 	if err != nil {
 		logger.Error("ReadRange operation failed: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadRange,
 			bacnet.PropertyError, bacnet.ReadAccessDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
 	ackBytes, marshalErr := buildReadRangeAck(req, result)
 	if marshalErr != nil {
 		logger.Error("could not marshal ReadRange ACK: ", marshalErr)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadRange,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 
 	if err := s.serviceHandler.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceReadRange,
 		ackBytes,
 	); err != nil {
@@ -258,7 +270,7 @@ func buildReadRangeAck(req ReadRangeRequest, result *objectmodel.RangeReadResult
 	ack.FirstItem = result.FirstItem
 	ack.LastItem = result.LastItem
 	ack.MoreItems = result.MoreItems
-	ack.ItemCount = uint32(len(result.Items))
+	ack.ItemCount = uint32(len(result.Items)) //nolint:gosec
 	for _, item := range result.Items {
 		ack.ItemData = append(ack.ItemData, item...)
 	}
@@ -274,7 +286,7 @@ func buildReadRangeAck(req ReadRangeRequest, result *objectmodel.RangeReadResult
 type ReadRangeSpec struct {
 	ObjType  uint16
 	Instance uint32
-	PropId   bacnet.PropertyIdentifier
+	PropID   bacnet.PropertyIdentifier
 	// At most one of the following should be set.
 	ByPosition       *ReadRangeByPosition
 	BySequenceNumber *ReadRangeBySequenceNumber
@@ -304,7 +316,7 @@ func (sh *ServiceHandler) ReadRange(
 ) (*ReadRangeAck, error) {
 	var req ReadRangeRequest
 	req.objectIdentifier.SetFromValues(spec.ObjType, spec.Instance)
-	req.propertyIdentifier.SetValue(uint32(spec.PropId))
+	req.propertyIdentifier.SetValue(uint32(spec.PropID))
 
 	if spec.ByPosition != nil {
 		var p byPosition
@@ -315,7 +327,7 @@ func (sh *ServiceHandler) ReadRange(
 		} else if count < math.MinInt16 {
 			count = math.MinInt16
 		}
-		p.count.SetValue(int16(count))
+		p.count.SetValue(int16(count)) //nolint:gosec
 		req.rangeByPosition.Set(&p)
 	} else if spec.BySequenceNumber != nil {
 		var p bySequenceNumber
@@ -326,7 +338,7 @@ func (sh *ServiceHandler) ReadRange(
 		} else if count < math.MinInt16 {
 			count = math.MinInt16
 		}
-		p.count.SetValue(int16(count))
+		p.count.SetValue(int16(count)) //nolint:gosec
 		req.rangeBySequenceNumber.Set(&p)
 	} else if spec.ByTime != nil {
 		var p byTime
@@ -337,7 +349,7 @@ func (sh *ServiceHandler) ReadRange(
 		} else if count < math.MinInt16 {
 			count = math.MinInt16
 		}
-		p.count.SetValue(int16(count))
+		p.count.SetValue(int16(count)) //nolint:gosec
 		req.rangeByTime.Set(&p)
 	}
 

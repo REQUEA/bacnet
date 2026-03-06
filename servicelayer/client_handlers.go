@@ -18,12 +18,12 @@ func (sh *ServiceHandler) ReadPropertyRaw(
 	dest *bacnet.BACnetAddress,
 	objType uint16,
 	instance uint32,
-	propId bacnet.PropertyIdentifier,
+	propID bacnet.PropertyIdentifier,
 	arrayIndex *uint,
 ) ([]byte, error) {
 	var req ReadPropertyRequest
 	req.objectIdentifier.SetFromValues(objType, instance)
-	req.propertyIdentifier.SetValue(uint32(propId))
+	req.propertyIdentifier.SetValue(uint32(propID))
 	if arrayIndex != nil {
 		var idx encoding.Unsigned
 		idx.SetValue(uint64(*arrayIndex))
@@ -59,10 +59,10 @@ func (sh *ServiceHandler) ReadProperty(
 	dest *bacnet.BACnetAddress,
 	objType uint16,
 	instance uint32,
-	propId bacnet.PropertyIdentifier,
+	propID bacnet.PropertyIdentifier,
 	arrayIndex *uint,
 ) (interface{}, error) {
-	raw, err := sh.ReadPropertyRaw(ctx, dest, objType, instance, propId, arrayIndex)
+	raw, err := sh.ReadPropertyRaw(ctx, dest, objType, instance, propID, arrayIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -78,14 +78,14 @@ func (sh *ServiceHandler) WriteProperty(
 	dest *bacnet.BACnetAddress,
 	objType uint16,
 	instance uint32,
-	propId bacnet.PropertyIdentifier,
+	propID bacnet.PropertyIdentifier,
 	arrayIndex *uint,
 	valueBytes []byte,
 	priority *uint8,
 ) error {
 	var req WritePropertyRequest
 	req.objectIdentifier.SetFromValues(objType, instance)
-	req.propertyIdentifier.SetValue(uint32(propId))
+	req.propertyIdentifier.SetValue(uint32(propID))
 	if arrayIndex != nil {
 		var idx encoding.Unsigned
 		idx.SetValue(uint64(*arrayIndex))

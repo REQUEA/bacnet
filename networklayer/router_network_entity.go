@@ -47,20 +47,20 @@ func (e *RouterNetworkEntity) NUnitDataRequest(
 			// local broadcast — send on all ports
 			for _, p := range e.ports {
 				if err := p.Broadcast(npdu); err != nil {
-					logger.Error("local broadcast on port ", p.Id, " failed: ", err)
+					logger.Error("local broadcast on port ", p.ID, " failed: ", err)
 				}
 			}
 		} else {
 			// local unicast — send on all ports; datalink discards if unreachable
 			for _, p := range e.ports {
 				if err := p.ToDataLink(npdu, dadr.Mac.GetBytes()); err != nil {
-					logger.Error("local unicast on port ", p.Id, " failed: ", err)
+					logger.Error("local unicast on port ", p.ID, " failed: ", err)
 				}
 			}
 		}
 	case bacnet.BroadcastDNET:
 		// global broadcast
-		dadr.Mac = nil // make sure the adr field is emtpy
+		dadr.Mac = nil // make sure the adr field is empty
 		npdu := NewNPDU().
 			SetDest(dadr).
 			SetIsExpectingReply(der).
@@ -107,26 +107,26 @@ func (e *RouterNetworkEntity) NReleaseRequest(_ *bacnet.BACnetAddress) error {
 	return nil
 }
 
-func (ne *RouterNetworkEntity) Start() {
-	go ne.route()
+func (e *RouterNetworkEntity) Start() {
+	go e.route()
 }
 
-func (ne *RouterNetworkEntity) route() {
+func (e *RouterNetworkEntity) route() {
 routeloop:
 	for {
 		var npdu *NPDU
 		var ok bool
-		ne.routingCond.L.Lock()
+		e.routingCond.L.Lock()
 		for {
-			npdu, ok = ne.scheduler.GetNext()
+			npdu, ok = e.scheduler.GetNext()
 			if !ok {
-				ne.routingCond.Wait()
+				e.routingCond.Wait()
 				//time.Sleep(10 * time.Millisecond)
 			} else {
 				break
 			}
 		}
-		ne.routingCond.L.Unlock()
+		e.routingCond.L.Unlock()
 		logger.Trace("routing NPDU ", npdu)
 		if npdu.Destination.Network == bacnet.BroadcastDNET {
 			logger.Trace("npdu for broadcast DNET")
@@ -135,8 +135,8 @@ routeloop:
 			if npdu.HopCount > 0 {
 				// broadcast on all ports except source
 				logger.Trace("broadcasting on all ports except port ", npdu.Source.Network)
-				for _, p := range ne.ports {
-					if p.Dnet != bacnet.NetworkNumber(npdu.Source.Network) {
+				for _, p := range e.ports {
+					if p.Dnet != npdu.Source.Network {
 						logger.Trace("passing npdu to port ", p.Dnet)
 						err := p.ToDataLink(npdu, nil)
 						if err != nil {
@@ -147,8 +147,8 @@ routeloop:
 			}
 		} else {
 			logger.Trace("npdu for network ", npdu.Destination.Network)
-			dnet := bacnet.NetworkNumber(npdu.Destination.Network)
-			for _, p := range ne.ports {
+			dnet := npdu.Destination.Network
+			for _, p := range e.ports {
 				if p.Dnet == dnet {
 					logger.Trace("routing to directly connected network ", npdu.Destination.Network)
 					dstMac := npdu.Destination.Mac
@@ -160,7 +160,7 @@ routeloop:
 					continue routeloop
 				}
 			}
-			dest, ok := ne.routingTable[dnet]
+			dest, ok := e.routingTable[dnet]
 			if ok {
 				npdu.HopCount--
 				if npdu.HopCount > 0 {
@@ -173,7 +173,7 @@ routeloop:
 			} else {
 				logger.Trace("no route for DNET ", npdu.Destination.Network)
 				newNpdu := NewWhoIsRouterToNetworkNPDU(dnet)
-				for _, p := range ne.ports {
+				for _, p := range e.ports {
 					err := p.ToDataLink(newNpdu, nil)
 					if err != nil {
 						logger.Error("error sending to datalink: ", err)
@@ -184,19 +184,19 @@ routeloop:
 	}
 }
 
-func (ne *RouterNetworkEntity) schedule(priority int, npdu *NPDU) error {
-	ne.routingCond.L.Lock()
-	defer ne.routingCond.L.Unlock()
-	err := ne.scheduler.Schedule(priority, npdu)
+func (e *RouterNetworkEntity) schedule(priority int, npdu *NPDU) error {
+	e.routingCond.L.Lock()
+	defer e.routingCond.L.Unlock()
+	err := e.scheduler.Schedule(priority, npdu)
 	if err != nil {
 		return err
 	}
 	// wake up routing goroutine
-	ne.routingCond.Broadcast()
+	e.routingCond.Broadcast()
 	return nil
 }
 
-func (ne *RouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
+func (e *RouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
 	if buf[0] != uint8(Version1) {
 		return fmt.Errorf("incorrect bacnet version: %d", buf[0])
 	}
@@ -205,69 +205,66 @@ func (ne *RouterNetworkEntity) NUnitDataIndication(sport *Port, dadr bacnet.MAC,
 	if err != nil {
 		return err
 	}
-	logger.Trace("Handle(", sport.Id, ", ", npdu, ")")
+	logger.Trace("Handle(", sport.ID, ", ", npdu, ")")
 	if npdu.IsNetworkMessage() {
 		if !npdu.IsDestPresent() {
 			logger.Trace("Network message for local network entity")
-			return ne.handleNetworkLayerMessage(sport, sadr, npdu)
+			return e.handleNetworkLayerMessage(sport, sadr, npdu)
 		} else if npdu.Destination.Network == bacnet.BroadcastDNET { // DNET present and broadcast
-			err := ne.handleNetworkLayerMessage(sport, sadr, npdu)
+			err := e.handleNetworkLayerMessage(sport, sadr, npdu)
 			if err != nil {
 				logger.Error("error handling network message: ", err)
 				return err
 			}
-			err = ne.schedule(int(npdu.GetPriority()), npdu)
+			err = e.schedule(int(npdu.GetPriority()), npdu)
 			if err != nil {
 				logger.Error("error scheduling global broadcast network message: ", err)
 				return err
 			}
 			return nil
-		} else {
-			if npdu.NetworkMessageType == RejectMessageToNetwork {
-				// TODO handle RejectMessageToNetwork
-			}
-			err := ne.schedule(int(npdu.GetPriority()), npdu)
-			if err != nil {
-				logger.Error("error scheduling message for dnet ", npdu.Destination.Network, ": ", err)
-				return err
-			}
-			return nil
+		}
+		if npdu.NetworkMessageType == RejectMessageToNetwork { //nolint:staticcheck // TODO: handle RejectMessageToNetwork
+		}
+		err := e.schedule(int(npdu.GetPriority()), npdu)
+		if err != nil {
+			logger.Error("error scheduling message for dnet ", npdu.Destination.Network, ": ", err)
+			return err
+		}
+		return nil
+	}
+	if !npdu.IsDestPresent() {
+		logger.Trace("Handle: npdu for local application layer")
+		if e.apduHandler != nil {
+			indication := buildNPDUIndication(npdu, sport, sadr, dadr)
+			e.apduHandler.HandleNUnitDataIndication(indication)
+		}
+	} else if npdu.Destination.Network == bacnet.BroadcastDNET { // DNET present and broadcast
+		logger.Trace("Handle: npdu for broadcast DNET")
+		if e.apduHandler != nil {
+			indication := buildNPDUIndication(npdu, sport, sadr, dadr)
+			e.apduHandler.HandleNUnitDataIndication(indication)
+		}
+		source := &bacnet.BACnetAddress{
+			Network: sport.Dnet,
+			Mac:     sadr,
+		}
+		npdu.SetSource(source)
+		err := e.schedule(int(npdu.GetPriority()), npdu)
+		if err != nil {
+			logger.Error("error scheduling global broadcast application message")
+			return err
 		}
 	} else {
-		if !npdu.IsDestPresent() {
-			logger.Trace("Handle: npdu for local application layer")
-			if ne.apduHandler != nil {
-				indication := buildNPDUIndication(npdu, sport, sadr, dadr)
-				ne.apduHandler.HandleNUnitDataIndication(indication)
-			}
-		} else if npdu.Destination.Network == bacnet.BroadcastDNET { // DNET present and broadcast
-			logger.Trace("Handle: npdu for broadcast DNET")
-			if ne.apduHandler != nil {
-				indication := buildNPDUIndication(npdu, sport, sadr, dadr)
-				ne.apduHandler.HandleNUnitDataIndication(indication)
-			}
-			source := &bacnet.BACnetAddress{
-				Network: sport.Dnet,
-				Mac:     sadr,
-			}
-			npdu.SetSource(source)
-			err := ne.schedule(int(npdu.GetPriority()), npdu)
-			if err != nil {
-				logger.Error("error scheduling global broadcast application message")
-				return err
-			}
-		} else {
-			logger.Trace("Handle: npdu for DNET ", npdu.Destination.Network)
-			source := &bacnet.BACnetAddress{
-				Network: sport.Dnet,
-				Mac:     sadr,
-			}
-			npdu.SetSource(source)
-			err := ne.schedule(int(npdu.GetPriority()), npdu)
-			if err != nil {
-				logger.Error("error scheduling application message for network ", npdu.Destination.Network, ": ", err)
-				return err
-			}
+		logger.Trace("Handle: npdu for DNET ", npdu.Destination.Network)
+		source := &bacnet.BACnetAddress{
+			Network: sport.Dnet,
+			Mac:     sadr,
+		}
+		npdu.SetSource(source)
+		err := e.schedule(int(npdu.GetPriority()), npdu)
+		if err != nil {
+			logger.Error("error scheduling application message for network ", npdu.Destination.Network, ": ", err)
+			return err
 		}
 	}
 	return nil
@@ -292,12 +289,12 @@ func buildNPDUIndication(npdu *NPDU, sport *Port, sadr bacnet.MAC, dadr bacnet.M
 	return indication
 }
 
-func (ne *RouterNetworkEntity) handleNetworkLayerMessage(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
+func (e *RouterNetworkEntity) handleNetworkLayerMessage(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
 	switch npdu.NetworkMessageType {
 	case WhoIsRouterToNetwork:
-		return ne.handleWhoIsRouterToNetwork(source, sadr, npdu)
+		return e.handleWhoIsRouterToNetwork(source, sadr, npdu)
 	case IAmRouterToNetwork:
-		return ne.handleIAmRouterToNetwork(source, sadr, npdu)
+		return e.handleIAmRouterToNetwork(source, sadr, npdu)
 	case ICouldBeRouterToNetwork:
 		logger.Trace(npdu.NetworkMessageType, " is not supported")
 	case RejectMessageToNetwork:
@@ -307,7 +304,7 @@ func (ne *RouterNetworkEntity) handleNetworkLayerMessage(source *Port, sadr bacn
 	case RouterAvailableToNetwork:
 		logger.Trace(npdu.NetworkMessageType, " is not supported")
 	case InitializeRoutingTable:
-		return ne.handleInitializeRoutingTable(source, sadr, npdu)
+		return e.handleInitializeRoutingTable(source, sadr, npdu)
 	case InitializeRoutingTableAck:
 		logger.Trace(npdu.NetworkMessageType, " is not supported")
 	case EstablishConnectionToNetwork:
@@ -340,80 +337,78 @@ func (ne *RouterNetworkEntity) handleNetworkLayerMessage(source *Port, sadr bacn
 	return nil
 }
 
-func (ne *RouterNetworkEntity) handleWhoIsRouterToNetwork(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
+func (e *RouterNetworkEntity) handleWhoIsRouterToNetwork(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
 	logger.Trace("handling Who-Is-Router-To-Network")
 	if len(npdu.data) == 2 {
 		// a DNET was passed
 		dnet := bacnet.NetworkNumber(((uint16(npdu.data[0]) << 8) & 0xff00) | (uint16(npdu.data[1]) & 0xff))
 		logger.Trace("got query for DNET ", dnet)
 		logger.Trace("checking directly connected networks")
-		for _, p := range ne.ports {
+		for _, p := range e.ports {
 			if p.Dnet == dnet {
 				logger.Trace("DNET ", dnet, " is directly connected. Replying to source")
-				return ne.sendIAmRouterToNetwork(source, dnet)
+				return e.sendIAmRouterToNetwork(source, dnet)
 			}
 		}
 		logger.Trace("checking routing table")
-		_, ok := ne.routingTable[dnet]
+		_, ok := e.routingTable[dnet]
 		if ok {
 			logger.Trace("DNET ", dnet, " found in routing table. Replying to source")
 			// TODO: check for availability of the link
 			// send an I-Am-Router-To-Network using broadcast MAC on the source
 			// Port
-			return ne.sendIAmRouterToNetwork(source, dnet)
-		} else {
-			logger.Trace("DNET not in routing table. Sending a Who-Is-Router-To-Network")
-			// generate a Who-Is-Router-To-Network with DNET
-			// if SNET and SADR are not present, add them to the NPDU
-			// send it to all the ports except source
-			newNpdu := NewNPDU().SetNetworkMessageType(WhoIsRouterToNetwork)
-			if !npdu.IsSourcePresent() {
-				newNpdu.Source.Network = source.Dnet
-				newNpdu.Source.Mac = sadr
-			}
-			data := &bytes.Buffer{}
-			_ = binary.Write(data, binary.BigEndian, dnet)
-			npdu.data = data.Bytes()
-			var err error
-			for _, p := range ne.ports {
-				if p.Dnet != source.Dnet {
-					err = p.ToDataLink(npdu, nil)
-					if err != nil {
-						// log error
-						logger.Error("transmitting Who-Is-Router-To-Network on port ", p.Id, " failed")
-					}
+			return e.sendIAmRouterToNetwork(source, dnet)
+		}
+		logger.Trace("DNET not in routing table. Sending a Who-Is-Router-To-Network")
+		// generate a Who-Is-Router-To-Network with DNET
+		// if SNET and SADR are not present, add them to the NPDU
+		// send it to all the ports except source
+		newNpdu := NewNPDU().SetNetworkMessageType(WhoIsRouterToNetwork)
+		if !npdu.IsSourcePresent() {
+			newNpdu.Source.Network = source.Dnet
+			newNpdu.Source.Mac = sadr
+		}
+		data := &bytes.Buffer{}
+		_ = binary.Write(data, binary.BigEndian, dnet)
+		npdu.data = data.Bytes()
+		var err error
+		for _, p := range e.ports {
+			if p.Dnet != source.Dnet {
+				err = p.ToDataLink(npdu, nil)
+				if err != nil {
+					// log error
+					logger.Error("transmitting Who-Is-Router-To-Network on port ", p.ID, " failed")
 				}
 			}
-			if err != nil {
-				return fmt.Errorf("an error occured when broadcasting Who-Is-Router-To-Network %d", dnet)
-			}
-			return nil
 		}
+		if err != nil {
+			return fmt.Errorf("an error occurred when broadcasting Who-Is-Router-To-Network %d", dnet)
+		}
+		return nil
 	} else if len(npdu.data) == 0 {
 		logger.Trace(("handle Who-Is-Router-To-Network: empty payload. Building full list"))
 		// build the list of all the networks not reachable via source
 		// and send an I-Am-Router-To-Network message using broadcast MAC
 		// on the source Port
 		dnets := make([]bacnet.NetworkNumber, 0)
-		for dnet, entry := range ne.routingTable {
+		for dnet, entry := range e.routingTable {
 			if entry.Port.Dnet != source.Dnet {
 				dnets = append(dnets, dnet)
 			}
 		}
 		// Also add the directly connected networks
-		for _, p := range ne.ports {
+		for _, p := range e.ports {
 			if p.Dnet != source.Dnet {
 				dnets = append(dnets, p.Dnet)
 			}
 		}
-		return ne.sendIAmRouterToNetwork(source, dnets...)
-	} else {
-		logger.Error("Handle Who-Is-Router-To-Network: payload len unexpeced: ", len(npdu.data))
+		return e.sendIAmRouterToNetwork(source, dnets...)
 	}
+	logger.Error("Handle Who-Is-Router-To-Network: payload len unexpeced: ", len(npdu.data))
 	return nil
 }
 
-func (ne *RouterNetworkEntity) handleIAmRouterToNetwork(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
+func (e *RouterNetworkEntity) handleIAmRouterToNetwork(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
 	logger.Trace("hanlde I-Am-Router-To-Network")
 	if len(npdu.data)%2 != 0 {
 		return fmt.Errorf("malformed I-Am-Router-To-Network payload")
@@ -429,15 +424,14 @@ func (ne *RouterNetworkEntity) handleIAmRouterToNetwork(source *Port, sadr bacne
 			}
 			return fmt.Errorf("error while parsing I-Am-Router-To-Network payload: %w", err)
 		}
-		ne.updateRoutingTable(net, sadr, source)
+		e.updateRoutingTable(net, sadr, source)
 		dnets = append(dnets, net)
 	}
 	var err error
-	for _, p := range ne.ports {
+	for _, p := range e.ports {
 		if p.Dnet != source.Dnet {
-			err = ne.sendIAmRouterToNetwork(p, dnets...)
-			if err != nil {
-				// log error
+			err = e.sendIAmRouterToNetwork(p, dnets...)
+			if err != nil { //nolint:staticcheck // TODO: log error
 			}
 		}
 	}
@@ -447,7 +441,7 @@ func (ne *RouterNetworkEntity) handleIAmRouterToNetwork(source *Port, sadr bacne
 	return nil
 }
 
-func (ne *RouterNetworkEntity) handleInitializeRoutingTable(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
+func (e *RouterNetworkEntity) handleInitializeRoutingTable(source *Port, sadr bacnet.MAC, npdu *NPDU) error {
 	data := bytes.NewBuffer(npdu.data)
 	numberOfPorts, err := data.ReadByte()
 	if err != nil {
@@ -456,7 +450,7 @@ func (ne *RouterNetworkEntity) handleInitializeRoutingTable(source *Port, sadr b
 	if numberOfPorts == 0 {
 		// send Ack with full routing table
 		ackNpdu := NewNPDU().SetNetworkMessageType(InitializeRoutingTableAck)
-		ackNpdu.data = ne.prepareInitializeRoutingTableContent()
+		ackNpdu.data = e.prepareInitializeRoutingTableContent()
 		return source.ToDataLink(ackNpdu, sadr.GetBytes())
 	}
 	for i := 0; i < int(numberOfPorts); i++ {
@@ -465,7 +459,7 @@ func (ne *RouterNetworkEntity) handleInitializeRoutingTable(source *Port, sadr b
 		if err != nil {
 			return fmt.Errorf("malformed Initialize-Routing-Table payload: %w", err)
 		}
-		portId, err := data.ReadByte()
+		portID, err := data.ReadByte()
 		if err != nil {
 			return fmt.Errorf("malformed Initialize-Routing-Table payload: %w", err)
 		}
@@ -484,46 +478,46 @@ func (ne *RouterNetworkEntity) handleInitializeRoutingTable(source *Port, sadr b
 				return fmt.Errorf("short read of portInfo for entry %d in Initialize-Routing-Table payload", i)
 			}
 		}
-		if portId == 0 {
-			delete(ne.routingTable, dnet)
+		if portID == 0 {
+			delete(e.routingTable, dnet)
 		} else {
-			newPort := ne.getPort(int(portId))
+			newPort := e.getPort(int(portID))
 			if newPort == nil {
 				// TODO: log something
 				continue
 			}
 			newPort.SetPortInfo(portInfo)
-			ne.updateRoutingTable(dnet, nil, newPort)
+			e.updateRoutingTable(dnet, nil, newPort)
 		}
 	}
 	ackNpdu := NewNPDU().SetNetworkMessageType(InitializeRoutingTableAck)
 	return source.ToDataLink(ackNpdu, sadr.GetBytes())
 }
 
-func (ne *RouterNetworkEntity) prepareInitializeRoutingTableContent() []byte {
+func (e *RouterNetworkEntity) prepareInitializeRoutingTableContent() []byte {
 	result := &bytes.Buffer{}
-	numberOfPorts := len(ne.routingTable)
+	numberOfPorts := len(e.routingTable)
 	if numberOfPorts == 0 {
 		return nil
 	}
-	err := result.WriteByte(uint8(numberOfPorts))
+	err := result.WriteByte(uint8(numberOfPorts)) //nolint:gosec
 	if err != nil {
 		// TODO log message
 		return nil
 	}
-	for dnet, entry := range ne.routingTable {
+	for dnet, entry := range e.routingTable {
 		err = binary.Write(result, binary.BigEndian, dnet)
 		if err != nil {
 			// TODO log message
 			return nil
 		}
-		err = result.WriteByte(uint8(entry.Port.Id))
+		err = result.WriteByte(uint8(entry.Port.ID)) //nolint:gosec
 		if err != nil {
 			// TODO log message
 			return nil
 		}
 		portInfo := entry.Port.PortInfo()
-		err = result.WriteByte(uint8(len(portInfo)))
+		err = result.WriteByte(uint8(len(portInfo))) //nolint:gosec
 		if err != nil {
 			// TODO log message
 			return nil
@@ -537,16 +531,16 @@ func (ne *RouterNetworkEntity) prepareInitializeRoutingTableContent() []byte {
 	return result.Bytes()
 }
 
-func (ne *RouterNetworkEntity) getPort(id int) *Port {
-	for _, p := range ne.ports {
-		if p.Id == id {
+func (e *RouterNetworkEntity) getPort(id int) *Port {
+	for _, p := range e.ports {
+		if p.ID == id {
 			return p
 		}
 	}
 	return nil
 }
 
-func (ne *RouterNetworkEntity) sendIAmRouterToNetwork(dest *Port, dnets ...bacnet.NetworkNumber) error {
+func (e *RouterNetworkEntity) sendIAmRouterToNetwork(dest *Port, dnets ...bacnet.NetworkNumber) error {
 	logger.Trace("sending I-Am-Router-To-Network with dnets: ", dnets)
 	npdu := NewNPDU().SetNetworkMessageType(IAmRouterToNetwork)
 	data := &bytes.Buffer{}

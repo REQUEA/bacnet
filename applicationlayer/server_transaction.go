@@ -25,10 +25,10 @@ type ServerTransaction struct {
 	lastSentSeqNum uint
 }
 
-func NewServerTransaction(id *TransactionId) *ServerTransaction {
+func NewServerTransaction(id *TransactionID) *ServerTransaction {
 	result := &ServerTransaction{
 		Transaction: Transaction{
-			Id:     id,
+			ID:     id,
 			events: make(chan TransactionEvent, 16),
 		},
 	}
@@ -109,7 +109,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 		apduInd := APDUIndication{
 			Source:        indication.Source,
 			ExpectedReply: indication.ExpectedReply,
-			InvokeId:      tr.Id.InvokeId,
+			InvokeID:      tr.ID.InvokeID,
 			Data:          serviceRequest,
 		}
 		tr.RequestTimer.Start()
@@ -126,20 +126,22 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 			// send N-UNITDATA.request to transmit SegmentAck-PDU
 			segmentAckPdu := SegmentAckHeader{
 				Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: true},
-				InvokeId:         header.InvokeId,
+				InvokeID:         header.InvokeID,
 				SequenceNumber:   header.SequenceNumber,
 				ActualWindowSize: tr.ActualWindowSize,
 			}
 			segmentAckBytes, err := segmentAckPdu.Marshal()
 			if err != nil {
 				logger.Error("could not marshal segment-ack-pdu: ", err)
-				tr.applicationEntity.removeServerTransaction(tr.Id)
+				tr.applicationEntity.removeServerTransaction(tr.ID)
 				return
 			}
-			tr.applicationEntity.networkEntity.NUnitDataRequest(
+			if err := tr.applicationEntity.networkEntity.NUnitDataRequest(
 				tr.Source, false, networklayer.NormalPriority,
 				segmentAckBytes,
-			)
+			); err != nil {
+				logger.Error("could not send segment-ack: ", err)
+			}
 
 			tr.SegmentTimer.Start()
 
@@ -158,7 +160,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 			// ConfirmedSegmentedReceivedWindowSizeOutOfRange
 			abortHeader := AbortHeader{
 				SentByServer: true,
-				InvokeId:     uint8(header.InvokeId),
+				InvokeID:     uint8(header.InvokeID), //nolint:gosec
 				AbortReason:  uint8(bacnet.AbortWindowSizeOutOfRange),
 			}
 			abortBytes, err := abortHeader.Marshal()
@@ -170,7 +172,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 					logger.Error("could not send Abort PDU: ", err)
 				}
 			}
-			tr.applicationEntity.removeServerTransaction(tr.Id)
+			tr.applicationEntity.removeServerTransaction(tr.ID)
 		}
 	} else {
 		// UnexpectedPDU_Received
@@ -180,7 +182,7 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 		}
 		abortHeader := AbortHeader{
 			SentByServer: true,
-			InvokeId:     uint8(header.InvokeId),
+			InvokeID:     uint8(header.InvokeID), //nolint:gosec
 			AbortReason:  uint8(bacnet.AbortOther),
 		}
 		abortBytes, err := abortHeader.Marshal()
@@ -243,40 +245,15 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 						logger.Error("could not send N-RELEASE.request to network layer: ", err)
 					}
 					return
-				} else {
-					// LastSegmentOfGroupReceived
-					header := SegmentAckHeader{
-						Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: true},
-						InvokeId:         tr.Id.InvokeId,
-						SequenceNumber:   tr.LastSequenceNumber,
-						ActualWindowSize: tr.ActualWindowSize,
-					}
-					headerBytes, err := header.Marshal()
-					if err != nil {
-						logger.Error("could not marshal segment-ack pdu: ", err)
-						return
-					}
-					err = tr.applicationEntity.networkEntity.NUnitDataRequest(
-						tr.Source, false, networklayer.NormalPriority, headerBytes)
-					if err != nil {
-						logger.Error("error when sending segment-ack-pdu: ", err)
-					}
-					// TODO: Check return value
-					tr.SegmentTimer.Restart(false)
-					tr.InitialSequenceNumber = tr.LastSequenceNumber
-					tr.DuplicateCount = 0
-					return
 				}
-			} else {
-				// LastSegmentOfMessageReceived
-				tr.SegmentTimer.Stop()
-				segmentAckHeader := SegmentAckHeader{
+				// LastSegmentOfGroupReceived
+				header := SegmentAckHeader{
 					Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: true},
-					InvokeId:         tr.Id.InvokeId,
+					InvokeID:         tr.ID.InvokeID,
 					SequenceNumber:   tr.LastSequenceNumber,
 					ActualWindowSize: tr.ActualWindowSize,
 				}
-				headerBytes, err := segmentAckHeader.Marshal()
+				headerBytes, err := header.Marshal()
 				if err != nil {
 					logger.Error("could not marshal segment-ack pdu: ", err)
 					return
@@ -285,27 +262,50 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 					tr.Source, false, networklayer.NormalPriority, headerBytes)
 				if err != nil {
 					logger.Error("error when sending segment-ack-pdu: ", err)
-					return
 				}
+				// TODO: Check return value
+				tr.SegmentTimer.Restart(false)
 				tr.InitialSequenceNumber = tr.LastSequenceNumber
-				// Reassemble all segments for CONF_SERV.indication
-				var fullData []byte
-				for _, seg := range tr.segments {
-					fullData = append(fullData, seg.data...)
-				}
-				apduInd := APDUIndication{
-					Source:        indication.Source,
-					ExpectedReply: indication.ExpectedReply,
-					InvokeId:      tr.Id.InvokeId,
-					Data:          fullData,
-				}
-				// Transition to AwaitResponse BEFORE calling the service layer so that
-				// SendConfServResponse (called from within HandleConfServIndication) can
-				// change the state further without being overwritten on return.
-				tr.RequestTimer.Start()
-				tr.state = &ServerTransactionAwaitResponseState{transaction: tr}
-				tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
+				tr.DuplicateCount = 0
+				return
 			}
+			// LastSegmentOfMessageReceived
+			tr.SegmentTimer.Stop()
+			segmentAckHeader := SegmentAckHeader{
+				Flags:            SegmentAckFlags{NegativeAck: false, SentByServer: true},
+				InvokeID:         tr.ID.InvokeID,
+				SequenceNumber:   tr.LastSequenceNumber,
+				ActualWindowSize: tr.ActualWindowSize,
+			}
+			headerBytes, err := segmentAckHeader.Marshal()
+			if err != nil {
+				logger.Error("could not marshal segment-ack pdu: ", err)
+				return
+			}
+			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+				tr.Source, false, networklayer.NormalPriority, headerBytes)
+			if err != nil {
+				logger.Error("error when sending segment-ack-pdu: ", err)
+				return
+			}
+			tr.InitialSequenceNumber = tr.LastSequenceNumber
+			// Reassemble all segments for CONF_SERV.indication
+			var fullData []byte
+			for _, seg := range tr.segments {
+				fullData = append(fullData, seg.data...)
+			}
+			apduInd := APDUIndication{
+				Source:        indication.Source,
+				ExpectedReply: indication.ExpectedReply,
+				InvokeID:      tr.ID.InvokeID,
+				Data:          fullData,
+			}
+			// Transition to AwaitResponse BEFORE calling the service layer so that
+			// SendConfServResponse (called from within HandleConfServIndication) can
+			// change the state further without being overwritten on return.
+			tr.RequestTimer.Start()
+			tr.state = &ServerTransactionAwaitResponseState{transaction: tr}
+			tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
 		} else {
 			// Check DuplicateWindow()
 			if tr.DuplicateInWindow(header.SequenceNumber) {
@@ -318,7 +318,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 					// TooManyDuplicateSegmentsReceived
 					header := SegmentAckHeader{
 						Flags:            SegmentAckFlags{NegativeAck: true, SentByServer: true},
-						InvokeId:         tr.Id.InvokeId,
+						InvokeID:         tr.ID.InvokeID,
 						SequenceNumber:   tr.LastSequenceNumber,
 						ActualWindowSize: tr.ActualWindowSize,
 					}
@@ -343,7 +343,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 				// Drop segment
 				header := SegmentAckHeader{
 					Flags:            SegmentAckFlags{NegativeAck: true, SentByServer: true},
-					InvokeId:         tr.Id.InvokeId,
+					InvokeID:         tr.ID.InvokeID,
 					SequenceNumber:   tr.LastSequenceNumber,
 					ActualWindowSize: tr.ActualWindowSize,
 				}
@@ -370,7 +370,7 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 		tr.SegmentTimer.Stop()
 		header := &AbortHeader{
 			SentByServer: true,
-			InvokeId:     uint8(tr.Id.InvokeId),
+			InvokeID:     uint8(tr.ID.InvokeID), //nolint:gosec
 			AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
 		}
 		headerBytes, err := header.Marshal()
@@ -384,14 +384,14 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 			logger.Error("error when sending abort-pdu: ", err)
 			return
 		}
-		tr.applicationEntity.removeServerTransaction(tr.Id)
+		tr.applicationEntity.removeServerTransaction(tr.ID)
 	}
 }
 
 func (s *ServerTransactionSegmentedRequestState) OnSegmentTimerFired() {
 	// Timeout
 	tr := s.transaction
-	tr.applicationEntity.removeServerTransaction(tr.Id)
+	tr.applicationEntity.removeServerTransaction(tr.ID)
 }
 
 func (s *ServerTransactionSegmentedRequestState) OnRequestTimerFired() {
@@ -413,9 +413,9 @@ func (s *ServerTransactionAwaitResponseState) HandleSegmentAckPdu(*SegmentAckHea
 func (s *ServerTransactionAwaitResponseState) HandleAbortPdu(int) {}
 
 func (s *ServerTransactionAwaitResponseState) HandleConfirmedServiceRequestPdu(
-	indication *networklayer.NPDUIndication,
+	_ *networklayer.NPDUIndication,
 	header *ConfirmedServiceRequestHeader,
-	serviceRequest []byte,
+	_ []byte,
 ) {
 	if header.Flags.SegmentedRequest {
 		// DuplicateSegmentReceived
@@ -428,12 +428,14 @@ func (s *ServerTransactionAwaitResponseState) HandleConfirmedServiceRequestPdu(
 		segmentAckBytes, err := segmentAckPdu.Marshal()
 		if err != nil {
 			logger.Error("could not marshal segment-ack-pdu: ", err)
-			tr.applicationEntity.removeServerTransaction(tr.Id)
+			tr.applicationEntity.removeServerTransaction(tr.ID)
 			return
 		}
-		tr.applicationEntity.networkEntity.NUnitDataRequest(
+		if err := tr.applicationEntity.networkEntity.NUnitDataRequest(
 			tr.Source, false, networklayer.NormalPriority, segmentAckBytes,
-		)
+		); err != nil {
+			logger.Error("could not send segment-ack: ", err)
+		}
 	}
 }
 
@@ -447,19 +449,21 @@ func (s *ServerTransactionAwaitResponseState) OnRequestTimerFired() {
 
 	abortPdu := AbortHeader{
 		SentByServer: true,
-		InvokeId:     uint8(tr.Id.InvokeId),
+		InvokeID:     uint8(tr.ID.InvokeID), //nolint:gosec
 		AbortReason:  uint8(bacnet.AbortApplicationExceededReplyTime),
 	}
 	abortBytes, err := abortPdu.Marshal()
 	if err != nil {
 		logger.Error("could not marshal abort-pdu: ", err)
-		tr.applicationEntity.removeServerTransaction(tr.Id)
+		tr.applicationEntity.removeServerTransaction(tr.ID)
 		return
 	}
-	tr.applicationEntity.networkEntity.NUnitDataRequest(
+	if err := tr.applicationEntity.networkEntity.NUnitDataRequest(
 		tr.Source, false, networklayer.NormalPriority,
 		abortBytes,
-	)
+	); err != nil {
+		logger.Error("could not send abort: ", err)
+	}
 
 	// TODO send ABORT.indication to the user layer
 	indication := APDUIndication{
@@ -502,10 +506,10 @@ func (s *ServerTransactionSegmentedResponseState) sendNextSegments() {
 				SegmentedRequest: true,
 				MoreSegments:     moreSegments,
 			},
-			InvokeId:           tr.Id.InvokeId,
+			InvokeID:           tr.ID.InvokeID,
 			SequenceNumber:     seqNum,
 			ProposedWindowSize: tr.ActualWindowSize,
-			ServiceAckChoice:   int(tr.serviceChoice),
+			ServiceAckChoice:   int(tr.serviceChoice), //nolint:gosec
 		}
 		headerBytes, err := header.Marshal()
 		if err != nil {
@@ -539,11 +543,11 @@ func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(header *Se
 		if tr.SentAllSegments && header.SequenceNumber == tr.lastSentSeqNum {
 			// Final ack: all segments delivered
 			tr.SegmentTimer.Stop()
-			tr.applicationEntity.removeServerTransaction(tr.Id)
+			tr.applicationEntity.removeServerTransaction(tr.ID)
 			return
 		}
 		// Advance window: compute how many segments were acked
-		nackedSegs := int((header.SequenceNumber-tr.InitialSequenceNumber+256)%256) + 1
+		nackedSegs := int((header.SequenceNumber-tr.InitialSequenceNumber+256)%256) + 1 //nolint:gosec
 		tr.requestOffset += nackedSegs * tr.maxPduLength
 		if tr.requestOffset > len(tr.responsePdu) {
 			tr.requestOffset = len(tr.responsePdu)
@@ -560,16 +564,16 @@ func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(header *Se
 func (s *ServerTransactionSegmentedResponseState) HandleAbortPdu(int) {}
 
 func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequestPdu(
-	indication *networklayer.NPDUIndication,
-	header *ConfirmedServiceRequestHeader,
-	serviceRequest []byte,
+	_ *networklayer.NPDUIndication,
+	_ *ConfirmedServiceRequestHeader,
+	_ []byte,
 ) {
 	// UnexpectedPDU_Received
 	// TODO: check security parameters identical to initial PDU
 	tr := s.transaction
 	abortPdu := &AbortHeader{
 		SentByServer: true,
-		InvokeId:     uint8(tr.Id.InvokeId),
+		InvokeID:     uint8(tr.ID.InvokeID), //nolint:gosec
 		AbortReason:  uint8(bacnet.Other),
 	}
 	abortBytes, err := abortPdu.Marshal()
@@ -583,7 +587,7 @@ func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequestP
 		logger.Error("error when sending abort-pdu: ", err)
 		return
 	}
-	tr.applicationEntity.removeServerTransaction(tr.Id)
+	tr.applicationEntity.removeServerTransaction(tr.ID)
 	tr.SegmentTimer.Stop()
 }
 
@@ -596,7 +600,7 @@ func (s *ServerTransactionSegmentedResponseState) OnSegmentTimerFired() {
 	} else {
 		// FinalTimeout
 		tr.SegmentTimer.Stop()
-		tr.applicationEntity.removeServerTransaction(tr.Id)
+		tr.applicationEntity.removeServerTransaction(tr.ID)
 	}
 }
 

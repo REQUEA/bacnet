@@ -103,13 +103,15 @@ func (sh *ServiceHandler) HandleConfServIndication(
 		return
 	}
 	logger.Trace("unhandled confirmed service: ", serviceChoice)
-	sh.applicationEntity.SendErrorResponse(
-		indication.InvokeId,
+	if sendErr := sh.applicationEntity.SendErrorResponse(
+		indication.InvokeID,
 		indication.Source,
 		serviceChoice,
 		bacnet.ServicesError,
 		bacnet.ServiceRequestDenied,
-	)
+	); sendErr != nil {
+		logger.Error("could not send error response: ", sendErr)
+	}
 }
 
 func (sh *ServiceHandler) HandleConfServConfirm(
@@ -139,23 +141,23 @@ func (sh *ServiceHandler) HandleUnconfServIndication(
 }
 
 func (sh *ServiceHandler) HandleSegmentAckIndication(
-	indication *applicationlayer.APDUIndication,
-	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	_ *applicationlayer.APDUIndication,
+	_ bacnet.BACnetConfirmedServiceChoice,
 ) {
 	// TODO: implement
 }
 
 func (sh *ServiceHandler) HandleRejectIndication(
-	indication *applicationlayer.APDUIndication,
-	serviceChoice bacnet.BACnetConfirmedServiceChoice,
+	_ *applicationlayer.APDUIndication,
+	_ bacnet.BACnetConfirmedServiceChoice,
 ) {
 	// TODO: implement
 }
 
 func (sh *ServiceHandler) HandleAbortIndication(
-	indication *applicationlayer.APDUIndication,
-	serviceChoice bacnet.BACnetConfirmedServiceChoice,
-	reason uint8,
+	_ *applicationlayer.APDUIndication,
+	_ bacnet.BACnetConfirmedServiceChoice,
+	_ uint8,
 ) {
 	// TODO: implement
 }
@@ -168,7 +170,7 @@ func (sh *ServiceHandler) findDeviceForRequest(request []byte) *objectmodel.Devi
 	if _, err := oid.Unmarshal(request); err != nil {
 		return nil
 	}
-	if d := sh.findDeviceByObjectId(oid.ObjType(), oid.Instance()); d != nil {
+	if d := sh.findDeviceByObjectID(oid.ObjType(), oid.Instance()); d != nil {
 		return d
 	}
 	for _, dev := range sh.devices {
@@ -179,8 +181,8 @@ func (sh *ServiceHandler) findDeviceForRequest(request []byte) *objectmodel.Devi
 	return nil
 }
 
-// findDeviceByObjectId returns the local device whose DeviceObject has the given type+instance.
-func (sh *ServiceHandler) findDeviceByObjectId(objType uint16, instance uint32) *objectmodel.Device {
+// findDeviceByObjectID returns the local device whose DeviceObject has the given type+instance.
+func (sh *ServiceHandler) findDeviceByObjectID(objType uint16, instance uint32) *objectmodel.Device {
 	for _, device := range sh.devices {
 		devObj := device.DeviceObject()
 		if devObj == nil {
@@ -210,7 +212,7 @@ type propertySource interface {
 // resolveObject finds the property source for the given object identifier across all
 // registered devices, checking device objects first then non-device objects.
 func (sh *ServiceHandler) resolveObject(objType uint16, instance uint32) (propertySource, *objectmodel.Device) {
-	device := sh.findDeviceByObjectId(objType, instance)
+	device := sh.findDeviceByObjectID(objType, instance)
 	if device != nil {
 		return device.DeviceObject(), device
 	}

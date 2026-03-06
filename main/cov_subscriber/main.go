@@ -55,7 +55,7 @@ func main() {
 	logger.SetLogger(&logAdapter{log})
 
 	// Minimal local device (needed by the stack; not publishing anything).
-	id := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | uint32(*instance))
+	id := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | uint32(*instance)) //nolint:gosec
 	devObj := objectmodel.NewDeviceObject(
 		id, "COVSubscriber", bacnet.DeviceStatusOperational,
 		"REQUEA", 0, "COVSubscriber", "1.0", "1.0",
@@ -77,7 +77,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen UDP :%d: %v", *port, err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Error("close connection: ", err)
+		}
+	}()
 
 	localIP := net.ParseIP(*ipStr).To4()
 	if localIP == nil {
@@ -143,8 +147,8 @@ func main() {
 	err = sh.SubscribeCOV(ctx, targetAddr,
 		processID,
 		uint16(bacnet.IntegerValue), 1,
-		false, // unconfirmed notifications
-		uint32(*lifetime),
+		false,             // unconfirmed notifications
+		uint32(*lifetime), //nolint:gosec
 	)
 	if err != nil {
 		log.Fatalf("SubscribeCOV: %v", err)
@@ -185,7 +189,7 @@ func parseAddr(s string) (*bacnet.BACnetAddress, error) {
 // discoverDevice sends WhoIs repeatedly and waits up to 10 s for an IAm from targetInstance.
 // Note: requires both devices to be on the same BACnet/IP port.
 func discoverDevice(sh *servicelayer.ServiceHandler, targetInstance uint) (*bacnet.BACnetAddress, error) {
-	inst := uint32(targetInstance)
+	inst := uint32(targetInstance) //nolint:gosec
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if err := sh.WhoIs(&inst, &inst); err != nil {

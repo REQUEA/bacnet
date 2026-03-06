@@ -199,7 +199,7 @@ func (p *BACnetArrayProperty[T]) GetAt(position uint) (encoding.Marshalable, err
 	return p.value.Get(position)
 }
 
-func (p *BACnetArrayProperty[T]) SetAt(position uint, value encoding.Marshalable) error {
+func (p *BACnetArrayProperty[T]) SetAt(_ uint, value encoding.Marshalable) error {
 	if p.readOnly {
 		return fmt.Errorf("trying to set a read only property")
 	}
@@ -243,7 +243,7 @@ func NewBACnetListProperty[T any](readOnly bool) *BACnetListProperty[T] {
 	}
 }
 
-func (p *BACnetListProperty[T]) GetValue() any   { return p.value }
+func (p *BACnetListProperty[T]) GetValue() any    { return p.value }
 func (p *BACnetListProperty[T]) IsWritable() bool { return !p.readOnly }
 
 func (p *BACnetListProperty[T]) SetValue(v any) error {

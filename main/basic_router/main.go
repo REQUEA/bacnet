@@ -74,5 +74,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 	log.Info("shutting down")
-	conn1.Close()
+	if err := conn1.Close(); err != nil {
+		log.Error("close connection: ", err)
+	}
 }

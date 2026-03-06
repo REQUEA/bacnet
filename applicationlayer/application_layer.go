@@ -39,7 +39,7 @@ const (
 type APDUIndication struct {
 	Source        *bacnet.BACnetAddress
 	ExpectedReply bool
-	InvokeId      uint
+	InvokeID      uint
 	Data          []byte
 }
 
@@ -95,18 +95,12 @@ type ApplicationEntity struct {
 	serverTransactionsMutex sync.Mutex
 	serviceLayer            ServiceHandler
 	networkEntity           networklayer.NetworkEntity
-	serviceRegistery        *ServiceRegistry
 	remoteDeviceCache       *objectmodel.RemoteDeviceCache
-	clientInvokeId          uint
+	clientInvokeID          uint
 }
 
 // Compile-time check: ApplicationEntity must implement networklayer.APDUHandler.
 var _ networklayer.APDUHandler = (*ApplicationEntity)(nil)
-
-type ServiceRegistry struct {
-	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ServiceHandler
-	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]ServiceHandler
-}
 
 func NewApplicationEntity() *ApplicationEntity {
 	return &ApplicationEntity{
@@ -124,22 +118,22 @@ func (ae *ApplicationEntity) SetNetworkEntity(ne networklayer.NetworkEntity) {
 	ae.networkEntity = ne
 }
 
-func (ae *ApplicationEntity) getServerTransaction(id *TransactionId) *ServerTransaction {
+func (ae *ApplicationEntity) getServerTransaction(id *TransactionID) *ServerTransaction {
 	ae.serverTransactionsMutex.Lock()
 	defer ae.serverTransactionsMutex.Unlock()
 	for _, t := range ae.ServerTransactions {
-		if t != nil && t.Id.Equal(id) {
+		if t != nil && t.ID.Equal(id) {
 			return t
 		}
 	}
 	return nil
 }
 
-func (ae *ApplicationEntity) removeServerTransaction(id *TransactionId) *ServerTransaction {
+func (ae *ApplicationEntity) removeServerTransaction(id *TransactionID) *ServerTransaction {
 	ae.serverTransactionsMutex.Lock()
 	defer ae.serverTransactionsMutex.Unlock()
 	for i := range ae.ServerTransactions {
-		if ae.ServerTransactions[i] != nil && ae.ServerTransactions[i].Id.Equal(id) {
+		if ae.ServerTransactions[i] != nil && ae.ServerTransactions[i].ID.Equal(id) {
 			result := ae.ServerTransactions[i]
 			ae.ServerTransactions[i] = nil
 			return result
@@ -160,11 +154,11 @@ func (ae *ApplicationEntity) addServerTransaction(t *ServerTransaction) {
 	ae.ServerTransactions = append(ae.ServerTransactions, t)
 }
 
-func (ae *ApplicationEntity) getClientTransaction(id *TransactionId) *ClientTransaction {
+func (ae *ApplicationEntity) getClientTransaction(id *TransactionID) *ClientTransaction {
 	ae.clientTransactionsMutex.Lock()
 	defer ae.clientTransactionsMutex.Unlock()
 	for _, t := range ae.ClientTransactions {
-		if t != nil && t.Id.Equal(id) {
+		if t != nil && t.ID.Equal(id) {
 			return t
 		}
 	}
@@ -183,11 +177,11 @@ func (ae *ApplicationEntity) addClientTransaction(t *ClientTransaction) {
 	ae.ClientTransactions = append(ae.ClientTransactions, t)
 }
 
-func (ae *ApplicationEntity) removeClientTransaction(id *TransactionId) *ClientTransaction {
+func (ae *ApplicationEntity) removeClientTransaction(id *TransactionID) *ClientTransaction {
 	ae.clientTransactionsMutex.Lock()
 	defer ae.clientTransactionsMutex.Unlock()
 	for i := range ae.ClientTransactions {
-		if ae.ClientTransactions[i] != nil && ae.ClientTransactions[i].Id.Equal(id) {
+		if ae.ClientTransactions[i] != nil && ae.ClientTransactions[i].ID.Equal(id) {
 			result := ae.ClientTransactions[i]
 			ae.ClientTransactions[i] = nil
 			return result
@@ -273,7 +267,8 @@ func (f *AbortFlags) FromByte(b byte) {
 }
 
 func (f *AbortFlags) ToByte() byte {
-	var result uint8 = srvMask
+	// TODO: there is a logic error here
+	result := srvMask
 	if f.SentByServer {
 		result |= srvMask
 	}
@@ -370,43 +365,47 @@ func (ae *ApplicationEntity) HandleNUnitDataIndication(indication *networklayer.
 		return
 	}
 	pduType := PDUType((indication.Apdu[0] & pduTypeMask) >> pduTypeShift)
+	var err error
 	switch pduType {
 	case SimpleAck:
 		// client
-		ae.handleSimpleAckPDU(indication)
+		err = ae.handleSimpleAckPDU(indication)
 	case ComplexAck:
 		// client
-		ae.handleComplexAckPDU(indication)
+		err = ae.handleComplexAckPDU(indication)
 	case Error:
 		// client
-		ae.handleErrorPDU(indication)
+		err = ae.handleErrorPDU(indication)
 	case Reject:
 		// client
-		ae.handleRejectPDU(indication)
+		err = ae.handleRejectPDU(indication)
 	case ConfirmedServiceRequest:
 		// server
-		ae.handleConfirmedServiceRequestPDU(indication)
+		err = ae.handleConfirmedServiceRequestPDU(indication)
 	case UnconfirmedServiceRequest:
 		// server
-		ae.handleUnconfirmedServiceRequestPDU(indication)
+		err = ae.handleUnconfirmedServiceRequestPDU(indication)
 	case SegmentAck:
 		// client and server
-		ae.handleSegmentAckPDU(indication)
+		err = ae.handleSegmentAckPDU(indication)
 	case Abort:
 		// client and server
-		ae.handleAbortPDU(indication)
+		err = ae.handleAbortPDU(indication)
 	default:
 		logger.Error("unsupported PDU type: ", pduType)
 	}
+	if err != nil {
+		logger.Error("N-UNITDATA.indication handling error: ", err)
+	}
 }
 
-func (ae *ApplicationEntity) HandleNUnitReportIndication(indication *networklayer.NPDUIndication) {
+func (ae *ApplicationEntity) HandleNUnitReportIndication(_ *networklayer.NPDUIndication) {
 	// TODO: write implementation
 }
 
-func (ae *ApplicationEntity) nextClientInvokeId() uint {
-	ae.clientInvokeId++
-	return ae.clientInvokeId
+func (ae *ApplicationEntity) nextClientInvokeID() uint {
+	ae.clientInvokeID++
+	return ae.clientInvokeID
 }
 
 func (ae *ApplicationEntity) SendConfServRequest(
@@ -416,14 +415,14 @@ func (ae *ApplicationEntity) SendConfServRequest(
 	priority networklayer.NPDUPriority,
 	data []byte,
 ) *ConfServFuture {
-	id := NewTransactionId(dest, ae.nextClientInvokeId())
+	id := NewTransactionID(dest, ae.nextClientInvokeID())
 	transaction := NewClientTransaction(&id)
 	transaction.applicationEntity = ae
 	transaction.serviceLayer = ae.serviceLayer
 
 	device := ae.remoteDeviceCache.Get(dest)
 	if device != nil {
-		transaction.maxPduLength = int(device.MaxAPDULength()) - confReqSegHeaderLen
+		transaction.maxPduLength = int(device.MaxAPDULength()) - confReqSegHeaderLen //nolint:gosec
 		transaction.segmentationSupported = device.SegmentationSupported()
 	} else {
 		transaction.maxPduLength = defaultMaxApduLength - confReqSegHeaderLen
@@ -444,24 +443,6 @@ func (ae *ApplicationEntity) SendConfServRequest(
 	return future
 }
 
-const (
-	nbSegmentsAcceptedUnspecified = 0b000
-	nbSegmentsAccepted2           = 0b001
-	nbSegmentsAccepted4           = 0b010
-	nbSegmentsAccepted8           = 0b011
-	nbSegmentsAccepted16          = 0b100
-	nbSegmentsAccepted32          = 0b101
-	nbSegmentsAccepted64          = 0b110
-	nbSegmentsAcceptedOver64      = 0b111
-
-	maxApduLenMinimum = 0b0000
-	maxApduLen128     = 0b0001
-	maxApduLen206     = 0b0010
-	maxApduLen480     = 0b0011
-	maxApduLen1024    = 0b0100
-	maxApduLen1476    = 0b0101
-)
-
 type PDUHeader interface {
 	GetType() PDUType
 }
@@ -470,7 +451,7 @@ type ConfirmedServiceRequestHeader struct {
 	Flags              ConfServFlags
 	MaxSegs            int
 	MaxResp            int
-	InvokeId           uint
+	InvokeID           uint
 	SequenceNumber     uint
 	ProposedWindowSize uint
 	ServiceChoice      bacnet.BACnetConfirmedServiceChoice
@@ -482,21 +463,21 @@ func (h *ConfirmedServiceRequestHeader) GetType() PDUType {
 
 func (h *ConfirmedServiceRequestHeader) Marshal() ([]byte, error) {
 	typeFlag := uint8(ConfirmedServiceRequest<<4) | h.Flags.ToByte()
-	segsResp := uint8((h.MaxSegs&0x7)<<4 | (h.MaxResp & 0xf))
+	segsResp := uint8((h.MaxSegs&0x7)<<4 | (h.MaxResp & 0xf)) //nolint:gosec
 	var result []byte
 	if h.Flags.SegmentedRequest {
 		result = []byte{
 			typeFlag, segsResp,
-			uint8(h.InvokeId),
-			uint8(h.SequenceNumber),
-			uint8(h.ProposedWindowSize),
-			uint8(h.ServiceChoice),
+			uint8(h.InvokeID),           //nolint:gosec
+			uint8(h.SequenceNumber),     //nolint:gosec
+			uint8(h.ProposedWindowSize), //nolint:gosec
+			uint8(h.ServiceChoice),      //nolint:gosec
 		}
 	} else {
 		result = []byte{
 			typeFlag, segsResp,
-			uint8(h.InvokeId),
-			uint8(h.ServiceChoice),
+			uint8(h.InvokeID),      //nolint:gosec
+			uint8(h.ServiceChoice), //nolint:gosec
 		}
 	}
 	return result, nil
@@ -512,14 +493,14 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	var header ConfirmedServiceRequestHeader
 	header.Flags.FromByte(apdu[0])
 	if header.Flags.SegmentedRequest && len(apdu) < 6 {
-		return fmt.Errorf("Segmented Confirmed-Service-Request too short")
+		return fmt.Errorf("segmented Confirmed-Service-Request too short")
 	} else if !header.Flags.SegmentedRequest && len(apdu) < 4 {
 		return fmt.Errorf("Confirmed-Service-Request too short")
 	}
 	var serviceRequest []byte
 	header.MaxSegs = int((apdu[1] & maxSegsMask) >> maxSegsShift)
 	header.MaxResp = int(apdu[1] & maxRespMask)
-	header.InvokeId = uint(apdu[2])
+	header.InvokeID = uint(apdu[2])
 	if header.Flags.SegmentedRequest {
 		header.SequenceNumber = uint(apdu[3])
 		header.ProposedWindowSize = uint(apdu[4])
@@ -531,8 +512,8 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 		header.ServiceChoice = bacnet.BACnetConfirmedServiceChoice(apdu[3])
 		serviceRequest = apdu[4:]
 	}
-	transactionId := NewTransactionId(indication.Source, header.InvokeId)
-	transaction := ae.getServerTransaction(&transactionId)
+	transactionID := NewTransactionID(indication.Source, header.InvokeID)
+	transaction := ae.getServerTransaction(&transactionID)
 	if transaction != nil {
 		// Follow-up segment of an in-progress segmented request: route to the existing
 		// server transaction rather than creating a duplicate.
@@ -545,7 +526,7 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 		transaction.PushEvent(event)
 		return nil
 	}
-	tr := NewServerTransaction(&transactionId)
+	tr := NewServerTransaction(&transactionID)
 	tr.applicationEntity = ae
 	tr.serviceLayer = ae.serviceLayer
 	tr.Source = indication.Source
@@ -554,11 +535,13 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	// Find device from service to populate transaction timers
 	device := ae.serviceLayer.GetDevice(header.ServiceChoice, serviceRequest)
 	if device == nil {
-		ae.SendErrorResponse(
-			uint(header.InvokeId), indication.Source,
+		if sendErr := ae.SendErrorResponse(
+			header.InvokeID, indication.Source,
 			header.ServiceChoice,
 			bacnet.ObjectError, bacnet.UnknownObject,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return nil
 	}
 	tr.Device = device
@@ -583,7 +566,7 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 		return fmt.Errorf("apdu-timeout value is not an unsigned int")
 	}
 	tr.RequestTimer = NewTransactionTimer(
-		time.Duration(apduTimeoutUnsigned.Value())*time.Millisecond,
+		time.Duration(apduTimeoutUnsigned.Value())*time.Millisecond, //nolint:gosec
 		tr.OnRequestTimerFired,
 	)
 
@@ -596,7 +579,7 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 		return fmt.Errorf("apdu-segment-timeout value is not an unsigned int")
 	}
 	tr.SegmentTimer = NewTransactionTimer(
-		time.Duration(apduSegmentTimeoutUnsigned.Value()*4)*time.Millisecond,
+		time.Duration(apduSegmentTimeoutUnsigned.Value()*4)*time.Millisecond, //nolint:gosec
 		tr.OnSegmentTimerFired,
 	)
 
@@ -673,36 +656,36 @@ const (
 // SendConfServResponse sends a confirmed-service response for an in-progress server transaction.
 // data is the service-ack payload (empty for SimpleAck, non-empty for ComplexAck).
 func (ae *ApplicationEntity) SendConfServResponse(
-	invokeId uint,
+	invokeID uint,
 	source *bacnet.BACnetAddress,
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 	data []byte,
 ) error {
-	transactionId := NewTransactionId(source, invokeId)
-	tr := ae.getServerTransaction(&transactionId)
+	transactionID := NewTransactionID(source, invokeID)
+	tr := ae.getServerTransaction(&transactionID)
 	if tr == nil {
-		return fmt.Errorf("SendConfServResponse: no server transaction for invokeId=%d source=%s", invokeId, source)
+		return fmt.Errorf("SendConfServResponse: no server transaction for invokeID=%d source=%s", invokeID, source)
 	}
 	tr.RequestTimer.Stop()
 
 	maxApduLength := defaultMaxApduLength
 	device := ae.remoteDeviceCache.Get(source)
 	if device != nil && device.MaxAPDULength() > 0 {
-		maxApduLength = int(device.MaxAPDULength())
+		maxApduLength = int(device.MaxAPDULength()) //nolint:gosec
 	}
 
 	if len(data) == 0 {
 		// SimpleAck
 		ack := SimpleAckHeader{
-			InvokeId:      invokeId,
-			ServiceChoice: int(serviceChoice),
+			InvokeID:      invokeID,
+			ServiceChoice: int(serviceChoice), //nolint:gosec
 		}
 		ackBytes, err := ack.Marshal()
 		if err != nil {
 			return fmt.Errorf("SendConfServResponse: could not marshal SimpleAck: %w", err)
 		}
 		err = ae.networkEntity.NUnitDataRequest(source, false, networklayer.NormalPriority, ackBytes)
-		ae.removeServerTransaction(&transactionId)
+		ae.removeServerTransaction(&transactionID)
 		return err
 	}
 
@@ -710,8 +693,8 @@ func (ae *ApplicationEntity) SendConfServResponse(
 		// Unsegmented ComplexAck
 		header := ComplexAckHeader{
 			Flags:            ComplexAckFlags{SegmentedRequest: false},
-			InvokeId:         invokeId,
-			ServiceAckChoice: int(serviceChoice),
+			InvokeID:         invokeID,
+			ServiceAckChoice: int(serviceChoice), //nolint:gosec
 		}
 		headerBytes, err := header.Marshal()
 		if err != nil {
@@ -719,7 +702,7 @@ func (ae *ApplicationEntity) SendConfServResponse(
 		}
 		pdu := append(headerBytes, data...)
 		err = ae.networkEntity.NUnitDataRequest(source, false, networklayer.NormalPriority, pdu)
-		ae.removeServerTransaction(&transactionId)
+		ae.removeServerTransaction(&transactionID)
 		return err
 	}
 
@@ -740,23 +723,23 @@ func (ae *ApplicationEntity) SendConfServResponse(
 
 // SendErrorResponse sends a BACnet Error PDU in response to a confirmed-service request.
 func (ae *ApplicationEntity) SendErrorResponse(
-	invokeId uint,
+	invokeID uint,
 	source *bacnet.BACnetAddress,
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 	errClass bacnet.ErrorClass,
 	errCode bacnet.ErrorCode,
 ) error {
-	transactionId := NewTransactionId(source, invokeId)
-	tr := ae.getServerTransaction(&transactionId)
+	transactionID := NewTransactionID(source, invokeID)
+	tr := ae.getServerTransaction(&transactionID)
 	if tr != nil {
 		tr.RequestTimer.Stop()
-		ae.removeServerTransaction(&transactionId)
+		ae.removeServerTransaction(&transactionID)
 	}
 	// Error PDU: type|flags, invoke-id, service-choice, error-class (enum), error-code (enum)
 	pdu := []byte{
 		uint8(Error << 4),
-		uint8(invokeId),
-		uint8(serviceChoice),
+		uint8(invokeID),      //nolint:gosec
+		uint8(serviceChoice), //nolint:gosec
 		(9 << 4) | 1, byte(errClass),
 		(9 << 4) | 1, byte(errCode),
 	}
@@ -788,7 +771,7 @@ func (ae *ApplicationEntity) SendWhoIsRequest(dest *bacnet.BACnetAddress, priori
 }
 
 type SimpleAckHeader struct {
-	InvokeId      uint
+	InvokeID      uint
 	ServiceChoice int
 }
 
@@ -799,8 +782,8 @@ func (h *SimpleAckHeader) GetType() PDUType {
 func (h *SimpleAckHeader) Marshal() ([]byte, error) {
 	return []byte{
 		uint8(SimpleAck << 4),
-		uint8(h.InvokeId),
-		uint8(h.ServiceChoice),
+		uint8(h.InvokeID),      //nolint:gosec
+		uint8(h.ServiceChoice), //nolint:gosec
 	}, nil
 }
 
@@ -810,12 +793,12 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *networklayer.NPDUInd
 		return fmt.Errorf("SimpleACK-PDU too short (len: %d)", len(apdu))
 	}
 	header := SimpleAckHeader{
-		InvokeId:      uint(apdu[1]),
+		InvokeID:      uint(apdu[1]),
 		ServiceChoice: int(apdu[2]),
 	}
 
-	transactionId := NewTransactionId(indication.Source, header.InvokeId)
-	transaction := ae.getClientTransaction(&transactionId)
+	transactionID := NewTransactionID(indication.Source, header.InvokeID)
+	transaction := ae.getClientTransaction(&transactionID)
 	if transaction == nil {
 		// client state machine IDLE state UnexpectedPDU_Received
 		// Drop message
@@ -833,7 +816,7 @@ func (ae *ApplicationEntity) handleSimpleAckPDU(indication *networklayer.NPDUInd
 
 type ComplexAckHeader struct {
 	Flags              ComplexAckFlags
-	InvokeId           uint
+	InvokeID           uint
 	SequenceNumber     uint
 	ProposedWindowSize uint
 	ServiceAckChoice   int // TODO: define a type and accepted values
@@ -849,16 +832,16 @@ func (h *ComplexAckHeader) Marshal() ([]byte, error) {
 	if h.Flags.SegmentedRequest {
 		result = []byte{
 			typeFlag,
-			uint8(h.InvokeId),
-			uint8(h.SequenceNumber),
-			uint8(h.ProposedWindowSize),
-			uint8(h.ServiceAckChoice),
+			uint8(h.InvokeID),           //nolint:gosec
+			uint8(h.SequenceNumber),     //nolint:gosec
+			uint8(h.ProposedWindowSize), //nolint:gosec
+			uint8(h.ServiceAckChoice),   //nolint:gosec
 		}
 	} else {
 		result = []byte{
 			typeFlag,
-			uint8(h.InvokeId),
-			uint8(h.ServiceAckChoice),
+			uint8(h.InvokeID),         //nolint:gosec
+			uint8(h.ServiceAckChoice), //nolint:gosec
 		}
 	}
 	return result, nil
@@ -870,7 +853,7 @@ func (ae *ApplicationEntity) handleComplexAckPDU(indication *networklayer.NPDUIn
 	apdu := indication.Apdu
 	header := ComplexAckHeader{}
 	header.Flags.FromByte(apdu[0])
-	header.InvokeId = uint(apdu[1])
+	header.InvokeID = uint(apdu[1])
 	if header.Flags.SegmentedRequest {
 		header.SequenceNumber = uint(apdu[2])
 		header.ProposedWindowSize = uint(apdu[3])
@@ -880,8 +863,8 @@ func (ae *ApplicationEntity) handleComplexAckPDU(indication *networklayer.NPDUIn
 		header.ServiceAckChoice = int(apdu[2])
 		serviceAck = apdu[3:]
 	}
-	transactionId := NewTransactionId(indication.Source, header.InvokeId)
-	transaction := ae.getClientTransaction(&transactionId)
+	transactionID := NewTransactionID(indication.Source, header.InvokeID)
+	transaction := ae.getClientTransaction(&transactionID)
 	if transaction == nil {
 		// UnexpectedPDU_Received
 		// Drop message
@@ -899,7 +882,7 @@ func (ae *ApplicationEntity) handleComplexAckPDU(indication *networklayer.NPDUIn
 
 type SegmentAckHeader struct {
 	Flags            SegmentAckFlags
-	InvokeId         uint
+	InvokeID         uint
 	SequenceNumber   uint
 	ActualWindowSize uint
 }
@@ -911,7 +894,7 @@ func (h *SegmentAckHeader) GetType() PDUType {
 func (h *SegmentAckHeader) Marshal() ([]byte, error) {
 	typeFlag := uint8(SegmentAck<<4) | h.Flags.ToByte()
 	result := []byte{
-		typeFlag, uint8(h.InvokeId), uint8(h.SequenceNumber), uint8(h.ActualWindowSize),
+		typeFlag, uint8(h.InvokeID), uint8(h.SequenceNumber), uint8(h.ActualWindowSize), //nolint:gosec
 	}
 	return result, nil
 }
@@ -923,12 +906,12 @@ func (ae *ApplicationEntity) handleSegmentAckPDU(indication *networklayer.NPDUIn
 	}
 	header := SegmentAckHeader{}
 	header.Flags.FromByte(apdu[0])
-	header.InvokeId = uint(apdu[1])
+	header.InvokeID = uint(apdu[1])
 	header.SequenceNumber = uint(apdu[2])
 	header.ActualWindowSize = uint(apdu[3])
-	transactionId := NewTransactionId(indication.Source, header.InvokeId)
+	transactionID := NewTransactionID(indication.Source, header.InvokeID)
 	if header.Flags.SentByServer {
-		transaction := ae.getClientTransaction(&transactionId)
+		transaction := ae.getClientTransaction(&transactionID)
 		if transaction == nil {
 			return nil
 		}
@@ -940,7 +923,7 @@ func (ae *ApplicationEntity) handleSegmentAckPDU(indication *networklayer.NPDUIn
 		}
 		transaction.PushEvent(event)
 	} else {
-		transaction := ae.getServerTransaction(&transactionId)
+		transaction := ae.getServerTransaction(&transactionID)
 		if transaction == nil {
 			// TODO log error and drop message
 			return nil
@@ -957,7 +940,7 @@ func (ae *ApplicationEntity) handleSegmentAckPDU(indication *networklayer.NPDUIn
 }
 
 type ErrorHeader struct {
-	InvokeId    uint
+	InvokeID    uint
 	ErrorChoice int
 }
 
@@ -966,18 +949,18 @@ func (h *ErrorHeader) GetType() PDUType {
 }
 
 func (h *ErrorHeader) Marshal() ([]byte, error) {
-	return []byte{uint8(Error << 4), uint8(h.InvokeId), uint8(h.ErrorChoice)}, nil
+	return []byte{uint8(Error << 4), uint8(h.InvokeID), uint8(h.ErrorChoice)}, nil //nolint:gosec
 }
 
 func (ae *ApplicationEntity) handleErrorPDU(indication *networklayer.NPDUIndication) error {
 	apdu := indication.Apdu
 	header := ErrorHeader{
-		InvokeId:    uint(apdu[1]),
+		InvokeID:    uint(apdu[1]),
 		ErrorChoice: int(apdu[2]),
 	}
 	errorData := apdu[3:]
-	transactionId := NewTransactionId(indication.Source, header.InvokeId)
-	transaction := ae.getClientTransaction(&transactionId)
+	transactionID := NewTransactionID(indication.Source, header.InvokeID)
+	transaction := ae.getClientTransaction(&transactionID)
 	if transaction == nil {
 		// client state machine IDLE state UnexpectedPDU_Received
 		// Drop message
@@ -995,7 +978,7 @@ func (ae *ApplicationEntity) handleErrorPDU(indication *networklayer.NPDUIndicat
 }
 
 type RejectHeader struct {
-	InvokeId     uint8
+	InvokeID     uint8
 	RejectReason uint8
 }
 
@@ -1004,7 +987,7 @@ func (h *RejectHeader) GetType() PDUType {
 }
 
 func (h *RejectHeader) Marshal() ([]byte, error) {
-	return []byte{uint8(Reject << 4), h.InvokeId, h.RejectReason}, nil
+	return []byte{uint8(Reject << 4), h.InvokeID, h.RejectReason}, nil
 }
 
 func (ae *ApplicationEntity) handleRejectPDU(indication *networklayer.NPDUIndication) error {
@@ -1013,11 +996,11 @@ func (ae *ApplicationEntity) handleRejectPDU(indication *networklayer.NPDUIndica
 		return fmt.Errorf("wrong Reject-PDU size")
 	}
 
-	invokeId := uint(apdu[1])
+	invokeID := uint(apdu[1])
 	rejectReason := int(apdu[2])
 
-	transactionId := NewTransactionId(indication.Source, invokeId)
-	transaction := ae.getClientTransaction(&transactionId)
+	transactionID := NewTransactionID(indication.Source, invokeID)
+	transaction := ae.getClientTransaction(&transactionID)
 	if transaction == nil {
 		// client state machine IDLE state UnexpectedPDU_Received
 		// Drop message
@@ -1026,7 +1009,7 @@ func (ae *ApplicationEntity) handleRejectPDU(indication *networklayer.NPDUIndica
 
 	event := &ClientNetworkTransactionEvent{
 		indication:  indication,
-		header:      &RejectHeader{InvokeId: uint8(invokeId), RejectReason: uint8(rejectReason)},
+		header:      &RejectHeader{InvokeID: uint8(invokeID), RejectReason: uint8(rejectReason)}, //nolint:gosec
 		transaction: transaction,
 		payload:     nil,
 	}
@@ -1037,7 +1020,7 @@ func (ae *ApplicationEntity) handleRejectPDU(indication *networklayer.NPDUIndica
 
 type AbortHeader struct {
 	SentByServer bool
-	InvokeId     uint8
+	InvokeID     uint8
 	AbortReason  uint8
 }
 
@@ -1050,7 +1033,7 @@ func (h *AbortHeader) Marshal() ([]byte, error) {
 	if h.SentByServer {
 		flags = 1
 	}
-	return []byte{uint8(Abort<<4) | flags, h.InvokeId, h.AbortReason}, nil
+	return []byte{uint8(Abort<<4) | flags, h.InvokeID, h.AbortReason}, nil
 }
 
 func (ae *ApplicationEntity) handleAbortPDU(indication *networklayer.NPDUIndication) error {
@@ -1060,11 +1043,11 @@ func (ae *ApplicationEntity) handleAbortPDU(indication *networklayer.NPDUIndicat
 	}
 
 	sentByServer := (apdu[0] & srvMask) != 0
-	invokeId := uint(apdu[1])
+	invokeID := uint(apdu[1])
 	reason := int(apdu[2])
-	transactionId := NewTransactionId(indication.Source, invokeId)
+	transactionID := NewTransactionID(indication.Source, invokeID)
 	if sentByServer {
-		transaction := ae.getClientTransaction(&transactionId)
+		transaction := ae.getClientTransaction(&transactionID)
 		if transaction == nil {
 			// client state machine IDLE state UnexpectedPDU_Received
 			// Drop message
@@ -1074,31 +1057,30 @@ func (ae *ApplicationEntity) handleAbortPDU(indication *networklayer.NPDUIndicat
 			indication: indication,
 			header: &AbortHeader{
 				SentByServer: sentByServer,
-				InvokeId:     uint8(invokeId),
-				AbortReason:  uint8(reason),
+				InvokeID:     uint8(invokeID), //nolint:gosec
+				AbortReason:  uint8(reason),   //nolint:gosec
 			},
 			transaction: transaction,
 			payload:     nil,
 		}
 		transaction.PushEvent(event)
 		return nil
-	} else {
-		transaction := ae.getServerTransaction(&transactionId)
-		if transaction == nil {
-			// TODO log error and drop message
-			return nil
-		}
-		header := AbortHeader{
-			AbortReason: uint8(reason),
-		}
-		event := &ServerNetworkTransactionEvent{
-			indication:     indication,
-			header:         &header,
-			transaction:    transaction,
-			serviceRequest: nil,
-		}
-		transaction.PushEvent(event)
 	}
+	transaction := ae.getServerTransaction(&transactionID)
+	if transaction == nil {
+		// TODO log error and drop message
+		return nil
+	}
+	header := AbortHeader{
+		AbortReason: uint8(reason), //nolint:gosec
+	}
+	event := &ServerNetworkTransactionEvent{
+		indication:     indication,
+		header:         &header,
+		transaction:    transaction,
+		serviceRequest: nil,
+	}
+	transaction.PushEvent(event)
 
 	return nil
 }

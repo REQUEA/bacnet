@@ -34,7 +34,7 @@ func (w *WRRScheduler[T]) Schedule(priority int, v T) error {
 	w.Lock()
 	defer w.Unlock()
 	if priority >= len(w.fifos) {
-		return fmt.Errorf("priority not withing acceptable range")
+		return fmt.Errorf("priority not within acceptable range")
 	}
 	w.fifos[priority].Push(v)
 	return nil
@@ -54,10 +54,9 @@ func (w *WRRScheduler[T]) GetNext() (T, bool) {
 				return zero, false
 			}
 			return result, true
-		} else {
-			w.currentCount = 0
-			w.currentQueueIdx = (w.currentQueueIdx + 1) % len(w.fifos)
 		}
+		w.currentCount = 0
+		w.currentQueueIdx = (w.currentQueueIdx + 1) % len(w.fifos)
 	}
 	var zero T
 	return zero, false

@@ -19,10 +19,10 @@ type mockNetworkEntity struct {
 	sent [][]byte
 }
 
-func (m *mockNetworkEntity) NUnitDataIndication(source *networklayer.Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
+func (m *mockNetworkEntity) NUnitDataIndication(_ *networklayer.Port, _ bacnet.MAC, _ bacnet.MAC, _ []byte) error {
 	return nil
 }
-func (m *mockNetworkEntity) NUnitDataRequest(dadr *bacnet.BACnetAddress, der bool, priority networklayer.NPDUPriority, payload []byte) error {
+func (m *mockNetworkEntity) NUnitDataRequest(_ *bacnet.BACnetAddress, _ bool, _ networklayer.NPDUPriority, payload []byte) error {
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
 	m.mu.Lock()
@@ -30,8 +30,8 @@ func (m *mockNetworkEntity) NUnitDataRequest(dadr *bacnet.BACnetAddress, der boo
 	m.mu.Unlock()
 	return nil
 }
-func (m *mockNetworkEntity) NReleaseRequest(dadr *bacnet.BACnetAddress) error { return nil }
-func (m *mockNetworkEntity) GetMaxPDULength(dnet bacnet.NetworkNumber) uint   { return 480 }
+func (m *mockNetworkEntity) NReleaseRequest(_ *bacnet.BACnetAddress) error { return nil }
+func (m *mockNetworkEntity) GetMaxPDULength(_ bacnet.NetworkNumber) uint   { return 480 }
 
 func (m *mockNetworkEntity) getSent() [][]byte {
 	m.mu.Lock()
@@ -67,11 +67,13 @@ func localAddr() *bacnet.BACnetAddress {
 	}
 }
 
+const testDeviceName = "TestDevice"
+
 // makeTestDevice creates a minimal local Device with instance 1000.
 func makeTestDevice() *objectmodel.Device {
 	id := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | 1000)
 	devObj := objectmodel.NewDeviceObject(
-		id, "TestDevice", bacnet.DeviceStatusOperational,
+		id, testDeviceName, bacnet.DeviceStatusOperational,
 		"TestVendor", 99, "Model", "1.0", "1.0",
 		[]bacnet.BACnetServicesSupported{
 			bacnet.ServicesSupportedReadProperty,
@@ -117,17 +119,17 @@ func marshalContextObjectID(contextTag byte, objType uint16, instance uint32) []
 }
 
 // buildReadPropertyBytes constructs a correctly-encoded ReadPropertyRequest payload.
-func buildReadPropertyBytes(objType uint16, instance uint32, propId uint32) []byte {
+func buildReadPropertyBytes(objType uint16, instance uint32, propID uint32) []byte {
 	objBytes := marshalContextObjectID(0, objType, instance)
-	propBytes := marshalContextUnsigned(1, uint64(propId))
+	propBytes := marshalContextUnsigned(1, uint64(propID))
 	return append(objBytes, propBytes...)
 }
 
 // buildConfirmedServiceAPDU wraps a service payload in a ConfirmedServiceRequest APDU header.
-func buildConfirmedServiceAPDU(invokeId uint, serviceChoice bacnet.BACnetConfirmedServiceChoice, payload []byte) []byte {
+func buildConfirmedServiceAPDU(invokeID uint, serviceChoice bacnet.BACnetConfirmedServiceChoice, payload []byte) []byte {
 	// Byte 0: type=ConfirmedServiceRequest (0), SA=1 → 0x02
 	// Byte 1: maxSegs=0 (unspecified), maxResp=4 (1024 bytes) → 0x04
-	apdu := []byte{0x02, 0x04, byte(invokeId), byte(serviceChoice)}
+	apdu := []byte{0x02, 0x04, byte(invokeID), byte(serviceChoice)}
 	return append(apdu, payload...)
 }
 
@@ -175,7 +177,7 @@ func TestWritePropertyRequest_Unmarshal(t *testing.T) {
 	if req.objectIdentifier.Instance() != 1000 {
 		t.Errorf("wrong instance: %d", req.objectIdentifier.Instance())
 	}
-	if uint32(req.propertyIdentifier.Value()) != uint32(bacnet.ObjectName) {
+	if req.propertyIdentifier.Value() != uint32(bacnet.ObjectName) {
 		t.Errorf("wrong property ID: %d", req.propertyIdentifier.Value())
 	}
 	var decoded encoding.CharacterString
@@ -290,7 +292,7 @@ func TestHandleWriteProperty_Success(t *testing.T) {
 	}
 
 	// Verify the property was updated.
-	device := sh.findDeviceByObjectId(uint16(bacnet.BacnetDevice), 1000)
+	device := sh.findDeviceByObjectID(uint16(bacnet.BacnetDevice), 1000)
 	if device == nil {
 		t.Fatal("device not found after write")
 	}

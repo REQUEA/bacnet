@@ -98,7 +98,7 @@ func TestReadRange_NotRangeProperty(t *testing.T) {
 	_, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
 		ObjType:  uint16(bacnet.AnalogInput),
 		Instance: 42,
-		PropId:   bacnet.PresentValue,
+		PropID:   bacnet.PresentValue,
 	})
 	if err == nil {
 		t.Fatal("expected error when property does not implement RangeProperty, got nil")
@@ -120,7 +120,7 @@ func TestReadRange_ByPosition(t *testing.T) {
 	ack, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
 		ObjType:    uint16(bacnet.Trendlog),
 		Instance:   55,
-		PropId:     bacnet.LogBuffer,
+		PropID:     bacnet.LogBuffer,
 		ByPosition: &ReadRangeByPosition{ReferenceIndex: 1, Count: 10},
 	})
 	if err != nil {
@@ -160,7 +160,7 @@ func TestReadRange_ByPosition_Partial(t *testing.T) {
 	ack, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
 		ObjType:    uint16(bacnet.Trendlog),
 		Instance:   56,
-		PropId:     bacnet.LogBuffer,
+		PropID:     bacnet.LogBuffer,
 		ByPosition: &ReadRangeByPosition{ReferenceIndex: 2, Count: 2},
 	})
 	if err != nil {
@@ -185,7 +185,7 @@ func TestReadRange_UnknownObject(t *testing.T) {
 	_, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
 		ObjType:  uint16(bacnet.Trendlog),
 		Instance: 9999,
-		PropId:   bacnet.LogBuffer,
+		PropID:   bacnet.LogBuffer,
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown object, got nil")

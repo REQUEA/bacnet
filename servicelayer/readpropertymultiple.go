@@ -23,25 +23,29 @@ func (s *ReadPropertyMultipleService) HandleConfServIndication(indication *appli
 	_, err := req.Unmarshal(indication.Data)
 	if err != nil {
 		logger.Error("could not unmarshal ReadPropertyMultiple request: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	ackBytes, err := s.serviceHandler.marshalRPMAck(req.AccessSpecs)
 	if err != nil {
 		logger.Error("could not marshal ReadPropertyMultiple ACK: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	if err := s.serviceHandler.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceReadPropertyMultiple,
 		ackBytes,
 	); err != nil {
@@ -67,24 +71,24 @@ type ReadPropertyMultipleRequest struct {
 }
 
 func (r *ReadPropertyMultipleRequest) Marshal() ([]byte, error) {
-	var result []byte
+	var result []byte //nolint:prealloc
 	for _, spec := range r.AccessSpecs {
 		objIDBytes, err := spec.ObjectIdentifier.MarshalTagged(0)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal object-identifier: %v", err)
+			return nil, fmt.Errorf("could not marshal object-identifier: %w", err)
 		}
 		result = append(result, objIDBytes...)
 		result = append(result, openingTag(1))
 		for _, ref := range spec.PropertyRefs {
-			propIdBytes, err := ref.PropertyIdentifier.MarshalTagged(0)
+			propIDBytes, err := ref.PropertyIdentifier.MarshalTagged(0)
 			if err != nil {
-				return nil, fmt.Errorf("could not marshal property-identifier: %v", err)
+				return nil, fmt.Errorf("could not marshal property-identifier: %w", err)
 			}
-			result = append(result, propIdBytes...)
+			result = append(result, propIDBytes...)
 			if ref.PropertyArrayIndex.Present() {
 				idxBytes, err := ref.PropertyArrayIndex.Get().MarshalTagged(1)
 				if err != nil {
-					return nil, fmt.Errorf("could not marshal property-array-index: %v", err)
+					return nil, fmt.Errorf("could not marshal property-array-index: %w", err)
 				}
 				result = append(result, idxBytes...)
 			}
@@ -101,14 +105,14 @@ func (r *ReadPropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 		// objectIdentifier: context tag [0], ObjectID (4 bytes) → first byte 0x0C
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("expected objectIdentifier tag: %v", err)
+			return remaining, fmt.Errorf("expected objectIdentifier tag: %w", err)
 		}
 		if tag != 0 {
 			return remaining, fmt.Errorf("expected context tag 0 for objectIdentifier, got %d", tag)
 		}
 		remaining, err = spec.ObjectIdentifier.Unmarshal(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("could not unmarshal objectIdentifier: %v", err)
+			return remaining, fmt.Errorf("could not unmarshal objectIdentifier: %w", err)
 		}
 
 		// listOfPropertyReferences: context opening tag [1] = 0x1E
@@ -122,14 +126,14 @@ func (r *ReadPropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 			var ref PropertyReference
 			tag, err = encoding.ReadTag(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property reference tag: %v", err)
+				return remaining, fmt.Errorf("error reading property reference tag: %w", err)
 			}
 			if tag != 0 {
 				return remaining, fmt.Errorf("expected context tag 0 for propertyIdentifier, got %d", tag)
 			}
 			remaining, err = ref.PropertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("could not unmarshal propertyIdentifier: %v", err)
+				return remaining, fmt.Errorf("could not unmarshal propertyIdentifier: %w", err)
 			}
 			// optional array index: context tag [1]
 			if len(remaining) > 0 && remaining[0] != closingTag(1) {
@@ -138,7 +142,7 @@ func (r *ReadPropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 					var arrayIdx encoding.Unsigned
 					remaining, err = arrayIdx.Unmarshal(remaining)
 					if err != nil {
-						return remaining, fmt.Errorf("could not unmarshal propertyArrayIndex: %v", err)
+						return remaining, fmt.Errorf("could not unmarshal propertyArrayIndex: %w", err)
 					}
 					ref.PropertyArrayIndex.Set(&arrayIdx)
 				}
@@ -160,14 +164,14 @@ func (r *ReadPropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 // marshalRPMAck marshals a ReadPropertyMultiple-ACK from a list of ReadAccessSpecs.
 // For each spec, it reads each requested property from the local device and encodes the result.
 func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) {
-	var result []byte
+	var result []byte //nolint:prealloc
 	for _, spec := range specs {
 		src, _ := sh.resolveObject(spec.ObjectIdentifier.ObjType(), spec.ObjectIdentifier.Instance())
 
 		// object-identifier [0]: context tag 0, ObjectID (4 bytes)
 		objIDBytes, err := spec.ObjectIdentifier.MarshalTagged(0)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal object-identifier: %v", err)
+			return nil, fmt.Errorf("could not marshal object-identifier: %w", err)
 		}
 		result = append(result, objIDBytes...)
 
@@ -175,10 +179,10 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 		result = append(result, openingTag(1))
 
 		for _, ref := range spec.PropertyRefs {
-			propId := bacnet.PropertyIdentifier(ref.PropertyIdentifier.Value())
+			propID := bacnet.PropertyIdentifier(ref.PropertyIdentifier.Value())
 
 			// Expand All / Required / Optional selectors.
-			if propId == bacnet.All || propId == bacnet.Required || propId == bacnet.Optional {
+			if propID == bacnet.All || propID == bacnet.Required || propID == bacnet.Optional {
 				if src == nil {
 					result = append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
 					continue
@@ -189,7 +193,7 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 				continue
 			}
 
-			result = append(result, marshalOnePropertyResult(src, propId, ref.PropertyArrayIndex)...)
+			result = append(result, marshalOnePropertyResult(src, propID, ref.PropertyArrayIndex)...)
 		}
 
 		// listOfResults [1]: closing tag
@@ -202,19 +206,19 @@ func (sh *ServiceHandler) marshalRPMAck(specs []ReadAccessSpec) ([]byte, error) 
 // optional propertyArrayIndex [3], then propertyValue [4] or propertyAccessError [5]).
 func marshalOnePropertyResult(
 	src propertySource,
-	propId bacnet.PropertyIdentifier,
+	propID bacnet.PropertyIdentifier,
 	arrayIndex encoding.Optional[*encoding.Unsigned],
 ) []byte {
 	var result []byte
 
 	// propertyIdentifier [2]
-	var propIdEnc encoding.BACnetPropertyIdentifier
-	propIdEnc.SetValue(uint32(propId))
-	propIdBytes, err := propIdEnc.MarshalTagged(2)
+	var propIDEnc encoding.BACnetPropertyIdentifier
+	propIDEnc.SetValue(uint32(propID))
+	propIDBytes, err := propIDEnc.MarshalTagged(2)
 	if err != nil {
 		return marshalPropertyError(bacnet.PropertyError, bacnet.DatatypeNotSupported)
 	}
-	result = append(result, propIdBytes...)
+	result = append(result, propIDBytes...)
 
 	// optional propertyArrayIndex [3]
 	if arrayIndex.Present() {
@@ -229,7 +233,7 @@ func marshalOnePropertyResult(
 		return append(result, marshalPropertyError(bacnet.ObjectError, bacnet.UnknownObject)...)
 	}
 
-	prop := src.GetProperty(propId)
+	prop := src.GetProperty(propID)
 	if prop == nil {
 		return append(result, marshalPropertyError(bacnet.PropertyError, bacnet.UnknownProperty)...)
 	}
@@ -298,14 +302,14 @@ func UnmarshalRPMAck(buf []byte) ([]ReadAccessResult, error) {
 		// object-identifier [0]
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return nil, fmt.Errorf("expected object-identifier tag: %v", err)
+			return nil, fmt.Errorf("expected object-identifier tag: %w", err)
 		}
 		if tag != 0 {
 			return nil, fmt.Errorf("expected context tag 0 for object-identifier, got %d", tag)
 		}
 		remaining, err = res.ObjectIdentifier.Unmarshal(remaining)
 		if err != nil {
-			return nil, fmt.Errorf("could not unmarshal object-identifier: %v", err)
+			return nil, fmt.Errorf("could not unmarshal object-identifier: %w", err)
 		}
 
 		// listOfResults [1]: opening tag
@@ -321,14 +325,14 @@ func UnmarshalRPMAck(buf []byte) ([]ReadAccessResult, error) {
 			// propertyIdentifier [2]
 			tag, err = encoding.ReadTag(remaining)
 			if err != nil {
-				return nil, fmt.Errorf("error reading property-identifier tag: %v", err)
+				return nil, fmt.Errorf("error reading property-identifier tag: %w", err)
 			}
 			if tag != 2 {
 				return nil, fmt.Errorf("expected context tag 2 for property-identifier, got %d", tag)
 			}
 			remaining, err = pr.PropertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return nil, fmt.Errorf("could not unmarshal property-identifier: %v", err)
+				return nil, fmt.Errorf("could not unmarshal property-identifier: %w", err)
 			}
 
 			// optional propertyArrayIndex [3]
@@ -338,7 +342,7 @@ func UnmarshalRPMAck(buf []byte) ([]ReadAccessResult, error) {
 					var idx encoding.Unsigned
 					remaining, err = idx.Unmarshal(remaining)
 					if err != nil {
-						return nil, fmt.Errorf("could not unmarshal property-array-index: %v", err)
+						return nil, fmt.Errorf("could not unmarshal property-array-index: %w", err)
 					}
 					pr.PropertyArrayIndex.Set(&idx)
 				}
@@ -350,14 +354,14 @@ func UnmarshalRPMAck(buf []byte) ([]ReadAccessResult, error) {
 			}
 			nextTag, err2 := encoding.ReadTag(remaining)
 			if err2 != nil {
-				return nil, fmt.Errorf("error reading result type tag: %v", err2)
+				return nil, fmt.Errorf("error reading result type tag: %w", err2)
 			}
 			switch nextTag {
 			case 4: // propertyValue [4]: opening tag, app-tagged bytes, closing tag
 				var val encoding.Abstract
 				remaining, err = val.Unmarshal(remaining)
 				if err != nil {
-					return nil, fmt.Errorf("could not unmarshal property value: %v", err)
+					return nil, fmt.Errorf("could not unmarshal property value: %w", err)
 				}
 				pr.Value = &val
 			case 5: // propertyAccessError [5]

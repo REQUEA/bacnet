@@ -130,7 +130,7 @@ func TestWPMServer_ReadOnlyProperty(t *testing.T) {
 
 	nameCS := encoding.NewCharacterString("ShouldNotUpdate")
 	nameBytes, _ := nameCS.MarshalPrimitive()
-	vendorIdBytes := []byte{0x21, 0x63} // VendorIdentifier (read-only)
+	vendorIDBytes := []byte{0x21, 0x63} // VendorIdentifier (read-only)
 
 	var spec WriteAccessSpec
 	spec.ObjectIdentifier.SetFromValues(uint16(bacnet.BacnetDevice), 1000)
@@ -141,7 +141,7 @@ func TestWPMServer_ReadOnlyProperty(t *testing.T) {
 
 	var pv2 WritePropertyValue
 	pv2.PropertyIdentifier.SetValue(uint32(bacnet.VendorIdentifier))
-	pv2.Value = encoding.NewAbstract(vendorIdBytes)
+	pv2.Value = encoding.NewAbstract(vendorIDBytes)
 
 	spec.ListOfProperties = []WritePropertyValue{pv1, pv2}
 
