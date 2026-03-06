@@ -104,6 +104,7 @@ func (b *Bus) deliver(src *bacnet.BACnetAddress, dadr *bacnet.BACnetAddress, der
 type busNetwork struct {
 	selfAddr *bacnet.BACnetAddress
 	bus      *Bus
+	maxAPDU  uint
 }
 
 func (n *busNetwork) NUnitDataRequest(
@@ -115,7 +116,12 @@ func (n *busNetwork) NUnitDataRequest(
 }
 
 func (n *busNetwork) NReleaseRequest(*bacnet.BACnetAddress) error { return nil }
-func (n *busNetwork) GetMaxPDULength(bacnet.NetworkNumber) uint   { return 480 }
+func (n *busNetwork) GetMaxPDULength(bacnet.NetworkNumber) uint {
+	if n.maxAPDU == 0 {
+		return 480
+	}
+	return n.maxAPDU
+}
 func (n *busNetwork) NUnitDataIndication(
 	*networklayer.Port, bacnet.MAC, bacnet.MAC, []byte,
 ) error {
@@ -130,21 +136,37 @@ type TestStack struct {
 	sh   *servicelayer.ServiceHandler
 }
 
+// TestStackOptions configures optional parameters for NewTestStack.
+type TestStackOptions struct {
+	// MaxAPDU overrides the default 480-byte APDU limit for this stack.
+	MaxAPDU uint
+	// SegmentationSupport sets the device's segmentation capability.
+	SegmentationSupport bacnet.SegmentationSupport
+}
+
 // NewTestStack creates a TestStack with the given device instance and name,
 // wires it to the provided Bus, and registers it for message delivery.
 //
 // instanceId determines both the device object instance number and the node's
 // in-process MAC address. Use distinct instance IDs for each stack on a Bus.
-func NewTestStack(t *testing.T, bus *Bus, instanceId uint32, deviceName string) *TestStack {
+func NewTestStack(t *testing.T, bus *Bus, instanceId uint32, deviceName string, opts ...TestStackOptions) *TestStack {
 	t.Helper()
+	maxAPDU := uint(480)
+	segSupport := bacnet.SegmentationSupportNone
+	if len(opts) > 0 {
+		if opts[0].MaxAPDU > 0 {
+			maxAPDU = opts[0].MaxAPDU
+		}
+		segSupport = opts[0].SegmentationSupport
+	}
 	addr := &bacnet.BACnetAddress{
 		Network: 0,
 		Mac:     &busMAC{addr: []byte{10, 0, byte(instanceId >> 8), byte(instanceId), 0xBA, 0xC0}},
 	}
 	ae := applicationlayer.NewApplicationEntity()
-	net := &busNetwork{selfAddr: addr, bus: bus}
+	net := &busNetwork{selfAddr: addr, bus: bus, maxAPDU: maxAPDU}
 	ae.SetNetworkEntity(net)
-	device := newTestDevice(instanceId, deviceName)
+	device := newTestDevice(instanceId, deviceName, maxAPDU, segSupport)
 	sh := servicelayer.NewServiceHandler(ae, device)
 	s := &TestStack{addr: addr, ae: ae, sh: sh}
 	bus.register(addr, ae)
@@ -165,9 +187,13 @@ func (s *TestStack) RemoteDeviceCache() *objectmodel.RemoteDeviceCache {
 // Close is a no-op; included for API symmetry with real UDP-based stacks.
 func (s *TestStack) Close() {}
 
-// newTestDevice builds a minimal Device suitable for integration testing.
-func newTestDevice(instanceId uint32, objectName string) *objectmodel.Device {
+// newTestDevice builds a Device suitable for integration testing.
+func newTestDevice(instanceId uint32, objectName string, maxAPDU uint, segSupport bacnet.SegmentationSupport) *objectmodel.Device {
 	id := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | instanceId)
+	maxSegments := uint(0)
+	if segSupport == bacnet.SegmentationSupportBoth || segSupport == bacnet.SegmentationSupportReceive {
+		maxSegments = 16
+	}
 	devObj := objectmodel.NewDeviceObject(
 		id, objectName, bacnet.DeviceStatusOperational,
 		"TestVendor", 99, "TestModel", "1.0", "1.0",
@@ -177,8 +203,8 @@ func newTestDevice(instanceId uint32, objectName string) *objectmodel.Device {
 			bacnet.ServicesSupportedReadPropertyMultiple,
 		},
 		[]bacnet.BACnetObjectTypesSupported{bacnet.ObjectTypesSupportedDevice},
-		480, bacnet.SegmentationSupportNone,
-		1000, 3, 0, 1,
+		maxAPDU, segSupport,
+		1000, 3, 0, maxSegments,
 	)
 	return objectmodel.NewDevice(devObj)
 }

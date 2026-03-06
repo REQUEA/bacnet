@@ -352,6 +352,13 @@ func (e *ClientNetworkTransactionEvent) Exec() {
 			return
 		}
 		e.transaction.HandleRejectPdu(e.indication, int(header.RejectReason))
+	case SegmentAck:
+		header, ok := e.header.(*SegmentAckHeader)
+		if !ok {
+			logger.Error("wrong header type for SegmentAck")
+			return
+		}
+		e.transaction.HandleSegmentAckPdu(e.indication, header)
 	default:
 		logger.Trace("Invalid PDU received for a client transaction: ", e.header.GetType().String())
 	}
@@ -416,11 +423,12 @@ func (ae *ApplicationEntity) SendConfServRequest(
 
 	device := ae.remoteDeviceCache.Get(dest)
 	if device != nil {
-		transaction.maxPduLength = int(device.MaxAPDULength())
+		transaction.maxPduLength = int(device.MaxAPDULength()) - confReqSegHeaderLen
 		transaction.segmentationSupported = device.SegmentationSupported()
 	} else {
-		// TODO: use some default values when the remote device is not yet in the cache
+		transaction.maxPduLength = defaultMaxApduLength - confReqSegHeaderLen
 	}
+	transaction.MaxSegmentsAccepted = 16
 
 	transaction.serviceChoice = serviceChoice
 	transaction.requestPdu = data
@@ -526,7 +534,16 @@ func (ae *ApplicationEntity) handleConfirmedServiceRequestPDU(indication *networ
 	transactionId := NewTransactionId(indication.Source, header.InvokeId)
 	transaction := ae.getServerTransaction(&transactionId)
 	if transaction != nil {
-		// TODO log or drop?
+		// Follow-up segment of an in-progress segmented request: route to the existing
+		// server transaction rather than creating a duplicate.
+		event := &ServerNetworkTransactionEvent{
+			indication:     indication,
+			header:         &header,
+			transaction:    transaction,
+			serviceRequest: serviceRequest,
+		}
+		transaction.PushEvent(event)
+		return nil
 	}
 	tr := NewServerTransaction(&transactionId)
 	tr.applicationEntity = ae
@@ -650,6 +667,7 @@ const (
 
 	complexAckUnsegHeaderLen = 3 // type+flags, invoke-id, service-ack-choice
 	complexAckSegHeaderLen   = 5 // type+flags, invoke-id, seq-no, window-size, service-ack-choice
+	confReqSegHeaderLen      = 6 // type+flags, maxsegs/maxresp, invoke-id, seq-no, window-size, service-choice
 )
 
 // SendConfServResponse sends a confirmed-service response for an in-progress server transaction.

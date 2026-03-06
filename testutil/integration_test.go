@@ -2,11 +2,13 @@ package testutil
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/REQUEA/bacnet"
 	"github.com/REQUEA/bacnet/logger"
+	"github.com/REQUEA/bacnet/objectmodel"
 	"github.com/REQUEA/bacnet/servicelayer"
 )
 
@@ -210,5 +212,119 @@ func TestIntegrationReadPropertyMultiple(t *testing.T) {
 		if len(raw) < 1 || (raw[0]>>4) != 2 {
 			t.Errorf("VendorIdentifier: expected unsigned tag, got bytes %v", raw)
 		}
+	}
+}
+
+// --- P8-6: Segmented response (server → client) ---
+
+// TestIntegrationSegmentedResponse verifies that a large ReadProperty response
+// is correctly segmented by the server and reassembled by the client.
+//
+// Stack B carries a 500-character Description property. With maxAPDU=480, the
+// response body (~514 bytes) exceeds 480 bytes so B sends a 2-segment ComplexAck.
+// Stack A must reassemble both segments and return the full string.
+func TestIntegrationSegmentedResponse(t *testing.T) {
+	largeDesc := "x" + strings.Repeat("A", 499) // 500-char string
+
+	bus := &Bus{}
+	segOpts := TestStackOptions{
+		MaxAPDU:             480,
+		SegmentationSupport: bacnet.SegmentationSupportBoth,
+	}
+	a := NewTestStack(t, bus, 100, "DeviceA", segOpts)
+	b := NewTestStack(t, bus, 200, "DeviceB", segOpts)
+
+	// Add large Description property to B's device object.
+	b.ServiceHandler().Device().DeviceObject().SetProperty(
+		bacnet.Description,
+		objectmodel.NewCharacterStringProperty(false, largeDesc),
+	)
+
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	val, err := a.ServiceHandler().ReadProperty(ctx, b.Addr(),
+		uint16(bacnet.BacnetDevice), 200, bacnet.Description, nil)
+	if err != nil {
+		t.Fatalf("ReadProperty(Description) failed: %v", err)
+	}
+
+	got, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T: %v", val, val)
+	}
+	if got != largeDesc {
+		t.Errorf("Description mismatch: got len=%d, want len=%d", len(got), len(largeDesc))
+		if len(got) > 20 {
+			t.Errorf("  first 20 bytes got: %q", got[:20])
+		}
+	}
+}
+
+// --- P8-7: Segmented request (client → server) ---
+
+// TestIntegrationSegmentedRequest verifies that a large WriteProperty request
+// is correctly segmented by the client and reassembled by the server.
+//
+// Stack A has maxAPDU=128. A writes a 200-character string to B's ObjectName.
+// The WriteProperty request body (~212 bytes) exceeds 128 bytes so A sends a
+// 2-segment request. B reassembles both segments, applies the write, and
+// responds with SimpleAck. A's future resolves without error.
+func TestIntegrationSegmentedRequest(t *testing.T) {
+	newName := "N" + strings.Repeat("B", 199) // 200-char string
+
+	bus := &Bus{}
+	aOpts := TestStackOptions{
+		MaxAPDU:             128,
+		SegmentationSupport: bacnet.SegmentationSupportBoth,
+	}
+	bOpts := TestStackOptions{
+		MaxAPDU:             128,
+		SegmentationSupport: bacnet.SegmentationSupportBoth,
+	}
+	a := NewTestStack(t, bus, 100, "DeviceA", aOpts)
+	b := NewTestStack(t, bus, 200, "DeviceB", bOpts)
+
+	// Discover B so that A knows B's maxAPDU (128) and uses the correct segment size.
+	if err := a.ServiceHandler().WhoIs(nil, nil); err != nil {
+		t.Fatalf("WhoIs failed: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if a.RemoteDeviceCache().Get(b.Addr()) != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if a.RemoteDeviceCache().Get(b.Addr()) == nil {
+		t.Fatal("stack A did not discover stack B")
+	}
+
+	// Encode the new name as an application-tagged CharacterString.
+	valBytes := marshalCharstring(newName)
+
+	ctx, cancel := reqCtx(t)
+	defer cancel()
+
+	if err := a.ServiceHandler().WriteProperty(ctx, b.Addr(),
+		uint16(bacnet.BacnetDevice), 200, bacnet.ObjectName, nil, valBytes, nil); err != nil {
+		t.Fatalf("WriteProperty (segmented) failed: %v", err)
+	}
+
+	// Read back and verify the write was applied correctly.
+	ctx2, cancel2 := reqCtx(t)
+	defer cancel2()
+
+	readVal, err := a.ServiceHandler().ReadProperty(ctx2, b.Addr(),
+		uint16(bacnet.BacnetDevice), 200, bacnet.ObjectName, nil)
+	if err != nil {
+		t.Fatalf("ReadProperty after segmented write failed: %v", err)
+	}
+	got, ok := readVal.(string)
+	if !ok {
+		t.Fatalf("expected string after write, got %T", readVal)
+	}
+	if got != newName {
+		t.Errorf("ObjectName mismatch: got len=%d, want len=%d", len(got), len(newName))
 	}
 }

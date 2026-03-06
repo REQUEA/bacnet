@@ -103,19 +103,18 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 ) {
 	tr := s.transaction
 	if !header.Flags.SegmentedRequest {
-		// ConfirmedUnsegmentedReceived
-		// send CONF_SERV.indication to application
+		// ConfirmedUnsegmentedReceived: transition to AwaitResponse BEFORE calling the service
+		// layer so that SendConfServResponse (called from within HandleConfServIndication) can
+		// change the state further without it being overwritten on return.
 		apduInd := APDUIndication{
 			Source:        indication.Source,
 			ExpectedReply: indication.ExpectedReply,
 			InvokeId:      tr.Id.InvokeId,
 			Data:          serviceRequest,
 		}
-		tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
 		tr.RequestTimer.Start()
-		tr.state = &ServerTransactionAwaitResponseState{
-			transaction: tr,
-		}
+		tr.state = &ServerTransactionAwaitResponseState{transaction: tr}
+		tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
 		return
 	}
 	// TODO add case where segmentation is not supported
@@ -289,18 +288,23 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 					return
 				}
 				tr.InitialSequenceNumber = tr.LastSequenceNumber
-				// send CONF_SERV.indication
+				// Reassemble all segments for CONF_SERV.indication
+				var fullData []byte
+				for _, seg := range tr.segments {
+					fullData = append(fullData, seg.data...)
+				}
 				apduInd := APDUIndication{
 					Source:        indication.Source,
 					ExpectedReply: indication.ExpectedReply,
 					InvokeId:      tr.Id.InvokeId,
-					Data:          data,
+					Data:          fullData,
 				}
-				tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
+				// Transition to AwaitResponse BEFORE calling the service layer so that
+				// SendConfServResponse (called from within HandleConfServIndication) can
+				// change the state further without being overwritten on return.
 				tr.RequestTimer.Start()
-				tr.state = &ServerTransactionAwaitResponseState{
-					transaction: tr,
-				}
+				tr.state = &ServerTransactionAwaitResponseState{transaction: tr}
+				tr.serviceLayer.HandleConfServIndication(&apduInd, header.ServiceChoice)
 			}
 		} else {
 			// Check DuplicateWindow()
@@ -539,7 +543,7 @@ func (s *ServerTransactionSegmentedResponseState) HandleSegmentAckPdu(header *Se
 			return
 		}
 		// Advance window: compute how many segments were acked
-		nackedSegs := int((header.SequenceNumber-tr.InitialSequenceNumber+257)%256) + 1
+		nackedSegs := int((header.SequenceNumber-tr.InitialSequenceNumber+256)%256) + 1
 		tr.requestOffset += nackedSegs * tr.maxPduLength
 		if tr.requestOffset > len(tr.responsePdu) {
 			tr.requestOffset = len(tr.responsePdu)
