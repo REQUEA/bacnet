@@ -57,7 +57,7 @@ func main() {
 	device := objectmodel.NewDevice(devObj)
 
 	// Add an analog input representing a room temperature sensor.
-	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.UnitsDegreesCelsius)
+	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.DegreesCelsius)
 	roomTemp.SetPresentValue(21.5)
 	device.AddObject(roomTemp)
 

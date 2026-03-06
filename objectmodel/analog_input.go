@@ -14,7 +14,7 @@ type AnalogInputObject struct {
 func NewAnalogInputObject(
 	instanceID uint32,
 	name string,
-	units bacnet.BACnetEngineeringUnits,
+	units bacnet.Unit,
 ) *AnalogInputObject {
 	properties := make(map[bacnet.PropertyIdentifier]Property)
 
@@ -45,7 +45,7 @@ func NewAnalogInputObject(
 
 // Object interface implementation.
 
-func (ai *AnalogInputObject) GetOwner() *Device { return ai.owner }
+func (ai *AnalogInputObject) GetOwner() *Device  { return ai.owner }
 func (ai *AnalogInputObject) setOwner(d *Device) { ai.owner = d }
 
 func (ai *AnalogInputObject) GetProperty(id bacnet.PropertyIdentifier) Property {

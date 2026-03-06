@@ -82,7 +82,7 @@ func main() {
 	device := objectmodel.NewDevice(devObj)
 
 	// IntegerValue counter — updated every 5 s to trigger COV notifications.
-	counter := objectmodel.NewIntegerValueObject(1, "Counter", 0, bacnet.UnitsNoUnits)
+	counter := objectmodel.NewIntegerValueObject(1, "Counter", 0, bacnet.NoUnits)
 	device.AddObject(counter)
 
 	// CharacterStringValue with a 2000-character value to exercise segmentation.

@@ -588,21 +588,3 @@ const (
 	StatusFlagOverridden   BACnetStatusFlag = 2
 	StatusFlagOutOfService BACnetStatusFlag = 3
 )
-
-// BACnetEngineeringUnits enumerates BACnet standard engineering unit codes (ANSI/ASHRAE 135).
-type BACnetEngineeringUnits uint32
-
-const (
-	UnitsNoUnits           BACnetEngineeringUnits = 95
-	UnitsDegreesCelsius    BACnetEngineeringUnits = 62
-	UnitsDegreesFahrenheit BACnetEngineeringUnits = 64
-	UnitsPercent           BACnetEngineeringUnits = 98
-	UnitsMetersPerSecond   BACnetEngineeringUnits = 74
-	UnitsPascals           BACnetEngineeringUnits = 53
-	UnitsWatts             BACnetEngineeringUnits = 47
-	UnitsKilowatts         BACnetEngineeringUnits = 48
-	UnitsAmperes           BACnetEngineeringUnits = 3
-	UnitsVolts             BACnetEngineeringUnits = 5
-	UnitsOhms              BACnetEngineeringUnits = 4
-	UnitsLitersPerSecond   BACnetEngineeringUnits = 87
-)
