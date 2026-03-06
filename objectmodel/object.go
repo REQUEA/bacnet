@@ -135,6 +135,14 @@ func NewBooleanProperty(readOnly bool, v bool) *BooleanProperty {
 	return &BooleanProperty{value: b, readOnly: readOnly}
 }
 
+type IntegerProperty = PropertyBase[*encoding.Integer]
+
+func NewIntegerProperty(readOnly bool, v int32) *IntegerProperty {
+	i := &encoding.Integer{}
+	i.SetValue(v)
+	return &IntegerProperty{value: i, readOnly: readOnly}
+}
+
 // NewServiceSupportedProperty builds a BitString property for ProtocolServicesSupported.
 func NewServiceSupportedProperty(
 	readOnly bool,
