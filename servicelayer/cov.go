@@ -437,6 +437,26 @@ type COVNotificationRequest struct {
 	listOfValues                []COVPropertyValue
 }
 
+// MonitoredObjectIdentifier returns the object type and instance of the monitored object.
+func (r *COVNotificationRequest) MonitoredObjectIdentifier() (objType uint16, instance uint32) {
+	return r.monitoredObjectIdentifier.ObjType(), r.monitoredObjectIdentifier.Instance()
+}
+
+// ListOfValues returns the list of property values included in the notification.
+func (r *COVNotificationRequest) ListOfValues() []COVPropertyValue {
+	return r.listOfValues
+}
+
+// PropertyIdentifier returns the property identifier for this COV property value.
+func (v *COVPropertyValue) PropertyIdentifier() bacnet.PropertyIdentifier {
+	return bacnet.PropertyIdentifier(v.propertyIdentifier.Value())
+}
+
+// Value returns the raw application-tagged bytes of the property value.
+func (v *COVPropertyValue) Value() []byte {
+	return v.value.Value()
+}
+
 func (r *COVNotificationRequest) Unmarshal(buf []byte) ([]byte, error) {
 	remaining := buf
 	for len(remaining) > 0 {

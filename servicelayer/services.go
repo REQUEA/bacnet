@@ -63,6 +63,22 @@ func (sh *ServiceHandler) GetDevice(
 	return service.GetDevice(request)
 }
 
+// RegisterCOVServices registers the SubscribeCOV, SubscribeCOVProperty,
+// ConfirmedCOVNotification, and UnconfirmedCOVNotification service handlers.
+// Call this on devices that need to publish or receive COV notifications.
+func (sh *ServiceHandler) RegisterCOVServices() {
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceSubscribeCov, &SubscribeCOVService{sh})
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceSubscribeCovProperty, &SubscribeCOVPropertyService{sh})
+	sh.RegisterConfirmedService(bacnet.ConfirmedServiceChoiceConfirmedCovNotification, &ConfirmedCOVNotificationService{sh})
+	sh.RegisterUnconfirmedService(bacnet.UnconfirmedServiceChoiceUnconfirmedCovNotification, &UnconfirmedCOVNotificationService{sh})
+}
+
+// GetRemoteDevice returns the cached remote device with the given instance number,
+// or nil if it has not been discovered yet.
+func (sh *ServiceHandler) GetRemoteDevice(instance uint32) *objectmodel.RemoteDevice {
+	return sh.remoteDeviceCache.GetByInstance(instance)
+}
+
 func (sh *ServiceHandler) RegisterConfirmedService(
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 	service ConfirmedService,

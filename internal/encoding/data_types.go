@@ -230,7 +230,7 @@ func (i *Integer16) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
-func (i *Integer16) Value() int16    { return i.value }
+func (i *Integer16) Value() int16     { return i.value }
 func (i *Integer16) SetValue(v int16) { i.value = v }
 
 func (i *Integer16) MarshalPrimitive() ([]byte, error) {
@@ -241,6 +241,59 @@ func (i *Integer16) MarshalPrimitive() ([]byte, error) {
 		(applicationTagSignedInt << tagNumberShift) | 2,
 		byte(uint16(i.value) >> 8), byte(i.value),
 	}, nil
+}
+
+// Integer represents a BACnet signed integer (application tag 3) for int32 values.
+// Variable-length encoding: 1, 2, 3, or 4 bytes with sign-extension on unmarshal.
+type Integer struct {
+	value int32
+}
+
+func (i *Integer) Value() int32     { return i.value }
+func (i *Integer) SetValue(v int32) { i.value = v }
+
+func (i *Integer) Unmarshal(buf []byte) ([]byte, error) {
+	tag := (buf[0] & tagNumberMask) >> tagNumberShift
+	data, remaining, err := parseVarLen(uint(tag), buf)
+	if err != nil {
+		return remaining, err
+	}
+	if len(data) == 0 || len(data) > 4 {
+		return remaining, fmt.Errorf("invalid data length %d for Integer", len(data))
+	}
+	// Sign-extend from the most significant byte.
+	if data[0]&0x80 != 0 {
+		i.value = -1
+	} else {
+		i.value = 0
+	}
+	for _, v := range data {
+		i.value = (i.value << 8) | int32(v)
+	}
+	return remaining, nil
+}
+
+func (i *Integer) MarshalPrimitive() ([]byte, error) {
+	v := i.value
+	switch {
+	case v >= -128 && v <= 127:
+		return []byte{(applicationTagSignedInt << tagNumberShift) | 1, byte(v)}, nil
+	case v >= -32768 && v <= 32767:
+		return []byte{
+			(applicationTagSignedInt << tagNumberShift) | 2,
+			byte(uint32(v) >> 8), byte(v),
+		}, nil
+	case v >= -8388608 && v <= 8388607:
+		return []byte{
+			(applicationTagSignedInt << tagNumberShift) | 3,
+			byte(uint32(v) >> 16), byte(uint32(v) >> 8), byte(v),
+		}, nil
+	default:
+		return []byte{
+			(applicationTagSignedInt << tagNumberShift) | 4,
+			byte(uint32(v) >> 24), byte(uint32(v) >> 16), byte(uint32(v) >> 8), byte(v),
+		}, nil
+	}
 }
 
 type Unsigned16 = UnsignedBase[uint16]
