@@ -140,6 +140,12 @@ func NewDeviceObject(
 	}
 }
 
+// SetProperty adds or replaces a property on the DeviceObject.
+// Useful for optional properties or test setup.
+func (o *DeviceObject) SetProperty(id bacnet.PropertyIdentifier, p Property) {
+	o.properties[id] = p
+}
+
 func (o *DeviceObject) GetProperty(id bacnet.PropertyIdentifier) Property {
 	p, ok := o.properties[id]
 	if !ok {

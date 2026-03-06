@@ -26,6 +26,8 @@ type ClientTransaction struct {
 	serviceChoice         bacnet.BACnetConfirmedServiceChoice
 	responsePdu           []byte
 	future                *ConfServFuture
+	lastSentSeqNum        uint
+	expectedReply         bool
 }
 
 func NewClientTransaction(id *TransactionId) *ClientTransaction {
@@ -97,6 +99,58 @@ func (t *ClientTransaction) resolveFuture(resp *ConfServResponse) {
 		close(t.future.c)
 		t.future = nil
 	}
+}
+
+// fillWindow sends up to ActualWindowSize ConfirmedServiceRequest segments starting at
+// requestOffset. Does NOT advance requestOffset or InitialSequenceNumber — those are updated
+// only when a positive SegmentAck is received — so retransmitting the current window is
+// achieved by calling fillWindow again. Sets SentAllSegments=true and records lastSentSeqNum
+// when the final segment is sent.
+func (t *ClientTransaction) fillWindow() {
+	seqNum := t.InitialSequenceNumber
+	offset := t.requestOffset
+	maxApduLength := t.applicationEntity.networkEntity.GetMaxPDULength(t.Dest.Network)
+	maxResp := MaxRespFromPduLen(int(maxApduLength))
+	for i := uint(0); i < t.ActualWindowSize; i++ {
+		end := offset + t.maxPduLength
+		if end > len(t.requestPdu) {
+			end = len(t.requestPdu)
+		}
+		moreSegments := end < len(t.requestPdu)
+		segData := t.requestPdu[offset:end]
+		header := ConfirmedServiceRequestHeader{
+			Flags: ConfServFlags{
+				SegmentedRequest:          true,
+				MoreSegments:              moreSegments,
+				SegmentedResponseAccepted: true,
+			},
+			MaxSegs:            0b111,
+			MaxResp:            maxResp,
+			SequenceNumber:     seqNum,
+			ProposedWindowSize: t.ProposedWindowSize,
+			InvokeId:           t.Id.InvokeId,
+			ServiceChoice:      t.serviceChoice,
+		}
+		headerBytes, err := header.Marshal()
+		if err != nil {
+			logger.Error("could not marshal ConfServ header: ", err)
+			return
+		}
+		pdu := append(headerBytes, segData...)
+		err = t.applicationEntity.networkEntity.NUnitDataRequest(t.Dest, t.expectedReply, t.Priority, pdu)
+		if err != nil {
+			logger.Error("could not send ConfirmedServiceRequest segment: ", err)
+		}
+		if !moreSegments {
+			t.SentAllSegments = true
+			t.lastSentSeqNum = seqNum
+			break
+		}
+		seqNum = (seqNum + 1) % 256
+		offset = end
+	}
+	t.SegmentTimer.Reset()
+	t.SegmentTimer.Start()
 }
 
 func (t *ClientTransaction) OnRequestTimerFired() {
@@ -214,42 +268,19 @@ func (s *ClientTransactionIdleState) HandleConfServRequest(
 	tr := s.transaction
 	maxApduLength := tr.applicationEntity.networkEntity.GetMaxPDULength(dest.Network)
 	if len(tr.requestPdu) > int(maxApduLength) {
-		// TODO: implement the CannotSend case
 		// SendConfirmedSegmented
-		// TODO need to check if the Max_Segment_Accepted value is known and
-		// all segments can be transmitted
 		tr.SentAllSegments = false
 		tr.RetryCount = 0
 		tr.SegmentRetryCount = 0
 		tr.InitialSequenceNumber = 0
+		tr.requestOffset = 0
 		tr.ProposedWindowSize = 5
 		tr.ActualWindowSize = 1
-		tr.SegmentTimer.Start()
-		sentData := tr.requestPdu[:tr.maxPduLength]
-		maxResp := MaxRespFromPduLen(int(maxApduLength))
-		// TODO: make accepting segmentation of the response a configurable option
-		header := ConfirmedServiceRequestHeader{
-			Flags: ConfServFlags{
-				SegmentedRequest:          true,
-				MoreSegments:              true,
-				SegmentedResponseAccepted: true,
-			},
-			MaxSegs:            0b111, // TODO should be coming from a configuration on the local node
-			MaxResp:            maxResp,
-			SequenceNumber:     0,
-			ProposedWindowSize: tr.ProposedWindowSize,
-			InvokeId:           tr.Id.InvokeId,
-			ServiceChoice:      tr.serviceChoice,
-		}
-		confReqBytes, err := header.Marshal()
-		if err != nil {
-			logger.Error("could not marshal ConfServ header: ", err)
-			return
-		}
-		confReqBytes = append(confReqBytes, sentData...)
-		tr.applicationEntity.networkEntity.NUnitDataRequest(
-			dest, expectedReply, priority, confReqBytes,
-		)
+		tr.Dest = dest
+		tr.Priority = priority
+		tr.expectedReply = expectedReply
+		tr.fillWindow()
+		tr.state = &ClientTransactionSegmentedRequestState{tr}
 	} else {
 		// SendConfirmedUnsegmented
 		maxResp := MaxRespFromPduLen(int(maxApduLength))
@@ -314,7 +345,7 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 	if header.Flags.SegmentedRequest {
 		if header.SequenceNumber == 0 {
 			// SegmentedComplexACK_Received
-			// TODO: save PDU segment
+			tr.responsePdu = append(tr.responsePdu, serviceAck...)
 			tr.RequestTimer.Stop()
 			// TODO: refine the calculation ActualWindowSize ('based [...] and on local conditions')
 			tr.ActualWindowSize = min(tr.MaxSegmentsAccepted, header.ProposedWindowSize)
@@ -413,10 +444,15 @@ func (s *ClientTransactionSegmentedRequestState) HandleSimpleAckPdu(
 	tr := s.transaction
 	if tr.SentAllSegments {
 		// SimpleACK_Received
-		// Stop SegmentTimer
 		tr.SegmentTimer.Stop()
-		// TODO: issue CONF_SERV.confirm to local application
-		// Discard transaction
+		serviceChoice := bacnet.BACnetConfirmedServiceChoice(header.ServiceChoice)
+		apduInd := &APDUIndication{
+			Source:        indication.Source,
+			ExpectedReply: false,
+			Data:          nil,
+		}
+		tr.applicationEntity.serviceLayer.HandleConfServConfirm(apduInd, serviceChoice)
+		tr.resolveFuture(&ConfServResponse{Type: ResponseConfirm, Indication: apduInd})
 		tr.applicationEntity.removeClientTransaction(tr.Id)
 	} else {
 		// UnexpectedPDU_Received
@@ -453,7 +489,7 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 		if header.SequenceNumber == 0 {
 			if tr.SentAllSegments {
 				// SegmentedComplexACK_Received
-				// TODO: Save PDU segment
+				tr.responsePdu = append(tr.responsePdu, serviceAck...)
 				tr.SegmentTimer.Stop()
 				// Compute ActualWindowSize
 				// TODO: improve calculation
@@ -511,7 +547,14 @@ func (s *ClientTransactionSegmentedRequestState) HandleComplexAckPdu(
 		if tr.SentAllSegments {
 			// UnsegmentedComplexACK_Received
 			tr.SegmentTimer.Stop()
-			// TODO: issue CONF_SERV.confirm to local application
+			serviceChoice := bacnet.BACnetConfirmedServiceChoice(header.ServiceAckChoice)
+			apduInd := &APDUIndication{
+				Source:        indication.Source,
+				ExpectedReply: false,
+				Data:          serviceAck,
+			}
+			tr.applicationEntity.serviceLayer.HandleConfServConfirm(apduInd, serviceChoice)
+			tr.resolveFuture(&ConfServResponse{Type: ResponseConfirm, Indication: apduInd})
 			tr.applicationEntity.removeClientTransaction(tr.Id)
 		} else {
 			// UnexpectedPDU_Received
@@ -580,21 +623,26 @@ func (s *ClientTransactionSegmentedRequestState) HandleRejectPdu(indication *net
 func (s *ClientTransactionSegmentedRequestState) HandleSegmentAckPdu(indication *networklayer.NPDUIndication, header *SegmentAckHeader) {
 	tr := s.transaction
 	if tr.InWindow(header.SequenceNumber, tr.InitialSequenceNumber) {
-		if len(tr.segments) > 0 { // TODO this is not correct, check the amount of segments remaining to send
+		if tr.SentAllSegments && header.SequenceNumber == tr.lastSentSeqNum {
+			// FinalACK_Received
+			tr.SegmentTimer.Stop()
+			tr.RequestTimer.Start()
+			tr.state = &ClientTransactionAwaitConfirmationState{tr}
+		} else {
 			// NewACK_Received
+			nackedSegs := int((header.SequenceNumber-tr.InitialSequenceNumber+256)%256) + 1
+			tr.requestOffset += nackedSegs * tr.maxPduLength
+			if tr.requestOffset > len(tr.requestPdu) {
+				tr.requestOffset = len(tr.requestPdu)
+			}
 			tr.InitialSequenceNumber = (header.SequenceNumber + 1) % 256
 			tr.ActualWindowSize = header.ActualWindowSize
 			tr.SegmentRetryCount = 0
-			// TODO: call FillWindow to send segments
-			tr.SegmentTimer.Restart(false)
-		} else {
-			// FinalACK_Received
-			tr.SegmentTimer.Stop()
-			tr.state = &ClientTransactionAwaitConfirmationState{tr}
+			tr.fillWindow()
 		}
 	} else {
-		// DuplicateACK_Received
-		tr.SegmentTimer.Restart(false)
+		// DuplicateACK_Received: retransmit current window
+		tr.fillWindow()
 	}
 }
 func (s *ClientTransactionSegmentedRequestState) HandleAbortPdu(reason int) {
