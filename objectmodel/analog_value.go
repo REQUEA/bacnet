@@ -14,7 +14,7 @@ type AnalogValueObject struct {
 func NewAnalogValueObject(
 	instanceID uint32,
 	name string,
-	units bacnet.BACnetEngineeringUnits,
+	units bacnet.Unit,
 ) *AnalogValueObject {
 	properties := make(map[bacnet.PropertyIdentifier]Property)
 

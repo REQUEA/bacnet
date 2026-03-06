@@ -13,7 +13,7 @@ func init() {
 }
 
 func TestNewAnalogInputObject_Properties(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Room Temperature", bacnet.UnitsDegreesCelsius)
+	ai := NewAnalogInputObject(1, "Room Temperature", bacnet.DegreesCelsius)
 
 	// ObjectIdentifier
 	p := ai.GetProperty(bacnet.ObjectIdentifier)
@@ -52,13 +52,13 @@ func TestNewAnalogInputObject_Properties(t *testing.T) {
 	if p == nil {
 		t.Fatal("Units property missing")
 	}
-	if p.GetValue().(*encoding.Enumerated).Value() != uint32(bacnet.UnitsDegreesCelsius) {
+	if p.GetValue().(*encoding.Enumerated).Value() != uint32(bacnet.DegreesCelsius) {
 		t.Errorf("unexpected units value: %v", p.GetValue())
 	}
 }
 
 func TestAnalogInputObject_SetPresentValue(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Temp", bacnet.UnitsNoUnits)
+	ai := NewAnalogInputObject(1, "Temp", bacnet.NoUnits)
 	ai.SetPresentValue(21.5)
 
 	if ai.GetPresentValue() != 21.5 {
@@ -67,7 +67,7 @@ func TestAnalogInputObject_SetPresentValue(t *testing.T) {
 }
 
 func TestAnalogInputObject_PresentValueMarshal(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Temp", bacnet.UnitsNoUnits)
+	ai := NewAnalogInputObject(1, "Temp", bacnet.NoUnits)
 	ai.SetPresentValue(21.5)
 
 	p := ai.GetProperty(bacnet.PresentValue)
@@ -90,7 +90,7 @@ func TestAnalogInputObject_PresentValueMarshal(t *testing.T) {
 }
 
 func TestAnalogInputObject_PresentValueReadOnly(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Temp", bacnet.UnitsNoUnits)
+	ai := NewAnalogInputObject(1, "Temp", bacnet.NoUnits)
 
 	// PresentValue is writable
 	p := ai.GetProperty(bacnet.PresentValue)
@@ -106,7 +106,7 @@ func TestAnalogInputObject_PresentValueReadOnly(t *testing.T) {
 }
 
 func TestAnalogInputObject_OutOfService(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Temp", bacnet.UnitsNoUnits)
+	ai := NewAnalogInputObject(1, "Temp", bacnet.NoUnits)
 
 	ai.SetOutOfService(true)
 	if !ai.IsOutOfService() {
@@ -120,7 +120,7 @@ func TestAnalogInputObject_OutOfService(t *testing.T) {
 }
 
 func TestAnalogInputObject_SetStatusFlag(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Temp", bacnet.UnitsNoUnits)
+	ai := NewAnalogInputObject(1, "Temp", bacnet.NoUnits)
 	ai.SetStatusFlag(bacnet.StatusFlagFault, true)
 
 	bs := ai.properties[bacnet.StatusFlags].GetValue().(*encoding.BitString)
@@ -133,7 +133,7 @@ func TestAnalogInputObject_SetStatusFlag(t *testing.T) {
 }
 
 func TestAnalogInputObject_AllPropertyIdentifiers(t *testing.T) {
-	ai := NewAnalogInputObject(1, "Temp", bacnet.UnitsNoUnits)
+	ai := NewAnalogInputObject(1, "Temp", bacnet.NoUnits)
 	ids := ai.AllPropertyIdentifiers()
 
 	required := []bacnet.PropertyIdentifier{
@@ -169,7 +169,7 @@ func TestDevice_AddObject_GetObject(t *testing.T) {
 	)
 	dev := NewDevice(devObj)
 
-	ai := NewAnalogInputObject(1, "Room Temp", bacnet.UnitsDegreesCelsius)
+	ai := NewAnalogInputObject(1, "Room Temp", bacnet.DegreesCelsius)
 	dev.AddObject(ai)
 
 	got := dev.GetObject(bacnet.AnalogInput, 1)

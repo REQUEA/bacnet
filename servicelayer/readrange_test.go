@@ -92,7 +92,7 @@ func TestReadRange_NotRangeProperty(t *testing.T) {
 	defer cancel()
 
 	// Add an AnalogInputObject: PresentValue does not implement RangeProperty.
-	ai := objectmodel.NewAnalogInputObject(42, "AI42", bacnet.UnitsNoUnits)
+	ai := objectmodel.NewAnalogInputObject(42, "AI42", bacnet.NoUnits)
 	server.devices[0].AddObject(ai)
 
 	_, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{

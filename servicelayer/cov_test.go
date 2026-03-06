@@ -24,7 +24,7 @@ func makeLoopbackPairWithAI(t *testing.T) (client *ServiceHandler, server *Servi
 	client, server, serverAddr = makeLoopbackPair(t)
 	registerCOVServices(client)
 	registerCOVServices(server)
-	ai := objectmodel.NewAnalogInputObject(1, "AI1", bacnet.UnitsNoUnits)
+	ai := objectmodel.NewAnalogInputObject(1, "AI1", bacnet.NoUnits)
 	server.devices[0].AddObject(ai)
 	return
 }

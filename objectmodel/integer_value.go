@@ -15,7 +15,7 @@ func NewIntegerValueObject(
 	instanceID uint32,
 	name string,
 	initialValue int32,
-	units bacnet.BACnetEngineeringUnits,
+	units bacnet.Unit,
 ) *IntegerValueObject {
 	properties := make(map[bacnet.PropertyIdentifier]Property)
 
@@ -45,7 +45,7 @@ func NewIntegerValueObject(
 
 // Object interface implementation.
 
-func (iv *IntegerValueObject) GetOwner() *Device { return iv.owner }
+func (iv *IntegerValueObject) GetOwner() *Device  { return iv.owner }
 func (iv *IntegerValueObject) setOwner(d *Device) { iv.owner = d }
 
 func (iv *IntegerValueObject) GetProperty(id bacnet.PropertyIdentifier) Property {
