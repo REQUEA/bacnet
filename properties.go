@@ -3,7 +3,7 @@ package bacnet
 // PropertyIdentifier is the type of an object property
 type PropertyIdentifier uint32
 
-//go:generate stringer -type=PropertyType
+//go:generate stringer -type=PropertyIdentifier
 const (
 	AckedTransitions                 PropertyIdentifier = 0x00
 	AckRequired                      PropertyIdentifier = 0x01
