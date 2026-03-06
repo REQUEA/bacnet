@@ -23,30 +23,36 @@ func (s *ReadPropertyService) HandleConfServIndication(indication *applicationla
 	_, err := req.Unmarshal(indication.Data)
 	if err != nil {
 		logger.Error("could not unmarshal ReadProperty request: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadProperty,
 			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	src, _ := s.serviceHandler.resolveObject(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
 	if src == nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadProperty,
 			bacnet.ObjectError, bacnet.UnknownObject,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
-	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
-	prop := src.GetProperty(propId)
+	propID := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
+	prop := src.GetProperty(propID)
 	if prop == nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
+		if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
 			bacnet.ConfirmedServiceChoiceReadProperty,
 			bacnet.PropertyError, bacnet.UnknownProperty,
-		)
+		); sendErr != nil {
+			logger.Error("could not send error response: ", sendErr)
+		}
 		return
 	}
 	var valBytes []byte
@@ -54,29 +60,35 @@ func (s *ReadPropertyService) HandleConfServIndication(indication *applicationla
 		idx := uint(req.propertyArrayIndex.Get().Value())
 		arrayProp, ok := prop.(objectmodel.ArrayProperty)
 		if !ok {
-			s.serviceHandler.applicationEntity.SendErrorResponse(
-				indication.InvokeId, indication.Source,
+			if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+				indication.InvokeID, indication.Source,
 				bacnet.ConfirmedServiceChoiceReadProperty,
 				bacnet.PropertyError, bacnet.PropertyIsNotAnArray,
-			)
+			); sendErr != nil {
+				logger.Error("could not send error response: ", sendErr)
+			}
 			return
 		}
 		elem, err := arrayProp.GetAt(idx)
 		if err != nil {
-			s.serviceHandler.applicationEntity.SendErrorResponse(
-				indication.InvokeId, indication.Source,
+			if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+				indication.InvokeID, indication.Source,
 				bacnet.ConfirmedServiceChoiceReadProperty,
 				bacnet.PropertyError, bacnet.InvalidArrayIndex,
-			)
+			); sendErr != nil {
+				logger.Error("could not send error response: ", sendErr)
+			}
 			return
 		}
 		valBytes, err = elem.MarshalPrimitive()
 		if err != nil {
-			s.serviceHandler.applicationEntity.SendErrorResponse(
-				indication.InvokeId, indication.Source,
+			if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+				indication.InvokeID, indication.Source,
 				bacnet.ConfirmedServiceChoiceReadProperty,
 				bacnet.PropertyError, bacnet.DatatypeNotSupported,
-			)
+			); sendErr != nil {
+				logger.Error("could not send error response: ", sendErr)
+			}
 			return
 		}
 	} else {
@@ -84,11 +96,13 @@ func (s *ReadPropertyService) HandleConfServIndication(indication *applicationla
 		valBytes, err = prop.MarshalValue()
 		if err != nil {
 			logger.Error("could not marshal property value: ", err)
-			s.serviceHandler.applicationEntity.SendErrorResponse(
-				indication.InvokeId, indication.Source,
+			if sendErr := s.serviceHandler.applicationEntity.SendErrorResponse(
+				indication.InvokeID, indication.Source,
 				bacnet.ConfirmedServiceChoiceReadProperty,
 				bacnet.PropertyError, bacnet.DatatypeNotSupported,
-			)
+			); sendErr != nil {
+				logger.Error("could not send error response: ", sendErr)
+			}
 			return
 		}
 	}
@@ -105,7 +119,7 @@ func (s *ReadPropertyService) HandleConfServIndication(indication *applicationla
 		return
 	}
 	if err := s.serviceHandler.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceReadProperty,
 		ackBytes,
 	); err != nil {
@@ -124,24 +138,24 @@ func (r *ReadPropertyRequest) Unmarshal(buf []byte) ([]byte, error) {
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("failed to read tag: %v", err)
+			return remaining, fmt.Errorf("failed to read tag: %w", err)
 		}
 		switch tag {
 		case 0:
 			remaining, err = r.objectIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading object-identifier: %v", err)
+				return remaining, fmt.Errorf("error reading object-identifier: %w", err)
 			}
 		case 1:
 			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
+				return remaining, fmt.Errorf("error reading property-identifier: %w", err)
 			}
 		case 2:
 			var arrayIndex encoding.Unsigned
 			remaining, err = arrayIndex.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-array-index: %v", err)
+				return remaining, fmt.Errorf("error reading property-array-index: %w", err)
 			}
 			r.propertyArrayIndex.Set(&arrayIndex)
 		default:
@@ -185,30 +199,30 @@ func (r *ReadPropertyAck) Unmarshal(buf []byte) ([]byte, error) {
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("failed to read tag: %v", err)
+			return remaining, fmt.Errorf("failed to read tag: %w", err)
 		}
 		switch tag {
 		case 0:
 			remaining, err = r.objectIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading object-identifier: %v", err)
+				return remaining, fmt.Errorf("error reading object-identifier: %w", err)
 			}
 		case 1:
 			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
+				return remaining, fmt.Errorf("error reading property-identifier: %w", err)
 			}
 		case 2:
 			var arrayIndex encoding.Unsigned
 			remaining, err = arrayIndex.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-array-index: %v", err)
+				return remaining, fmt.Errorf("error reading property-array-index: %w", err)
 			}
 			r.propertyArrayIndex.Set(&arrayIndex)
 		case 3:
 			remaining, err = r.propertyValue.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-value: %v", err)
+				return remaining, fmt.Errorf("error reading property-value: %w", err)
 			}
 		default:
 			return remaining, fmt.Errorf("unexpected tag %v", tag)
@@ -217,26 +231,26 @@ func (r *ReadPropertyAck) Unmarshal(buf []byte) ([]byte, error) {
 	return remaining, nil
 }
 
-func (a *ReadPropertyAck) Marshal() ([]byte, error) {
+func (r *ReadPropertyAck) Marshal() ([]byte, error) {
 	result := make([]byte, 0)
-	tmp, err := a.objectIdentifier.MarshalTagged(0)
+	tmp, err := r.objectIdentifier.MarshalTagged(0)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, tmp...)
-	tmp, err = a.propertyIdentifier.MarshalTagged(1)
+	tmp, err = r.propertyIdentifier.MarshalTagged(1)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, tmp...)
-	if a.propertyArrayIndex.Present() {
-		tmp, err = a.propertyArrayIndex.Get().MarshalTagged(2)
+	if r.propertyArrayIndex.Present() {
+		tmp, err = r.propertyArrayIndex.Get().MarshalTagged(2)
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, tmp...)
 	}
-	tmp, err = a.propertyValue.MarshalTagged(3)
+	tmp, err = r.propertyValue.MarshalTagged(3)
 	if err != nil {
 		return nil, err
 	}

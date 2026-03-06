@@ -20,58 +20,48 @@ func (s *WritePropertyService) GetDevice(request []byte) *objectmodel.Device {
 
 func (s *WritePropertyService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
 	var req WritePropertyRequest
+	sendErr := func(class bacnet.ErrorClass, code bacnet.ErrorCode) {
+		if err := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
+			bacnet.ConfirmedServiceChoiceWriteProperty,
+			class, code,
+		); err != nil {
+			logger.Error("could not send error response: ", err)
+		}
+	}
+
 	_, err := req.Unmarshal(indication.Data)
 	if err != nil {
 		logger.Error("could not unmarshal WriteProperty request: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceWriteProperty,
-			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		sendErr(bacnet.ServicesError, bacnet.ServiceRequestDenied)
 		return
 	}
 	src, _ := s.serviceHandler.resolveObject(req.objectIdentifier.ObjType(), req.objectIdentifier.Instance())
 	if src == nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceWriteProperty,
-			bacnet.ObjectError, bacnet.UnknownObject,
-		)
+		sendErr(bacnet.ObjectError, bacnet.UnknownObject)
 		return
 	}
-	propId := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
-	prop := src.GetProperty(propId)
+	propID := bacnet.PropertyIdentifier(req.propertyIdentifier.Value())
+	prop := src.GetProperty(propID)
 	if prop == nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceWriteProperty,
-			bacnet.PropertyError, bacnet.UnknownProperty,
-		)
+		sendErr(bacnet.PropertyError, bacnet.UnknownProperty)
 		return
 	}
 	if !prop.IsWritable() {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceWriteProperty,
-			bacnet.PropertyError, bacnet.WriteAccessDenied,
-		)
+		sendErr(bacnet.PropertyError, bacnet.WriteAccessDenied)
 		return
 	}
 	if err := prop.UnmarshalValue(req.propertyValue.Value()); err != nil {
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceWriteProperty,
-			bacnet.PropertyError, bacnet.InvalidDataType,
-		)
+		sendErr(bacnet.PropertyError, bacnet.InvalidDataType)
 		return
 	}
 	// Trigger COV notifications if applicable.
 	if covSrc, ok := src.(covCapable); ok {
-		s.serviceHandler.CheckAndNotifyCOV(covSrc, propId)
+		s.serviceHandler.CheckAndNotifyCOV(covSrc, propID)
 	}
 	// SimpleAck
 	if err := s.serviceHandler.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceWriteProperty,
 		nil,
 	); err != nil {
@@ -92,36 +82,36 @@ func (r *WritePropertyRequest) Unmarshal(buf []byte) ([]byte, error) {
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("failed to read tag: %v", err)
+			return remaining, fmt.Errorf("failed to read tag: %w", err)
 		}
 		switch tag {
 		case 0:
 			remaining, err = r.objectIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading object-identifier: %v", err)
+				return remaining, fmt.Errorf("error reading object-identifier: %w", err)
 			}
 		case 1:
 			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-identifier: %v", err)
+				return remaining, fmt.Errorf("error reading property-identifier: %w", err)
 			}
 		case 2:
 			var arrayIndex encoding.Unsigned
 			remaining, err = arrayIndex.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-array-index: %v", err)
+				return remaining, fmt.Errorf("error reading property-array-index: %w", err)
 			}
 			r.propertyArrayIndex.Set(&arrayIndex)
 		case 3:
 			remaining, err = r.propertyValue.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-value: %v", err)
+				return remaining, fmt.Errorf("error reading property-value: %w", err)
 			}
 		case 4:
 			var prio encoding.Unsigned
 			remaining, err = prio.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading priority: %v", err)
+				return remaining, fmt.Errorf("error reading priority: %w", err)
 			}
 			r.priority.Set(&prio)
 		default:

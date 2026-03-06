@@ -8,16 +8,16 @@ import (
 )
 
 type RemoteDevice struct {
-	deviceObjectId        bacnet.BACnetObjectIdentifier
+	deviceObjectID        bacnet.BACnetObjectIdentifier
 	address               *bacnet.BACnetAddress
 	maxAPDULength         uint
 	segmentationSupported bool
-	vendorId              uint16
+	vendorID              uint16
 	announcementTime      time.Time
 }
 
-func (d *RemoteDevice) DeviceObjectId() bacnet.BACnetObjectIdentifier {
-	return d.deviceObjectId
+func (d *RemoteDevice) DeviceObjectID() bacnet.BACnetObjectIdentifier {
+	return d.deviceObjectID
 }
 
 func (d *RemoteDevice) Address() *bacnet.BACnetAddress {
@@ -32,8 +32,8 @@ func (d *RemoteDevice) SegmentationSupported() bool {
 	return d.segmentationSupported
 }
 
-func (d *RemoteDevice) VendorId() uint16 {
-	return d.vendorId
+func (d *RemoteDevice) VendorID() uint16 {
+	return d.vendorID
 }
 
 func (d *RemoteDevice) AnnouncementTime() time.Time {
@@ -41,19 +41,19 @@ func (d *RemoteDevice) AnnouncementTime() time.Time {
 }
 
 func NewRemoteDevice(
-	deviceObjectId bacnet.BACnetObjectIdentifier,
+	deviceObjectID bacnet.BACnetObjectIdentifier,
 	address *bacnet.BACnetAddress,
 	maxAPDULength uint,
 	segmentationSupported bool,
-	vendorId uint16,
+	vendorID uint16,
 	announcementTime time.Time,
 ) RemoteDevice {
 	return RemoteDevice{
-		deviceObjectId:        deviceObjectId,
+		deviceObjectID:        deviceObjectID,
 		address:               address,
 		maxAPDULength:         maxAPDULength,
 		segmentationSupported: segmentationSupported,
-		vendorId:              vendorId,
+		vendorID:              vendorID,
 		announcementTime:      announcementTime,
 	}
 }
@@ -91,7 +91,7 @@ func (c *RemoteDeviceCache) GetByInstance(instance uint32) *RemoteDevice {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, d := range c.remoteDevices {
-		if uint32(d.deviceObjectId)&0x3fffff == instance {
+		if uint32(d.deviceObjectID)&0x3fffff == instance {
 			return d
 		}
 	}

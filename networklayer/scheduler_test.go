@@ -2,21 +2,28 @@ package networklayer
 
 import "testing"
 
+func mustSchedule(t *testing.T, scheduler *WRRScheduler[string], priority int, v string) {
+	t.Helper()
+	if err := scheduler.Schedule(priority, v); err != nil {
+		t.Fatalf("Schedule(%d, %q): %v", priority, v, err)
+	}
+}
+
 func TestScheduler(t *testing.T) {
 	scheduler := NewWRRScheduler[string](5, 2, 3)
 	// from the example on wikipedia
-	scheduler.Schedule(0, "A")
-	scheduler.Schedule(0, "B")
-	scheduler.Schedule(0, "C")
-	scheduler.Schedule(0, "D")
-	scheduler.Schedule(0, "E")
-	scheduler.Schedule(0, "F")
-	scheduler.Schedule(0, "G")
-	scheduler.Schedule(1, "U")
-	scheduler.Schedule(1, "V")
-	scheduler.Schedule(1, "W")
-	scheduler.Schedule(2, "X")
-	scheduler.Schedule(2, "Y")
+	mustSchedule(t, scheduler, 0, "A")
+	mustSchedule(t, scheduler, 0, "B")
+	mustSchedule(t, scheduler, 0, "C")
+	mustSchedule(t, scheduler, 0, "D")
+	mustSchedule(t, scheduler, 0, "E")
+	mustSchedule(t, scheduler, 0, "F")
+	mustSchedule(t, scheduler, 0, "G")
+	mustSchedule(t, scheduler, 1, "U")
+	mustSchedule(t, scheduler, 1, "V")
+	mustSchedule(t, scheduler, 1, "W")
+	mustSchedule(t, scheduler, 2, "X")
+	mustSchedule(t, scheduler, 2, "Y")
 
 	result := []string{}
 	for i := 0; i < 12; i++ {

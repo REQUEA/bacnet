@@ -11,27 +11,27 @@ import (
 	"github.com/REQUEA/bacnet/objectmodel"
 )
 
-type TransactionId struct {
+type TransactionID struct {
 	Address  *bacnet.BACnetAddress
-	InvokeId uint
+	InvokeID uint
 }
 
-func NewTransactionId(addr *bacnet.BACnetAddress, invokeId uint) TransactionId {
-	return TransactionId{
+func NewTransactionID(addr *bacnet.BACnetAddress, invokeID uint) TransactionID {
+	return TransactionID{
 		Address:  addr,
-		InvokeId: invokeId,
+		InvokeID: invokeID,
 	}
 }
 
-func (i *TransactionId) Equal(o *TransactionId) bool {
+func (i *TransactionID) Equal(o *TransactionID) bool {
 	if i.Address != nil && o.Address != nil {
-		return i.InvokeId == o.InvokeId && i.Address.Equal(o.Address)
+		return i.InvokeID == o.InvokeID && i.Address.Equal(o.Address)
 	}
-	return i.InvokeId == o.InvokeId && i.Address != o.Address
+	return i.InvokeID == o.InvokeID && i.Address != o.Address
 }
 
-func (i *TransactionId) String() string {
-	return fmt.Sprintf("{ Address: %s, InvokeId: %d }", i.Address.String(), i.InvokeId)
+func (i *TransactionID) String() string {
+	return fmt.Sprintf("{ Address: %s, InvokeID: %d }", i.Address.String(), i.InvokeID)
 }
 
 func (t *Transaction) DuplicateInWindow(seqA uint) bool {
@@ -53,12 +53,11 @@ type Segment struct {
 
 type TransactionTimer struct {
 	sync.Mutex
-	timer      *time.Timer
-	value      time.Duration
-	genCounter int
-	stopped    bool
-	restarted  bool
-	onTimeout  func()
+	timer     *time.Timer
+	value     time.Duration
+	stopped   bool
+	restarted bool
+	onTimeout func()
 }
 
 func NewTransactionTimer(value time.Duration, onTimeout func()) *TransactionTimer {
@@ -116,11 +115,7 @@ func (t *TransactionTimer) Reset() {
 func (t *TransactionTimer) Restart(force bool) bool {
 	t.Lock()
 	defer t.Unlock()
-	result := true
-	if t.stopped {
-		// the timer has already fired.
-		result = false
-	}
+	result := !t.stopped
 	if result || force {
 		t.timer.Reset(t.value)
 		t.restarted = true
@@ -134,7 +129,7 @@ type TransactionEvent interface {
 }
 
 type Transaction struct {
-	Id                    *TransactionId
+	ID                    *TransactionID
 	Device                *objectmodel.Device
 	Source                *bacnet.BACnetAddress
 	Dest                  *bacnet.BACnetAddress
@@ -167,7 +162,7 @@ func (t *Transaction) Start() {
 		for e := range t.events {
 			e.Exec()
 		}
-		logger.Trace("end of transaction ", t.Id.String())
+		logger.Trace("end of transaction ", t.ID.String())
 	}()
 }
 

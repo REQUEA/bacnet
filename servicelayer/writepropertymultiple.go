@@ -32,36 +32,36 @@ type WritePropertyMultipleRequest struct {
 }
 
 func (r *WritePropertyMultipleRequest) Marshal() ([]byte, error) {
-	var result []byte
+	var result []byte //nolint:prealloc
 	for _, spec := range r.WriteAccessSpecs {
 		objIDBytes, err := spec.ObjectIdentifier.MarshalTagged(0)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal object-identifier: %v", err)
+			return nil, fmt.Errorf("could not marshal object-identifier: %w", err)
 		}
 		result = append(result, objIDBytes...)
 		result = append(result, openingTag(1))
 		for _, pv := range spec.ListOfProperties {
-			propIdBytes, err := pv.PropertyIdentifier.MarshalTagged(0)
+			propIDBytes, err := pv.PropertyIdentifier.MarshalTagged(0)
 			if err != nil {
-				return nil, fmt.Errorf("could not marshal property-identifier: %v", err)
+				return nil, fmt.Errorf("could not marshal property-identifier: %w", err)
 			}
-			result = append(result, propIdBytes...)
+			result = append(result, propIDBytes...)
 			if pv.PropertyArrayIndex.Present() {
 				idxBytes, err := pv.PropertyArrayIndex.Get().MarshalTagged(1)
 				if err != nil {
-					return nil, fmt.Errorf("could not marshal property-array-index: %v", err)
+					return nil, fmt.Errorf("could not marshal property-array-index: %w", err)
 				}
 				result = append(result, idxBytes...)
 			}
 			valBytes, err := pv.Value.MarshalTagged(2)
 			if err != nil {
-				return nil, fmt.Errorf("could not marshal property-value: %v", err)
+				return nil, fmt.Errorf("could not marshal property-value: %w", err)
 			}
 			result = append(result, valBytes...)
 			if pv.Priority.Present() {
 				prioBytes, err := pv.Priority.Get().MarshalTagged(3)
 				if err != nil {
-					return nil, fmt.Errorf("could not marshal priority: %v", err)
+					return nil, fmt.Errorf("could not marshal priority: %w", err)
 				}
 				result = append(result, prioBytes...)
 			}
@@ -79,14 +79,14 @@ func (r *WritePropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 		// objectIdentifier [0]
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("expected object-identifier tag: %v", err)
+			return remaining, fmt.Errorf("expected object-identifier tag: %w", err)
 		}
 		if tag != 0 {
 			return remaining, fmt.Errorf("expected context tag 0 for object-identifier, got %d", tag)
 		}
 		remaining, err = spec.ObjectIdentifier.Unmarshal(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("could not unmarshal object-identifier: %v", err)
+			return remaining, fmt.Errorf("could not unmarshal object-identifier: %w", err)
 		}
 
 		// listOfProperties [1]: opening tag
@@ -102,14 +102,14 @@ func (r *WritePropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 			// propertyIdentifier [0]
 			tag, err = encoding.ReadTag(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading property-identifier tag: %v", err)
+				return remaining, fmt.Errorf("error reading property-identifier tag: %w", err)
 			}
 			if tag != 0 {
 				return remaining, fmt.Errorf("expected context tag 0 for property-identifier, got %d", tag)
 			}
 			remaining, err = pv.PropertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("could not unmarshal property-identifier: %v", err)
+				return remaining, fmt.Errorf("could not unmarshal property-identifier: %w", err)
 			}
 
 			// optional arrayIndex [1]
@@ -119,7 +119,7 @@ func (r *WritePropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 					var arrayIdx encoding.Unsigned
 					remaining, err = arrayIdx.Unmarshal(remaining)
 					if err != nil {
-						return remaining, fmt.Errorf("could not unmarshal property-array-index: %v", err)
+						return remaining, fmt.Errorf("could not unmarshal property-array-index: %w", err)
 					}
 					pv.PropertyArrayIndex.Set(&arrayIdx)
 				}
@@ -132,7 +132,7 @@ func (r *WritePropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 			}
 			remaining, err = pv.Value.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("could not unmarshal property-value: %v", err)
+				return remaining, fmt.Errorf("could not unmarshal property-value: %w", err)
 			}
 
 			// optional priority [3]
@@ -142,7 +142,7 @@ func (r *WritePropertyMultipleRequest) Unmarshal(buf []byte) ([]byte, error) {
 					var prio encoding.Unsigned
 					remaining, err = prio.Unmarshal(remaining)
 					if err != nil {
-						return remaining, fmt.Errorf("could not unmarshal priority: %v", err)
+						return remaining, fmt.Errorf("could not unmarshal priority: %w", err)
 					}
 					pv.Priority.Set(&prio)
 				}
@@ -173,14 +173,20 @@ func (s *WritePropertyMultipleService) GetDevice(request []byte) *objectmodel.De
 
 func (s *WritePropertyMultipleService) HandleConfServIndication(indication *applicationlayer.APDUIndication) {
 	var req WritePropertyMultipleRequest
+	sendErr := func(class bacnet.ErrorClass, code bacnet.ErrorCode) {
+		if err := s.serviceHandler.applicationEntity.SendErrorResponse(
+			indication.InvokeID, indication.Source,
+			bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
+			class, code,
+		); err != nil {
+			logger.Error("could not send error response: ", err)
+		}
+	}
+
 	_, err := req.Unmarshal(indication.Data)
 	if err != nil {
 		logger.Error("could not unmarshal WritePropertyMultiple request: ", err)
-		s.serviceHandler.applicationEntity.SendErrorResponse(
-			indication.InvokeId, indication.Source,
-			bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
-			bacnet.ServicesError, bacnet.ServiceRequestDenied,
-		)
+		sendErr(bacnet.ServicesError, bacnet.ServiceRequestDenied)
 		return
 	}
 
@@ -189,44 +195,32 @@ func (s *WritePropertyMultipleService) HandleConfServIndication(indication *appl
 		prop   objectmodel.Property
 		data   []byte
 		src    propertySource
-		propId bacnet.PropertyIdentifier
+		propID bacnet.PropertyIdentifier
 	}
 
 	var writes []pendingWrite
 	for _, spec := range req.WriteAccessSpecs {
 		src, _ := s.serviceHandler.resolveObject(spec.ObjectIdentifier.ObjType(), spec.ObjectIdentifier.Instance())
 		if src == nil {
-			s.serviceHandler.applicationEntity.SendErrorResponse(
-				indication.InvokeId, indication.Source,
-				bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
-				bacnet.ObjectError, bacnet.UnknownObject,
-			)
+			sendErr(bacnet.ObjectError, bacnet.UnknownObject)
 			return
 		}
 		for _, pv := range spec.ListOfProperties {
-			propId := bacnet.PropertyIdentifier(pv.PropertyIdentifier.Value())
-			prop := src.GetProperty(propId)
+			propID := bacnet.PropertyIdentifier(pv.PropertyIdentifier.Value())
+			prop := src.GetProperty(propID)
 			if prop == nil {
-				s.serviceHandler.applicationEntity.SendErrorResponse(
-					indication.InvokeId, indication.Source,
-					bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
-					bacnet.PropertyError, bacnet.UnknownProperty,
-				)
+				sendErr(bacnet.PropertyError, bacnet.UnknownProperty)
 				return
 			}
 			if !prop.IsWritable() {
-				s.serviceHandler.applicationEntity.SendErrorResponse(
-					indication.InvokeId, indication.Source,
-					bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
-					bacnet.PropertyError, bacnet.WriteAccessDenied,
-				)
+				sendErr(bacnet.PropertyError, bacnet.WriteAccessDenied)
 				return
 			}
 			writes = append(writes, pendingWrite{
 				prop:   prop,
 				data:   pv.Value.Value(),
 				src:    src,
-				propId: propId,
+				propID: propID,
 			})
 		}
 	}
@@ -234,20 +228,16 @@ func (s *WritePropertyMultipleService) HandleConfServIndication(indication *appl
 	// Apply all writes.
 	for _, w := range writes {
 		if err := w.prop.UnmarshalValue(w.data); err != nil {
-			s.serviceHandler.applicationEntity.SendErrorResponse(
-				indication.InvokeId, indication.Source,
-				bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
-				bacnet.PropertyError, bacnet.InvalidDataType,
-			)
+			sendErr(bacnet.PropertyError, bacnet.InvalidDataType)
 			return
 		}
 		if covSrc, ok := w.src.(covCapable); ok {
-			s.serviceHandler.CheckAndNotifyCOV(covSrc, w.propId)
+			s.serviceHandler.CheckAndNotifyCOV(covSrc, w.propID)
 		}
 	}
 
 	if err := s.serviceHandler.applicationEntity.SendConfServResponse(
-		indication.InvokeId, indication.Source,
+		indication.InvokeID, indication.Source,
 		bacnet.ConfirmedServiceChoiceWritePropertyMultiple,
 		nil,
 	); err != nil {

@@ -11,20 +11,20 @@ func (r *ReadRangeRequest) Marshal() ([]byte, error) {
 
 	b, err := r.objectIdentifier.MarshalTagged(0)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal objectIdentifier: %v", err)
+		return nil, fmt.Errorf("could not marshal objectIdentifier: %w", err)
 	}
 	result = append(result, b...)
 
 	b, err = r.propertyIdentifier.MarshalTagged(1)
 	if err != nil {
-		return nil, fmt.Errorf("could not marshal propertyIdentifier: %v", err)
+		return nil, fmt.Errorf("could not marshal propertyIdentifier: %w", err)
 	}
 	result = append(result, b...)
 
 	if r.propertyArrayIndex.Present() {
 		b, err = r.propertyArrayIndex.Get().MarshalTagged(2)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal propertyArrayIndex: %v", err)
+			return nil, fmt.Errorf("could not marshal propertyArrayIndex: %w", err)
 		}
 		result = append(result, b...)
 	}
@@ -34,12 +34,12 @@ func (r *ReadRangeRequest) Marshal() ([]byte, error) {
 		result = append(result, openingTag(3))
 		b, err = p.referenceIndex.MarshalPrimitive()
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal byPosition.referenceIndex: %v", err)
+			return nil, fmt.Errorf("could not marshal byPosition.referenceIndex: %w", err)
 		}
 		result = append(result, b...)
 		b, err = p.count.MarshalPrimitive()
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal byPosition.count: %v", err)
+			return nil, fmt.Errorf("could not marshal byPosition.count: %w", err)
 		}
 		result = append(result, b...)
 		result = append(result, closingTag(3))
@@ -48,12 +48,12 @@ func (r *ReadRangeRequest) Marshal() ([]byte, error) {
 		result = append(result, openingTag(6))
 		b, err = p.referenceSequenceNumber.MarshalPrimitive()
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal bySequenceNumber.referenceSequenceNumber: %v", err)
+			return nil, fmt.Errorf("could not marshal bySequenceNumber.referenceSequenceNumber: %w", err)
 		}
 		result = append(result, b...)
 		b, err = p.count.MarshalPrimitive()
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal bySequenceNumber.count: %v", err)
+			return nil, fmt.Errorf("could not marshal bySequenceNumber.count: %w", err)
 		}
 		result = append(result, b...)
 		result = append(result, closingTag(6))
@@ -62,12 +62,12 @@ func (r *ReadRangeRequest) Marshal() ([]byte, error) {
 		result = append(result, openingTag(7))
 		b, err = p.referenceTime.MarshalPrimitive()
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal byTime.referenceTime: %v", err)
+			return nil, fmt.Errorf("could not marshal byTime.referenceTime: %w", err)
 		}
 		result = append(result, b...)
 		b, err = p.count.MarshalPrimitive()
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal byTime.count: %v", err)
+			return nil, fmt.Errorf("could not marshal byTime.count: %w", err)
 		}
 		result = append(result, b...)
 		result = append(result, closingTag(7))
@@ -138,32 +138,32 @@ type ReadRangeRequest struct {
 
 func (r *ReadRangeRequest) Unmarshal(buf []byte) ([]byte, error) {
 	remaining := buf
-	objIdFound := false
-	propIdFound := false
+	objIDFound := false
+	propIDFound := false
 	rangeEltCount := 0
 	for len(remaining) > 0 {
 		tag, err := encoding.ReadTag(remaining)
 		if err != nil {
-			return remaining, fmt.Errorf("failed to read tag: %v", err)
+			return remaining, fmt.Errorf("failed to read tag: %w", err)
 		}
 		switch tag {
 		case 0:
 			remaining, err = r.objectIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading objectIdentifier: %v", err)
+				return remaining, fmt.Errorf("error reading objectIdentifier: %w", err)
 			}
-			objIdFound = true
+			objIDFound = true
 		case 1:
 			remaining, err = r.propertyIdentifier.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading propertyIdentifier: %v", err)
+				return remaining, fmt.Errorf("error reading propertyIdentifier: %w", err)
 			}
-			propIdFound = true
+			propIDFound = true
 		case 2:
 			var propertyArrayIndex encoding.Unsigned
 			remaining, err = propertyArrayIndex.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading propertyArrayIndex: %v", err)
+				return remaining, fmt.Errorf("error reading propertyArrayIndex: %w", err)
 			}
 			r.propertyArrayIndex.Set(&propertyArrayIndex)
 		case 3:
@@ -174,7 +174,7 @@ func (r *ReadRangeRequest) Unmarshal(buf []byte) ([]byte, error) {
 			var rangeByPosition byPosition
 			remaining, err = rangeByPosition.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading range.byPosition field: %v", err)
+				return remaining, fmt.Errorf("error reading range.byPosition field: %w", err)
 			}
 			if len(remaining) < 1 || remaining[0] != closingTag(3) {
 				return remaining, fmt.Errorf("expected closing tag [3] for byPosition")
@@ -190,7 +190,7 @@ func (r *ReadRangeRequest) Unmarshal(buf []byte) ([]byte, error) {
 			var rangeBySequenceNumber bySequenceNumber
 			remaining, err = rangeBySequenceNumber.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading range.bySequenceNumber field: %v", err)
+				return remaining, fmt.Errorf("error reading range.bySequenceNumber field: %w", err)
 			}
 			if len(remaining) < 1 || remaining[0] != closingTag(6) {
 				return remaining, fmt.Errorf("expected closing tag [6] for bySequenceNumber")
@@ -206,7 +206,7 @@ func (r *ReadRangeRequest) Unmarshal(buf []byte) ([]byte, error) {
 			var rangeTime byTime
 			remaining, err = rangeTime.Unmarshal(remaining)
 			if err != nil {
-				return remaining, fmt.Errorf("error reading range.byTime field: %v", err)
+				return remaining, fmt.Errorf("error reading range.byTime field: %w", err)
 			}
 			if len(remaining) < 1 || remaining[0] != closingTag(7) {
 				return remaining, fmt.Errorf("expected closing tag [7] for byTime")
@@ -218,10 +218,10 @@ func (r *ReadRangeRequest) Unmarshal(buf []byte) ([]byte, error) {
 			return remaining, fmt.Errorf("unexpected tag %v", tag)
 		}
 	}
-	if !objIdFound {
+	if !objIDFound {
 		return remaining, fmt.Errorf("missing objectIdentifier")
 	}
-	if !propIdFound {
+	if !propIDFound {
 		return remaining, fmt.Errorf("missing propertyIdentifier")
 	}
 	if rangeEltCount > 1 {

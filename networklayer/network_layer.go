@@ -11,7 +11,7 @@ import (
 )
 
 type Port struct {
-	Id            int // used for management, cannot be 0
+	ID            int // used for management, cannot be 0
 	Dnet          bacnet.NetworkNumber
 	portInfo      []byte
 	networkEntity NetworkEntity
@@ -20,8 +20,8 @@ type Port struct {
 
 func NewPort(id, dnet int, dlPort linklayer.DatalinkPort) *Port {
 	return &Port{
-		Id:           id,
-		Dnet:         bacnet.NetworkNumber(dnet),
+		ID:           id,
+		Dnet:         bacnet.NetworkNumber(dnet), //nolint:gosec
 		datalinkPort: dlPort,
 	}
 }
@@ -105,30 +105,30 @@ func (e *CommonNetworkEntity) SetAPDUHandler(h APDUHandler) {
 	e.apduHandler = h
 }
 
-func (e *CommonNetworkEntity) NUnitDataIndication(source *Port, dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
+func (e *CommonNetworkEntity) NUnitDataIndication(_ *Port, _ bacnet.MAC, _ bacnet.MAC, _ []byte) error {
 	return nil
 }
 
-func (e *CommonNetworkEntity) NUnitDataRequest(dadr *bacnet.BACnetAddress, der bool, priority NPDUPriority, payload []byte) error {
+func (e *CommonNetworkEntity) NUnitDataRequest(_ *bacnet.BACnetAddress, _ bool, _ NPDUPriority, _ []byte) error {
 	return nil
 }
 
-func (e *CommonNetworkEntity) NReleaseRequest(dadr *bacnet.BACnetAddress) error {
+func (e *CommonNetworkEntity) NReleaseRequest(_ *bacnet.BACnetAddress) error {
 	return nil
 }
 
-func (ne *CommonNetworkEntity) updateRoutingTable(net bacnet.NetworkNumber, nextHop bacnet.MAC, port *Port) {
+func (e *CommonNetworkEntity) updateRoutingTable(net bacnet.NetworkNumber, nextHop bacnet.MAC, port *Port) {
 	logger.Trace(
-		"updating routing table with entry [", net, ", ", nextHop, ", ", port.Id, "]",
+		"updating routing table with entry [", net, ", ", nextHop, ", ", port.ID, "]",
 	)
-	entry, ok := ne.routingTable[net]
+	entry, ok := e.routingTable[net]
 	if !ok {
 		entry = RoutingTableEntry{NextHop: nextHop, Port: port}
 	} else {
 		entry.NextHop = nextHop
 		entry.Port = port
 	}
-	ne.routingTable[net] = entry
+	e.routingTable[net] = entry
 }
 
 type RoutingTableEntry struct {
@@ -452,7 +452,7 @@ func (npdu *NPDU) UnmarshalBinary(data []byte) error {
 		if npdu.NetworkMessageType > 0x80 {
 			err := binary.Read(buf, binary.BigEndian, &npdu.VendorID)
 			if err != nil {
-				return fmt.Errorf("read NPDU VendorId: %w", err)
+				return fmt.Errorf("read NPDU VendorID: %w", err)
 			}
 		}
 	}

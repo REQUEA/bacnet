@@ -32,8 +32,8 @@ type BACnetIPMAC struct {
 func (m *BACnetIPMAC) GetBytes() []byte {
 	result := &bytes.Buffer{}
 	// TODO: check if this is also correct for IPv6
-	result.Write(m.IP.To4())
-	_ = binary.Write(result, binary.BigEndian, uint16(m.Port))
+	result.Write(m.To4())
+	_ = binary.Write(result, binary.BigEndian, uint16(m.Port)) //nolint:gosec
 	return result.Bytes()
 }
 
@@ -287,8 +287,8 @@ func (bvlc *BVLC) MarshalBinary() ([]byte, error) {
 	b := &bytes.Buffer{}
 	b.WriteByte(byte(bvlc.Type))
 	b.WriteByte(byte(bvlc.Function))
-	len := uint16(4 + len(bvlc.data)) //len includes Type,Function and itself
-	_ = binary.Write(b, binary.BigEndian, len)
+	pktLen := uint16(4 + len(bvlc.data)) //nolint:gosec // pktLen includes Type, Function and itself
+	_ = binary.Write(b, binary.BigEndian, pktLen)
 	b.Write(bvlc.data)
 	return b.Bytes(), nil
 }

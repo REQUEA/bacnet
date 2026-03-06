@@ -38,7 +38,7 @@ func main() {
 	logger.SetLogger(&logAdapter{log})
 
 	// Build the local device object.
-	id := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | uint32(*instance))
+	id := bacnet.BACnetObjectIdentifier(uint32(bacnet.BacnetDevice)<<22 | uint32(*instance)) //nolint:gosec
 	devObj := objectmodel.NewDeviceObject(
 		id, *name, bacnet.DeviceStatusOperational,
 		"REQUEA", 0, *name, "1.0", "1.0",
@@ -106,5 +106,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 	log.Info("shutting down")
-	conn.Close()
+	if err := conn.Close(); err != nil {
+		log.Error("close connection: ", err)
+	}
 }

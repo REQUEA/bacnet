@@ -55,15 +55,15 @@ func TestParseVarLenNotExtendedBelow254(t *testing.T) {
 }
 
 func TestParseVarLenNotExtendedBelow65536(t *testing.T) {
-	len := 4087
+	dataLen := 4087
 	buf := []byte{
 		byte(5)<<tagNumberShift | 5,
 		254, // length is coded on two bytes
-		uint8((len & 0xff00) >> 8),
-		uint8(len & 0xff),
+		uint8((dataLen & 0xff00) >> 8),
+		uint8(dataLen & 0xff),
 	}
-	expected := make([]byte, len)
-	for i := range len {
+	expected := make([]byte, dataLen)
+	for i := range dataLen {
 		expected[i] = byte(i)
 	}
 	buf = append(buf, expected...)
@@ -84,17 +84,17 @@ func TestParseVarLenNotExtendedBelow65536(t *testing.T) {
 }
 
 func TestParseVarLenNotExtended65536AndAbove(t *testing.T) {
-	len := 1284325
+	dataLen := 1284325
 	buf := []byte{
 		byte(5)<<tagNumberShift | 5,
 		255, // length is coded on four bytes
-		uint8((len & 0xff000000) >> 24),
-		uint8((len & 0x00ff0000) >> 16),
-		uint8((len & 0x0000ff00) >> 8),
-		uint8(len & 0x000000ff),
+		uint8((dataLen & 0xff000000) >> 24),
+		uint8((dataLen & 0x00ff0000) >> 16),
+		uint8((dataLen & 0x0000ff00) >> 8),
+		uint8(dataLen & 0x000000ff),
 	}
-	expected := make([]byte, len)
-	for i := range len {
+	expected := make([]byte, dataLen)
+	for i := range dataLen {
 		expected[i] = byte(i)
 	}
 	buf = append(buf, expected...)
@@ -139,11 +139,11 @@ func TestParseVarLenExtendedBelow5(t *testing.T) {
 }
 
 func TestParseVarLenExtendedBelow254(t *testing.T) {
-	len := 42
+	dataLen := 42
 	buf := []byte{
 		0xf5,
 		0x66, // extended tag
-		byte(len & 0xff),
+		byte(dataLen & 0xff),
 	}
 	expected := make([]byte, 42)
 	for i := range 42 {
@@ -167,16 +167,16 @@ func TestParseVarLenExtendedBelow254(t *testing.T) {
 }
 
 func TestParseVarLenExtendedBelow65536(t *testing.T) {
-	len := 4087
+	dataLen := 4087
 	buf := []byte{
 		0xf5,
 		0x66, // extended tag
 		254,  // length is coded on two bytes
-		uint8((len & 0xff00) >> 8),
-		uint8(len & 0xff),
+		uint8((dataLen & 0xff00) >> 8),
+		uint8(dataLen & 0xff),
 	}
-	expected := make([]byte, len)
-	for i := range len {
+	expected := make([]byte, dataLen)
+	for i := range dataLen {
 		expected[i] = byte(i)
 	}
 	buf = append(buf, expected...)
@@ -197,18 +197,18 @@ func TestParseVarLenExtendedBelow65536(t *testing.T) {
 }
 
 func TestParseVarLenExtended65536AndAbove(t *testing.T) {
-	len := 1284325
+	dataLen := 1284325
 	buf := []byte{
 		0xf5,
 		0x66, // extended tag
 		255,  // length is coded on four bytes
-		uint8((len & 0xff000000) >> 24),
-		uint8((len & 0x00ff0000) >> 16),
-		uint8((len & 0x0000ff00) >> 8),
-		uint8(len & 0x000000ff),
+		uint8((dataLen & 0xff000000) >> 24),
+		uint8((dataLen & 0x00ff0000) >> 16),
+		uint8((dataLen & 0x0000ff00) >> 8),
+		uint8(dataLen & 0x000000ff),
 	}
-	expected := make([]byte, len)
-	for i := range len {
+	expected := make([]byte, dataLen)
+	for i := range dataLen {
 		expected[i] = byte(i)
 	}
 	buf = append(buf, expected...)

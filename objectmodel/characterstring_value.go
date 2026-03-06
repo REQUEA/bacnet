@@ -42,7 +42,7 @@ func NewCharacterStringValueObject(
 
 // Object interface implementation.
 
-func (csv *CharacterStringValueObject) GetOwner() *Device { return csv.owner }
+func (csv *CharacterStringValueObject) GetOwner() *Device  { return csv.owner }
 func (csv *CharacterStringValueObject) setOwner(d *Device) { csv.owner = d }
 
 func (csv *CharacterStringValueObject) GetProperty(id bacnet.PropertyIdentifier) Property {

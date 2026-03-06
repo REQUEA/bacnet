@@ -60,7 +60,7 @@ func NewDeviceObject(
 	objectName string,
 	deviceStatus bacnet.BACnetDeviceStatus,
 	vendorName string,
-	vendorId uint16,
+	vendorID uint16,
 	modelName string,
 	firmwareRevision string,
 	applicationSoftwareVersion string,
@@ -76,14 +76,14 @@ func NewDeviceObject(
 	properties := make(map[bacnet.PropertyIdentifier]Property)
 
 	properties[bacnet.ObjectIdentifier] = NewObjectIdentifierProperty(
-		true, uint16(id>>22), uint32(id)&0x3fffff,
+		true, uint16(id>>22), uint32(id)&0x3fffff, //nolint:gosec
 	)
 	properties[bacnet.ObjectName] = NewCharacterStringProperty(false, objectName)
 	properties[bacnet.ObjectTypeProp] = NewEnumeratedProperty(true, uint32(bacnet.BacnetDevice))
 
 	properties[bacnet.SystemStatus] = NewEnumeratedProperty(false, uint32(deviceStatus))
 	properties[bacnet.VendorName] = NewCharacterStringProperty(false, vendorName)
-	properties[bacnet.VendorIdentifier] = NewUnsigned16Property(true, vendorId)
+	properties[bacnet.VendorIdentifier] = NewUnsigned16Property(true, vendorID)
 	properties[bacnet.ModelName] = NewCharacterStringProperty(true, modelName)
 	properties[bacnet.FirmwareRevision] = NewCharacterStringProperty(false, firmwareRevision)
 	properties[bacnet.ApplicationSoftwareVersion] = NewCharacterStringProperty(true, applicationSoftwareVersion)
@@ -92,9 +92,9 @@ func NewDeviceObject(
 	properties[bacnet.ProtocolServicesSupported] = NewServiceSupportedProperty(true, servicesSupported...)
 	properties[bacnet.ProtocolObjectTypesSupported] = NewObjectTypesSupportedProperty(true, objectTypesSupported...)
 	objectList := NewBACnetArrayProperty[*encoding.BACnetObjectIdentifier](true)
-	selfId := &encoding.BACnetObjectIdentifier{}
-	selfId.SetFromValues(uint16(id>>22), uint32(id)&0x3fffff)
-	objectList.value.Append(selfId)
+	selfID := &encoding.BACnetObjectIdentifier{}
+	selfID.SetFromValues(uint16(id>>22), uint32(id)&0x3fffff) //nolint:gosec
+	objectList.value.Append(selfID)
 	properties[bacnet.ObjectList] = objectList
 	properties[bacnet.MaxApduLengthAccepted] = NewUnsignedProperty(true, maxApduLenAccepted)
 	properties[bacnet.SegmentationSupported] = NewEnumeratedProperty(true, uint32(segmentationSupported))
