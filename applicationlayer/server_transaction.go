@@ -23,6 +23,10 @@ type ServerTransaction struct {
 	maxPduLength   int
 	serviceChoice  bacnet.BACnetConfirmedServiceChoice
 	lastSentSeqNum uint
+
+	// Consistency state (set from the first segment)
+	initialMaxSegs int
+	initialMaxResp int
 }
 
 func NewServerTransaction(id *TransactionID) *ServerTransaction {
@@ -120,6 +124,9 @@ func (s *ServerTransactionIdleState) HandleConfirmedServiceRequestPdu(
 	// TODO add case where segmentation is not supported
 	if header.SequenceNumber == 0 {
 		if header.ProposedWindowSize > 0 && header.ProposedWindowSize < 128 {
+			tr.initialMaxSegs = header.MaxSegs
+			tr.initialMaxResp = header.MaxResp
+
 			tr.ActualWindowSize = min(tr.MaxSegmentsAccepted, header.ProposedWindowSize)
 			tr.ProposedWindowSize = header.ProposedWindowSize
 
@@ -224,7 +231,28 @@ func (s *ServerTransactionSegmentedRequestState) HandleConfirmedServiceRequestPd
 	data []byte,
 ) {
 	tr := s.transaction
-	// TODO: check that the data_attributes are the same than the first segment
+	// Check APDU attribute consistency with the initial segment.
+	if header.MaxSegs != tr.initialMaxSegs ||
+		header.MaxResp != tr.initialMaxResp {
+		tr.SegmentTimer.Stop()
+		abortPdu := &AbortHeader{
+			SentByServer: true,
+			InvokeID:     uint8(tr.ID.InvokeID), //nolint:gosec
+			AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+		}
+		abortBytes, err := abortPdu.Marshal()
+		if err != nil {
+			logger.Error("could not marshal abort-pdu: ", err)
+		} else {
+			err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+				tr.Source, false, networklayer.NormalPriority, abortBytes)
+			if err != nil {
+				logger.Error("error when sending abort-pdu: ", err)
+			}
+		}
+		tr.applicationEntity.removeServerTransaction(tr.ID)
+		return
+	}
 	if header.Flags.SegmentedRequest {
 		if header.SequenceNumber == (tr.LastSequenceNumber+1)%256 {
 			segment := &Segment{
@@ -569,12 +597,11 @@ func (s *ServerTransactionSegmentedResponseState) HandleConfirmedServiceRequestP
 	_ []byte,
 ) {
 	// UnexpectedPDU_Received
-	// TODO: check security parameters identical to initial PDU
 	tr := s.transaction
 	abortPdu := &AbortHeader{
 		SentByServer: true,
 		InvokeID:     uint8(tr.ID.InvokeID), //nolint:gosec
-		AbortReason:  uint8(bacnet.Other),
+		AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
 	}
 	abortBytes, err := abortPdu.Marshal()
 	if err != nil {

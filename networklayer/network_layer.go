@@ -157,13 +157,6 @@ const (
 	EstablishConnectionToNetwork  NetworkMessageType = 0x08
 	DisconnectConnectionToNetwork NetworkMessageType = 0x09
 	ChallengeRequest              NetworkMessageType = 0x0A
-	SecurityPayload               NetworkMessageType = 0x0B
-	SecurityResponse              NetworkMessageType = 0x0C
-	RequestKeyUpdate              NetworkMessageType = 0x0D
-	UpdateKeySet                  NetworkMessageType = 0x0E
-	UpdateDistributionKey         NetworkMessageType = 0x0F
-	RequestMasterKey              NetworkMessageType = 0x10
-	SetMasterKey                  NetworkMessageType = 0x11
 	WhatIsNetworkNumber           NetworkMessageType = 0x12
 	NetworkNumberIs               NetworkMessageType = 0x13
 )

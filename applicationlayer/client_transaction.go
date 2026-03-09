@@ -28,6 +28,9 @@ type ClientTransaction struct {
 	future                *ConfServFuture
 	lastSentSeqNum        uint
 	expectedReply         bool
+
+	// Response consistency state (set from first response segment)
+	initialResponseServiceChoice bacnet.BACnetConfirmedServiceChoice
 }
 
 func NewClientTransaction(id *TransactionID) *ClientTransaction {
@@ -342,7 +345,9 @@ func (s *ClientTransactionAwaitConfirmationState) HandleComplexAckPdu(
 	tr := s.transaction
 	if header.Flags.SegmentedRequest {
 		if header.SequenceNumber == 0 {
-			// SegmentedComplexACK_Received
+			// SegmentedComplexACK_Received: record initial response parameters for consistency checks
+			tr.initialResponseServiceChoice = bacnet.BACnetConfirmedServiceChoice(header.ServiceAckChoice) //nolint:gosec
+
 			tr.responsePdu = append(tr.responsePdu, serviceAck...)
 			tr.RequestTimer.Stop()
 			// TODO: refine the calculation ActualWindowSize ('based [...] and on local conditions')
@@ -701,7 +706,28 @@ func (s *ClientTransactionSegmentedConfState) HandleComplexAckPdu(
 ) {
 	tr := s.transaction
 	if header.Flags.SegmentedRequest {
-		// TODO: support NewSegmentReceived_InconsistentAttributes
+		// NewSegmentReceived_InconsistentAttributes: abort if service choice changed.
+		if bacnet.BACnetConfirmedServiceChoice(header.ServiceAckChoice) != tr.initialResponseServiceChoice { //nolint:gosec
+			tr.SegmentTimer.Stop()
+			abortHeader := &AbortHeader{
+				SentByServer: false,
+				InvokeID:     uint8(tr.ID.InvokeID), //nolint:gosec
+				AbortReason:  uint8(bacnet.AbortInvalidApduInThisState),
+			}
+			abortBytes, err := abortHeader.Marshal()
+			if err != nil {
+				logger.Error("could not marshal abort header: ", err)
+			} else {
+				err = tr.applicationEntity.networkEntity.NUnitDataRequest(
+					indication.Source, false, networklayer.NormalPriority, abortBytes)
+				if err != nil {
+					logger.Error("could not send Abort PDU: ", err)
+				}
+			}
+			tr.resolveFuture(&ConfServResponse{Type: ResponseAbort, Indication: nil})
+			tr.applicationEntity.removeClientTransaction(tr.ID)
+			return
+		}
 		if header.SequenceNumber == (tr.LastSequenceNumber+1)%256 {
 			// TODO: support NewSegmentReceived_NoSpace
 			if header.Flags.MoreSegments {

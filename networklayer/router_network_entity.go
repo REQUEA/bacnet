@@ -313,20 +313,6 @@ func (e *RouterNetworkEntity) handleNetworkLayerMessage(source *Port, sadr bacne
 		logger.Trace(npdu.NetworkMessageType, " is not supported")
 	case ChallengeRequest:
 		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case SecurityPayload:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case SecurityResponse:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case RequestKeyUpdate:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case UpdateKeySet:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case UpdateDistributionKey:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case RequestMasterKey:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
-	case SetMasterKey:
-		logger.Trace(npdu.NetworkMessageType, " is not supported")
 	case WhatIsNetworkNumber:
 		logger.Trace(npdu.NetworkMessageType, " is not supported")
 	case NetworkNumberIs:

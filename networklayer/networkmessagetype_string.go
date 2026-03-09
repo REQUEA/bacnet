@@ -19,24 +19,28 @@ func _() {
 	_ = x[EstablishConnectionToNetwork-8]
 	_ = x[DisconnectConnectionToNetwork-9]
 	_ = x[ChallengeRequest-10]
-	_ = x[SecurityPayload-11]
-	_ = x[SecurityResponse-12]
-	_ = x[RequestKeyUpdate-13]
-	_ = x[UpdateKeySet-14]
-	_ = x[UpdateDistributionKey-15]
-	_ = x[RequestMasterKey-16]
-	_ = x[SetMasterKey-17]
 	_ = x[WhatIsNetworkNumber-18]
 	_ = x[NetworkNumberIs-19]
 }
 
-const _NetworkMessageType_name = "WhoIsRouterToNetworkIAmRouterToNetworkICouldBeRouterToNetworkRejectMessageToNetworkRouterBusyToNewtorkRouterAvailableToNetworkInitializeRoutingTableInitializeRoutingTableAckEstablishConnectionToNetworkDisconnectConnectionToNetworkChallengeRequestSecurityPayloadSecurityResponseRequestKeyUpdateUpdateKeySetUpdateDistributionKeyRequestMasterKeySetMasterKeyWhatIsNetworkNumberNetworkNumberIs"
+const (
+	_NetworkMessageType_name_0 = "WhoIsRouterToNetworkIAmRouterToNetworkICouldBeRouterToNetworkRejectMessageToNetworkRouterBusyToNewtorkRouterAvailableToNetworkInitializeRoutingTableInitializeRoutingTableAckEstablishConnectionToNetworkDisconnectConnectionToNetworkChallengeRequest"
+	_NetworkMessageType_name_1 = "WhatIsNetworkNumberNetworkNumberIs"
+)
 
-var _NetworkMessageType_index = [...]uint16{0, 20, 38, 61, 83, 102, 126, 148, 173, 201, 230, 246, 261, 277, 293, 305, 326, 342, 354, 373, 388}
+var (
+	_NetworkMessageType_index_0 = [...]uint8{0, 20, 38, 61, 83, 102, 126, 148, 173, 201, 230, 246}
+	_NetworkMessageType_index_1 = [...]uint8{0, 19, 34}
+)
 
 func (i NetworkMessageType) String() string {
-	if i >= NetworkMessageType(len(_NetworkMessageType_index)-1) {
+	switch {
+	case i <= 10:
+		return _NetworkMessageType_name_0[_NetworkMessageType_index_0[i]:_NetworkMessageType_index_0[i+1]]
+	case 18 <= i && i <= 19:
+		i -= 18
+		return _NetworkMessageType_name_1[_NetworkMessageType_index_1[i]:_NetworkMessageType_index_1[i+1]]
+	default:
 		return "NetworkMessageType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _NetworkMessageType_name[_NetworkMessageType_index[i]:_NetworkMessageType_index[i+1]]
 }
