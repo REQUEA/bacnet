@@ -316,6 +316,197 @@ func TestBACnetSCHeartbeat(t *testing.T) {
 	}
 }
 
+// TestBACnetSCHeartbeatSuppressedByActivity verifies that the device does NOT send
+// a HeartbeatRequest when the hub is sending messages regularly (activity suppresses heartbeat).
+func TestBACnetSCHeartbeatSuppressedByActivity(t *testing.T) {
+	heartbeatSeen := make(chan struct{}, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := wsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = ws.Close() }()
+
+		// Handshake.
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = ws.SetReadDeadline(time.Time{})
+
+		req := &BVLCSCMessage{}
+		if err := req.Unmarshal(data); err != nil || req.Function != BVLCSCFuncConnectRequest {
+			return
+		}
+		crPayload := &ConnectRequestPayload{}
+		if err := crPayload.Unmarshal(req.Payload); err != nil {
+			return
+		}
+		caPayload := &ConnectAcceptPayload{VMAC: hubVMAC, MaxBVLCLength: 65535, MaxNPDULength: 65535}
+		caMsg := &BVLCSCMessage{
+			Function:   BVLCSCFuncConnectAccept,
+			Control:    ControlOriginVMACPresent,
+			MessageID:  req.MessageID,
+			OriginVMAC: &hubVMAC,
+			Payload:    caPayload.Marshal(),
+		}
+		caData, _ := caMsg.Marshal()
+		if err := ws.WriteMessage(websocket.BinaryMessage, caData); err != nil {
+			return
+		}
+
+		// Send a message to the device every 50ms to keep it active,
+		// while watching for any HeartbeatRequest coming back.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for {
+				_ = ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+				_, msgData, err := ws.ReadMessage()
+				if err != nil {
+					return
+				}
+				msg := &BVLCSCMessage{}
+				if err := msg.Unmarshal(msgData); err != nil {
+					continue
+				}
+				if msg.Function == BVLCSCFuncHeartbeatRequest {
+					select {
+					case heartbeatSeen <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}()
+
+		// Send EncapsulatedNPDU every 50ms so the device sees recent activity.
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.After(400 * time.Millisecond) // 4 heartbeat intervals of 100ms
+		for {
+			select {
+			case <-done:
+				return
+			case <-deadline:
+				return
+			case <-ticker.C:
+				npduMsg := &BVLCSCMessage{
+					Function:  BVLCSCFuncEncapsulatedNPDU,
+					MessageID: 0x0001,
+					Payload:   []byte{0x01, 0x00},
+				}
+				d, _ := npduMsg.Marshal()
+				_ = ws.WriteMessage(websocket.BinaryMessage, d)
+			}
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{
+		PrimaryHubURL:     wsURL(srv),
+		HeartbeatInterval: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	if err := dl.Start(); err != nil {
+		t.Fatalf("start datalink: %v", err)
+	}
+	defer func() { _ = dl.Stop() }()
+
+	// Wait long enough for heartbeat to fire if not suppressed (3 intervals).
+	select {
+	case <-heartbeatSeen:
+		t.Fatal("heartbeat should have been suppressed by recent activity, but was sent")
+	case <-time.After(350 * time.Millisecond):
+		// success: no heartbeat was sent while hub was actively sending
+	}
+}
+
+// TestBACnetSCHeartbeatTimeout verifies that the device closes the connection
+// when a Heartbeat-Request goes unacknowledged for one heartbeat interval.
+func TestBACnetSCHeartbeatTimeout(t *testing.T) {
+	connClosed := make(chan struct{}, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := wsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() {
+			_ = ws.Close()
+			select {
+			case connClosed <- struct{}{}:
+			default:
+			}
+		}()
+
+		// Handshake.
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = ws.SetReadDeadline(time.Time{})
+
+		req := &BVLCSCMessage{}
+		if err := req.Unmarshal(data); err != nil || req.Function != BVLCSCFuncConnectRequest {
+			return
+		}
+		caPayload := &ConnectAcceptPayload{VMAC: hubVMAC, MaxBVLCLength: 65535, MaxNPDULength: 65535}
+		caMsg := &BVLCSCMessage{
+			Function:   BVLCSCFuncConnectAccept,
+			Control:    ControlOriginVMACPresent,
+			MessageID:  req.MessageID,
+			OriginVMAC: &hubVMAC,
+			Payload:    caPayload.Marshal(),
+		}
+		caData, _ := caMsg.Marshal()
+		if err := ws.WriteMessage(websocket.BinaryMessage, caData); err != nil {
+			return
+		}
+
+		// Drain messages but never send HeartbeatACK — just let reads time out.
+		for {
+			_ = ws.SetReadDeadline(time.Now().Add(time.Second))
+			_, _, err := ws.ReadMessage()
+			if err != nil {
+				// Device closed the connection — expected.
+				return
+			}
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{
+		PrimaryHubURL:     wsURL(srv),
+		HeartbeatInterval: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	if err := dl.Start(); err != nil {
+		t.Fatalf("start datalink: %v", err)
+	}
+	defer func() { _ = dl.Stop() }()
+
+	// Device should close connection within ~2 heartbeat intervals (1 to send, 1 to detect missing ACK).
+	select {
+	case <-connClosed:
+		// success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected device to close connection after heartbeat timeout, but it did not")
+	}
+}
+
 // TestBACnetSCDisconnect verifies that Stop() sends a Disconnect-Request
 // and the hub receives the Disconnect-ACK.
 func TestBACnetSCDisconnect(t *testing.T) {

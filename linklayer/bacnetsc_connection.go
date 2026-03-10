@@ -32,18 +32,23 @@ type scConnection struct {
 	mu         sync.Mutex
 	onMessage  func(msg *BVLCSCMessage)
 	onClosed   func(vmac BVMAC)
+	// heartbeat state; protected by hbMu
+	hbMu           sync.Mutex
+	lastReceived   time.Time // time of last received BVLC message
+	pendingHBMsgID uint16    // non-zero while a Heartbeat-Request awaits ACK
 }
 
 func newSCConnection(ws *websocket.Conn, remoteVMAC BVMAC, isHub bool,
 	onMessage func(*BVLCSCMessage), onClosed func(BVMAC)) *scConnection {
 	return &scConnection{
-		ws:         ws,
-		remoteVMAC: remoteVMAC,
-		isHub:      isHub,
-		state:      connConnected,
-		done:       make(chan struct{}),
-		onMessage:  onMessage,
-		onClosed:   onClosed,
+		ws:           ws,
+		remoteVMAC:   remoteVMAC,
+		isHub:        isHub,
+		state:        connConnected,
+		done:         make(chan struct{}),
+		onMessage:    onMessage,
+		onClosed:     onClosed,
+		lastReceived: time.Now(),
 	}
 }
 
@@ -92,13 +97,19 @@ func (c *scConnection) recvLoop() {
 			logger.Error("sc: unmarshal bvlcsc message: ", err)
 			continue
 		}
+		c.hbMu.Lock()
+		c.lastReceived = time.Now()
+		c.pendingHBMsgID = 0 // any received message proves connection is alive
+		c.hbMu.Unlock()
 		if c.onMessage != nil {
 			c.onMessage(msg)
 		}
 	}
 }
 
-// startHeartbeat launches a goroutine that sends Heartbeat-Request every interval.
+// startHeartbeat launches a goroutine that sends Heartbeat-Request per the standard:
+// only if no BVLC message has been received within the interval, and closes the
+// connection if a pending heartbeat is not acknowledged within the next interval.
 func (c *scConnection) startHeartbeat(interval time.Duration) {
 	c.heartbeat = time.NewTicker(interval)
 	go func() {
@@ -108,9 +119,30 @@ func (c *scConnection) startHeartbeat(interval time.Duration) {
 				c.heartbeat.Stop()
 				return
 			case <-c.heartbeat.C:
+				c.hbMu.Lock()
+				pending := c.pendingHBMsgID
+				elapsed := time.Since(c.lastReceived)
+				c.hbMu.Unlock()
+
+				if pending != 0 {
+					// Previous heartbeat was not acknowledged — connection is dead.
+					logger.Error("sc: heartbeat timeout, closing connection")
+					_ = c.ws.Close()
+					return
+				}
+				if elapsed < interval {
+					// Recent activity — no heartbeat needed.
+					continue
+				}
+
+				msgID := c.nextMsgID()
+				c.hbMu.Lock()
+				c.pendingHBMsgID = msgID
+				c.hbMu.Unlock()
+
 				msg := &BVLCSCMessage{
 					Function:  BVLCSCFuncHeartbeatRequest,
-					MessageID: c.nextMsgID(),
+					MessageID: msgID,
 				}
 				if err := c.sendMessage(msg); err != nil {
 					logger.Error("sc: send heartbeat: ", err)

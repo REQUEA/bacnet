@@ -409,9 +409,9 @@ func (dl *BACnetSCDatalink) connect(url string, isHub bool) (*scConnection, erro
 	// Send Connect-Request.
 	crPayload := &ConnectRequestPayload{
 		VMAC:          dl.cfg.VMAC,
+		DeviceUUID:    dl.cfg.DeviceUUID,
 		MaxBVLCLength: dl.cfg.maxAPDU(),
 		MaxNPDULength: dl.cfg.maxAPDU(),
-		DeviceUUID:    dl.cfg.DeviceUUID,
 	}
 	crMsg := &BVLCSCMessage{
 		Function:  BVLCSCFuncConnectRequest,
@@ -551,7 +551,6 @@ func (dl *BACnetSCDatalink) serveDirectConnect(w http.ResponseWriter, r *http.Re
 
 	go conn.recvLoop()
 	dl.sendAdvertisement(conn)
-	conn.startHeartbeat(dl.cfg.heartbeatInterval())
 
 	logger.Trace("sc: accepted direct connection from ", crPayload.VMAC.String())
 }
