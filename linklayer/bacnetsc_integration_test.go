@@ -219,9 +219,9 @@ func TestBACnetSCDirectConnect(t *testing.T) {
 	// Give connections a moment to establish.
 	time.Sleep(100 * time.Millisecond)
 
-	// Device A sends an NPDU broadcast (no dest VMAC → hub broadcasts).
+	// Device A broadcasts an NPDU via the hub.
 	testNPDU := []byte{0x01, 0x20, 0xDE, 0xAD}
-	if err := dlA.Send(testNPDU, nil); err != nil {
+	if err := dlA.Send(testNPDU, BroadcastVMAC[:]); err != nil {
 		t.Fatalf("send from A: %v", err)
 	}
 
@@ -504,6 +504,327 @@ func TestBACnetSCHeartbeatTimeout(t *testing.T) {
 		// success
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected device to close connection after heartbeat timeout, but it did not")
+	}
+}
+
+// recordingNPDUHandlerWithSrc records received NPDUs along with the source address.
+type recordingNPDUHandlerWithSrc struct {
+	mu       sync.Mutex
+	lastBuf  []byte
+	lastSrc  bacnet.MAC
+	notifyCh chan struct{}
+}
+
+func newRecordingNPDUHandlerWithSrc() *recordingNPDUHandlerWithSrc {
+	return &recordingNPDUHandlerWithSrc{notifyCh: make(chan struct{}, 1)}
+}
+
+func (h *recordingNPDUHandlerWithSrc) HandleNPDU(_, sadr bacnet.MAC, buf []byte) error {
+	h.mu.Lock()
+	h.lastSrc = sadr
+	h.lastBuf = make([]byte, len(buf))
+	copy(h.lastBuf, buf)
+	h.mu.Unlock()
+	select {
+	case h.notifyCh <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (h *recordingNPDUHandlerWithSrc) waitFor(t *testing.T, timeout time.Duration) (bacnet.MAC, []byte) {
+	t.Helper()
+	select {
+	case <-h.notifyCh:
+	case <-time.After(timeout):
+		t.Fatal("timeout waiting for NPDU")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastSrc, h.lastBuf
+}
+
+// dialDirectRaw dials a direct WebSocket connection to url, completes the
+// Connect-Request/Accept handshake with the given VMAC, and returns the WebSocket.
+// The caller must close the returned *websocket.Conn.
+func dialDirectRaw(t *testing.T, url string, vmac BVMAC) *websocket.Conn {
+	t.Helper()
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 5 * time.Second,
+		Subprotocols:     []string{scSubprotocolDirectConnect},
+	}
+	ws, _, err := dialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial direct: %v", err)
+	}
+
+	crPayload := &ConnectRequestPayload{VMAC: vmac, MaxBVLCLength: 65535, MaxNPDULength: 65535}
+	crMsg := &BVLCSCMessage{Function: BVLCSCFuncConnectRequest, MessageID: 1, Payload: crPayload.Marshal()}
+	crData, _ := crMsg.Marshal()
+	if err := ws.WriteMessage(websocket.BinaryMessage, crData); err != nil {
+		t.Fatalf("send connect-request: %v", err)
+	}
+
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, caData, err := ws.ReadMessage()
+	_ = ws.SetReadDeadline(time.Time{})
+	if err != nil {
+		t.Fatalf("read connect-accept: %v", err)
+	}
+	caMsg := &BVLCSCMessage{}
+	if err := caMsg.Unmarshal(caData); err != nil || caMsg.Function != BVLCSCFuncConnectAccept {
+		t.Fatalf("expected connect-accept, got func=%v err=%v", caMsg.Function, err)
+	}
+	return ws
+}
+
+// readUntilFunction reads messages from ws until one with the given function type
+// is found, or the timeout expires.
+func readUntilFunction(t *testing.T, ws *websocket.Conn, fn BVLCSCFunction, timeout time.Duration) *BVLCSCMessage {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		_ = ws.SetReadDeadline(time.Now().Add(remaining))
+		_, data, err := ws.ReadMessage()
+		_ = ws.SetReadDeadline(time.Time{})
+		if err != nil {
+			t.Fatalf("read message: %v", err)
+		}
+		msg := &BVLCSCMessage{}
+		if err := msg.Unmarshal(data); err != nil {
+			continue
+		}
+		if msg.Function == fn {
+			return msg
+		}
+	}
+	t.Fatalf("timeout waiting for function 0x%02X", fn)
+	return nil
+}
+
+// TestNodeSwitchOutboundHub verifies that EncapsulatedNPDU sent via a hub
+// includes both OriginVMAC and DestVMAC headers (spec §YY.4.2.1).
+func TestNodeSwitchOutboundHub(t *testing.T) {
+	captureCh := make(chan *BVLCSCMessage, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := wsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = ws.Close() }()
+
+		// Handshake.
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = ws.SetReadDeadline(time.Time{})
+		req := &BVLCSCMessage{}
+		if err := req.Unmarshal(data); err != nil || req.Function != BVLCSCFuncConnectRequest {
+			return
+		}
+		caPayload := &ConnectAcceptPayload{VMAC: hubVMAC, MaxBVLCLength: 65535, MaxNPDULength: 65535}
+		caMsg := &BVLCSCMessage{
+			Function:   BVLCSCFuncConnectAccept,
+			Control:    ControlOriginVMACPresent,
+			MessageID:  req.MessageID,
+			OriginVMAC: &hubVMAC,
+			Payload:    caPayload.Marshal(),
+		}
+		caData, _ := caMsg.Marshal()
+		if err := ws.WriteMessage(websocket.BinaryMessage, caData); err != nil {
+			return
+		}
+
+		// Capture EncapsulatedNPDU messages.
+		for {
+			_, msgData, err := ws.ReadMessage()
+			if err != nil {
+				return
+			}
+			msg := &BVLCSCMessage{}
+			if err := msg.Unmarshal(msgData); err != nil {
+				continue
+			}
+			if msg.Function == BVLCSCFuncEncapsulatedNPDU {
+				select {
+				case captureCh <- msg:
+				default:
+				}
+			}
+		}
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{PrimaryHubURL: wsURL(srv)})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	if err := dl.Start(); err != nil {
+		t.Fatalf("start datalink: %v", err)
+	}
+	defer func() { _ = dl.Stop() }()
+
+	time.Sleep(100 * time.Millisecond)
+
+	destVMAC := BVMAC{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	npdu := []byte{0x01, 0x20, 0xAA, 0xBB}
+	if err := dl.Send(npdu, destVMAC[:]); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	select {
+	case msg := <-captureCh:
+		// Hub: OriginVMAC must be absent, DestVMAC must be present (spec §YY.4.2.1).
+		if msg.OriginVMAC != nil {
+			t.Errorf("expected OriginVMAC absent on hub send, got %v", *msg.OriginVMAC)
+		}
+		if msg.DestVMAC == nil {
+			t.Fatal("expected DestVMAC to be present on hub send")
+		}
+		if *msg.DestVMAC != destVMAC {
+			t.Errorf("DestVMAC: want %v, got %v", destVMAC, *msg.DestVMAC)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for EncapsulatedNPDU at hub")
+	}
+}
+
+// TestNodeSwitchOutboundDirect verifies that EncapsulatedNPDU sent via a direct
+// connection omits both OriginVMAC and DestVMAC headers (spec §YY.4.2.1).
+func TestNodeSwitchOutboundDirect(t *testing.T) {
+	vmacB := BVMAC{0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B}
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+
+	// Expose the datalink's direct-connect handler via an in-process test server.
+	srv := httptest.NewServer(http.HandlerFunc(dl.serveDirectConnect))
+	defer srv.Close()
+
+	// Raw client B connects to A's direct listener.
+	ws := dialDirectRaw(t, wsURL(srv), vmacB)
+	defer func() { _ = ws.Close() }()
+
+	// Drain the Advertisement that A sends after accepting.
+	readUntilFunction(t, ws, BVLCSCFuncAdvertisement, time.Second)
+
+	// A should now have B in its connections map. Send an NPDU from A to B.
+	npdu := []byte{0x01, 0x20, 0xCC, 0xDD}
+	if err := dl.Send(npdu, vmacB[:]); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	// B reads the EncapsulatedNPDU and checks there are no VMAC headers.
+	msg := readUntilFunction(t, ws, BVLCSCFuncEncapsulatedNPDU, 3*time.Second)
+	if msg.OriginVMAC != nil {
+		t.Error("expected no OriginVMAC on direct connection send")
+	}
+	if msg.DestVMAC != nil {
+		t.Error("expected no DestVMAC on direct connection send")
+	}
+}
+
+// TestNodeSwitchInboundDirectPeerVMAC verifies that when an EncapsulatedNPDU arrives
+// on a direct connection without OriginVMAC, the peer's handshake VMAC is used as
+// the source address delivered to the NPDU handler (spec §YY.4.2.2).
+func TestNodeSwitchInboundDirectPeerVMAC(t *testing.T) {
+	vmacB := BVMAC{0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C}
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	handler := newRecordingNPDUHandlerWithSrc()
+	port := NewBACnetSCPort(dl)
+	port.SetNPDUHandler(handler)
+
+	srv := httptest.NewServer(http.HandlerFunc(dl.serveDirectConnect))
+	defer srv.Close()
+
+	ws := dialDirectRaw(t, wsURL(srv), vmacB)
+	defer func() { _ = ws.Close() }()
+
+	// Wait for connection to be fully registered (Advertisement signals this).
+	readUntilFunction(t, ws, BVLCSCFuncAdvertisement, time.Second)
+
+	// B sends EncapsulatedNPDU with Control == 0 (no VMAC headers).
+	npdu := []byte{0x01, 0x20, 0xEE, 0xFF}
+	encMsg := &BVLCSCMessage{
+		Function:  BVLCSCFuncEncapsulatedNPDU,
+		Control:   0,
+		MessageID: 2,
+		Payload:   npdu,
+	}
+	data, _ := encMsg.Marshal()
+	if err := ws.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		t.Fatalf("send encapsulated NPDU: %v", err)
+	}
+
+	// A's handler should receive vmacB as the source address.
+	src, _ := handler.waitFor(t, 3*time.Second)
+	if src == nil {
+		t.Fatal("expected non-nil source address")
+	}
+	srcVMAC, ok := src.(*BVMAC)
+	if !ok {
+		t.Fatalf("source address has unexpected type %T", src)
+	}
+	if *srcVMAC != vmacB {
+		t.Errorf("source VMAC: want %v, got %v", vmacB, *srcVMAC)
+	}
+}
+
+// TestNodeSwitchBroadcastFromDirectDiscarded verifies that an EncapsulatedNPDU
+// with DestVMAC == BroadcastVMAC arriving on a direct connection is discarded
+// and not forwarded to the NPDU handler (spec §YY.4.2.2).
+func TestNodeSwitchBroadcastFromDirectDiscarded(t *testing.T) {
+	vmacB := BVMAC{0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D}
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	handler := newRecordingNPDUHandler()
+	port := NewBACnetSCPort(dl)
+	port.SetNPDUHandler(handler)
+
+	srv := httptest.NewServer(http.HandlerFunc(dl.serveDirectConnect))
+	defer srv.Close()
+
+	ws := dialDirectRaw(t, wsURL(srv), vmacB)
+	defer func() { _ = ws.Close() }()
+
+	readUntilFunction(t, ws, BVLCSCFuncAdvertisement, time.Second)
+
+	// B sends EncapsulatedNPDU with DestVMAC = BroadcastVMAC.
+	broadcast := BroadcastVMAC
+	encMsg := &BVLCSCMessage{
+		Function:  BVLCSCFuncEncapsulatedNPDU,
+		Control:   ControlDestVMACPresent,
+		MessageID: 3,
+		DestVMAC:  &broadcast,
+		Payload:   []byte{0x01, 0x20},
+	}
+	data, _ := encMsg.Marshal()
+	if err := ws.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	// Handler must NOT be called.
+	select {
+	case <-handler.notifyCh:
+		t.Fatal("handler was called but broadcast from direct connection should be discarded")
+	case <-time.After(200 * time.Millisecond):
+		// success: handler was not called
 	}
 }
 

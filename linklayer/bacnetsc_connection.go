@@ -24,13 +24,14 @@ const (
 type scConnection struct {
 	ws         *websocket.Conn
 	remoteVMAC BVMAC
-	isHub      bool // drives EncapsulatedNPDU encoding (no OriginVMAC on hub connections)
+	remoteUUID [16]byte // peer's Device UUID from handshake
+	isHub      bool     // drives EncapsulatedNPDU encoding
 	state      scConnectionState
 	msgIDSeq   uint32 // atomic
 	heartbeat  *time.Ticker
 	done       chan struct{}
 	mu         sync.Mutex
-	onMessage  func(msg *BVLCSCMessage)
+	onMessage  func(msg *BVLCSCMessage, conn *scConnection)
 	onClosed   func(vmac BVMAC)
 	// heartbeat state; protected by hbMu
 	hbMu           sync.Mutex
@@ -38,11 +39,12 @@ type scConnection struct {
 	pendingHBMsgID uint16    // non-zero while a Heartbeat-Request awaits ACK
 }
 
-func newSCConnection(ws *websocket.Conn, remoteVMAC BVMAC, isHub bool,
-	onMessage func(*BVLCSCMessage), onClosed func(BVMAC)) *scConnection {
+func newSCConnection(ws *websocket.Conn, remoteVMAC BVMAC, remoteUUID [16]byte, isHub bool,
+	onMessage func(*BVLCSCMessage, *scConnection), onClosed func(BVMAC)) *scConnection {
 	return &scConnection{
 		ws:           ws,
 		remoteVMAC:   remoteVMAC,
+		remoteUUID:   remoteUUID,
 		isHub:        isHub,
 		state:        connConnected,
 		done:         make(chan struct{}),
@@ -102,7 +104,7 @@ func (c *scConnection) recvLoop() {
 		c.pendingHBMsgID = 0 // any received message proves connection is alive
 		c.hbMu.Unlock()
 		if c.onMessage != nil {
-			c.onMessage(msg)
+			c.onMessage(msg, c)
 		}
 	}
 }

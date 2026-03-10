@@ -224,9 +224,9 @@ func (dl *BACnetSCDatalink) Send(npdu []byte, destVMAC []byte) error {
 }
 
 // buildEncapsulatedNPDU constructs an EncapsulatedNPDU message.
-// Per Annex AB: hub connections omit OriginVMAC (hub knows sender from the connection)
-// and always include DestVMAC (BroadcastVMAC for broadcast, target VMAC for unicast).
-// Direct connections include both OriginVMAC and DestVMAC.
+// Per Annex §AB.4.2.1:
+//   - Hub connections: DestVMAC present, OriginVMAC absent (hub identifies sender from the connection).
+//   - Direct connections: both absent (peer is identified from the point-to-point connection).
 func (dl *BACnetSCDatalink) buildEncapsulatedNPDU(npdu []byte, dest *BVMAC, isHub bool) *BVLCSCMessage {
 	if isHub {
 		return &BVLCSCMessage{
@@ -236,12 +236,11 @@ func (dl *BACnetSCDatalink) buildEncapsulatedNPDU(npdu []byte, dest *BVMAC, isHu
 			Payload:  npdu,
 		}
 	}
+	// Direct connection: omit both VMAC headers (spec §AB.4.2.1).
 	return &BVLCSCMessage{
-		Function:   BVLCSCFuncEncapsulatedNPDU,
-		Control:    ControlOriginVMACPresent | ControlDestVMACPresent,
-		OriginVMAC: &dl.cfg.VMAC,
-		DestVMAC:   dest,
-		Payload:    npdu,
+		Function: BVLCSCFuncEncapsulatedNPDU,
+		Control:  0,
+		Payload:  npdu,
 	}
 }
 
@@ -271,10 +270,10 @@ func (dl *BACnetSCDatalink) getConnection(vmac BVMAC) *scConnection {
 }
 
 // onMessage dispatches an incoming BVLCSCMessage.
-func (dl *BACnetSCDatalink) onMessage(msg *BVLCSCMessage) {
+func (dl *BACnetSCDatalink) onMessage(msg *BVLCSCMessage, conn *scConnection) {
 	switch msg.Function {
 	case BVLCSCFuncEncapsulatedNPDU:
-		dl.handleEncapsulatedNPDU(msg)
+		dl.handleEncapsulatedNPDU(msg, conn)
 
 	case BVLCSCFuncAddressResolutionACK:
 		dl.handleAddressResolutionACK(msg)
@@ -289,10 +288,10 @@ func (dl *BACnetSCDatalink) onMessage(msg *BVLCSCMessage) {
 		// Already handled inside connect(); ignore duplicates.
 
 	case BVLCSCFuncDisconnectRequest:
-		dl.handleDisconnectRequest(msg)
+		dl.handleDisconnectRequest(msg, conn)
 
 	case BVLCSCFuncHeartbeatRequest:
-		dl.handleHeartbeatRequest(msg)
+		dl.handleHeartbeatRequest(msg, conn)
 
 	case BVLCSCFuncHeartbeatACK:
 		// Expected response to our Heartbeat-Request; no action needed.
@@ -312,7 +311,7 @@ func (dl *BACnetSCDatalink) onMessage(msg *BVLCSCMessage) {
 	}
 }
 
-func (dl *BACnetSCDatalink) handleEncapsulatedNPDU(msg *BVLCSCMessage) {
+func (dl *BACnetSCDatalink) handleEncapsulatedNPDU(msg *BVLCSCMessage, conn *scConnection) {
 	if len(dl.ports) == 0 {
 		return
 	}
@@ -320,12 +319,23 @@ func (dl *BACnetSCDatalink) handleEncapsulatedNPDU(msg *BVLCSCMessage) {
 	if port.npduHandler == nil {
 		return
 	}
+	// Discard broadcast arriving from a direct connection (spec §AB.4.2.2).
+	if !conn.isHub && msg.DestVMAC != nil && *msg.DestVMAC == BroadcastVMAC {
+		return
+	}
+	// Discard unicast not destined for this device (spec §AB.4.2.2).
+	if msg.DestVMAC != nil && *msg.DestVMAC != BroadcastVMAC && *msg.DestVMAC != dl.cfg.VMAC {
+		return
+	}
+	// Source VMAC: use OriginVMAC if present; otherwise use the peer's handshake VMAC
+	// for direct connections (spec §AB.4.2.2).
 	var sadr bacnet.MAC
 	if msg.OriginVMAC != nil {
 		v := *msg.OriginVMAC
 		sadr = &v
-	} else {
-		sadr = &dl.cfg.VMAC
+	} else if !conn.isHub {
+		v := conn.remoteVMAC
+		sadr = &v
 	}
 	dadr := bacnet.MAC(&dl.cfg.VMAC)
 	if err := port.npduHandler.HandleNPDU(dadr, sadr, msg.Payload); err != nil {
@@ -368,37 +378,20 @@ func (dl *BACnetSCDatalink) handleAdvertisement(msg *BVLCSCMessage) {
 	logger.Trace("sc: advertisement from ", vmacStr, " maxBVLC=", p.MaxBVLCLength, " maxNPDU=", p.MaxNPDULength)
 }
 
-func (dl *BACnetSCDatalink) handleDisconnectRequest(msg *BVLCSCMessage) {
+func (dl *BACnetSCDatalink) handleDisconnectRequest(msg *BVLCSCMessage, conn *scConnection) {
 	ack := &BVLCSCMessage{
 		Function:  BVLCSCFuncDisconnectACK,
 		MessageID: msg.MessageID,
 	}
-	// Find the connection that sent the disconnect request.
-	if msg.OriginVMAC != nil {
-		conn := dl.getConnection(*msg.OriginVMAC)
-		if conn == nil {
-			conn = dl.getHubConnection()
-		}
-		if conn != nil {
-			_ = conn.sendMessage(ack)
-		}
-	}
+	_ = conn.sendMessage(ack)
 }
 
-func (dl *BACnetSCDatalink) handleHeartbeatRequest(msg *BVLCSCMessage) {
+func (dl *BACnetSCDatalink) handleHeartbeatRequest(msg *BVLCSCMessage, conn *scConnection) {
 	ack := &BVLCSCMessage{
 		Function:  BVLCSCFuncHeartbeatACK,
 		MessageID: msg.MessageID,
 	}
-	if msg.OriginVMAC != nil {
-		conn := dl.getConnection(*msg.OriginVMAC)
-		if conn == nil {
-			conn = dl.getHubConnection()
-		}
-		if conn != nil {
-			_ = conn.sendMessage(ack)
-		}
-	}
+	_ = conn.sendMessage(ack)
 }
 
 // connect dials a WebSocket URL, performs the Connect-Request/Accept handshake,
@@ -475,8 +468,13 @@ func (dl *BACnetSCDatalink) connect(url string, isHub bool) (*scConnection, erro
 	if resp.OriginVMAC != nil {
 		remoteVMAC = *resp.OriginVMAC
 	}
+	var remoteUUID [16]byte
+	caPayload := &ConnectAcceptPayload{}
+	if caPayload.Unmarshal(resp.Payload) == nil {
+		remoteUUID = caPayload.DeviceUUID
+	}
 
-	conn := newSCConnection(ws, remoteVMAC, isHub, dl.onMessage, dl.onConnectionClosed)
+	conn := newSCConnection(ws, remoteVMAC, remoteUUID, isHub, dl.onMessage, dl.onConnectionClosed)
 
 	// Start receive loop.
 	go conn.recvLoop()
@@ -558,7 +556,7 @@ func (dl *BACnetSCDatalink) serveDirectConnect(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	conn := newSCConnection(ws, crPayload.VMAC, false, dl.onMessage, dl.onConnectionClosed)
+	conn := newSCConnection(ws, crPayload.VMAC, crPayload.DeviceUUID, false, dl.onMessage, dl.onConnectionClosed)
 
 	dl.mu.Lock()
 	dl.connections[vmacKey(crPayload.VMAC)] = conn
@@ -637,12 +635,19 @@ func (dl *BACnetSCDatalink) advertise() {
 	}
 	dl.mu.RUnlock()
 
+	broadcast := BroadcastVMAC
 	for _, c := range conns {
 		if c.state != connConnected {
 			continue
 		}
 		m := *msg
 		m.MessageID = c.nextMsgID()
+		// Hub: DestVMAC present, OriginVMAC absent (spec §AB.4.2.1).
+		if c.isHub {
+			m.Control = ControlDestVMACPresent
+			m.OriginVMAC = nil
+			m.DestVMAC = &broadcast
+		}
 		if err := c.sendMessage(&m); err != nil {
 			logger.Error("sc: send advertisement: ", err)
 		}
@@ -650,6 +655,7 @@ func (dl *BACnetSCDatalink) advertise() {
 }
 
 // sendAdvertisement sends an Advertisement on a single connection.
+// Hub connections require DestVMAC on all outbound messages (spec §AB.4.2.1).
 func (dl *BACnetSCDatalink) sendAdvertisement(conn *scConnection) {
 	p := &AdvertisementPayload{
 		HubConnectionState:      dl.hubConnectionState(),
@@ -663,6 +669,13 @@ func (dl *BACnetSCDatalink) sendAdvertisement(conn *scConnection) {
 		MessageID:  conn.nextMsgID(),
 		OriginVMAC: &dl.cfg.VMAC,
 		Payload:    p.Marshal(),
+	}
+	// Hub: DestVMAC present, OriginVMAC absent (spec §AB.4.2.1).
+	if conn.isHub {
+		broadcast := BroadcastVMAC
+		msg.Control = ControlDestVMACPresent
+		msg.OriginVMAC = nil
+		msg.DestVMAC = &broadcast
 	}
 	if err := conn.sendMessage(msg); err != nil {
 		logger.Error("sc: send advertisement: ", err)
