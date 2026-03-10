@@ -24,7 +24,7 @@ const (
 type scConnection struct {
 	ws         *websocket.Conn
 	remoteVMAC BVMAC
-	isHub      bool
+	isHub      bool // drives EncapsulatedNPDU encoding (no OriginVMAC on hub connections)
 	state      scConnectionState
 	msgIDSeq   uint32 // atomic
 	heartbeat  *time.Ticker

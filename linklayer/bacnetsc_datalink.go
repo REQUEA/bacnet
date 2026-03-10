@@ -80,7 +80,9 @@ func (c *BACnetSCConfig) maxAPDU() uint16 {
 type BACnetSCDatalink struct {
 	cfg         BACnetSCConfig
 	ports       []*BACnetSCPort
-	connections map[string]*scConnection // keyed by remote VMAC hex string
+	primaryHub  *scConnection            // nil when not connected
+	failoverHub *scConnection            // nil when not connected
+	connections map[string]*scConnection // direct peer connections only
 	mu          sync.RWMutex
 	httpServer  *http.Server
 	stopCh      chan struct{}
@@ -125,9 +127,14 @@ func (dl *BACnetSCDatalink) AddPort(p *BACnetSCPort) {
 // Start dials the hub (if configured) and starts the direct-connect listener (if configured).
 func (dl *BACnetSCDatalink) Start() error {
 	if dl.cfg.PrimaryHubURL != "" {
-		if _, err := dl.connect(dl.cfg.PrimaryHubURL, true); err != nil {
+		conn, err := dl.connect(dl.cfg.PrimaryHubURL, true)
+		if err != nil {
 			logger.Error("sc: connect to primary hub: ", err)
 			// Non-fatal: device operates without hub connectivity.
+		} else {
+			dl.mu.Lock()
+			dl.primaryHub = conn
+			dl.mu.Unlock()
 		}
 	}
 
@@ -161,7 +168,13 @@ func (dl *BACnetSCDatalink) Stop() error {
 	dl.wg.Wait()
 
 	dl.mu.Lock()
-	conns := make([]*scConnection, 0, len(dl.connections))
+	conns := make([]*scConnection, 0, len(dl.connections)+2)
+	if dl.primaryHub != nil {
+		conns = append(conns, dl.primaryHub)
+	}
+	if dl.failoverHub != nil {
+		conns = append(conns, dl.failoverHub)
+	}
 	for _, c := range dl.connections {
 		conns = append(conns, c)
 	}
@@ -232,14 +245,15 @@ func (dl *BACnetSCDatalink) buildEncapsulatedNPDU(npdu []byte, dest *BVMAC, isHu
 	}
 }
 
-// getHubConnection returns the first hub connection that is connected.
+// getHubConnection returns the active hub connection (primary preferred over failover).
 func (dl *BACnetSCDatalink) getHubConnection() *scConnection {
 	dl.mu.RLock()
 	defer dl.mu.RUnlock()
-	for _, c := range dl.connections {
-		if c.isHub && c.state == connConnected {
-			return c
-		}
+	if dl.primaryHub != nil && dl.primaryHub.state == connConnected {
+		return dl.primaryHub
+	}
+	if dl.failoverHub != nil && dl.failoverHub.state == connConnected {
+		return dl.failoverHub
 	}
 	return nil
 }
@@ -330,9 +344,14 @@ func (dl *BACnetSCDatalink) handleAddressResolutionACK(msg *BVLCSCMessage) {
 	}
 	// Attempt a direct connection to the first URI.
 	go func() {
-		if _, err := dl.connect(p.URIs[0], false); err != nil {
+		conn, err := dl.connect(p.URIs[0], false)
+		if err != nil {
 			logger.Error("sc: direct connect after address resolution: ", err)
+			return
 		}
+		dl.mu.Lock()
+		dl.connections[vmacKey(conn.remoteVMAC)] = conn
+		dl.mu.Unlock()
 	}()
 }
 
@@ -383,7 +402,7 @@ func (dl *BACnetSCDatalink) handleHeartbeatRequest(msg *BVLCSCMessage) {
 }
 
 // connect dials a WebSocket URL, performs the Connect-Request/Accept handshake,
-// sends Advertisement, and registers the connection.
+// and sends Advertisement. The caller is responsible for storing the returned connection.
 func (dl *BACnetSCDatalink) connect(url string, isHub bool) (*scConnection, error) {
 	// state: IDLE
 	logger.Trace("BACnetSCDatalink.connect: IDLE")
@@ -458,10 +477,6 @@ func (dl *BACnetSCDatalink) connect(url string, isHub bool) (*scConnection, erro
 	}
 
 	conn := newSCConnection(ws, remoteVMAC, isHub, dl.onMessage, dl.onConnectionClosed)
-
-	dl.mu.Lock()
-	dl.connections[vmacKey(remoteVMAC)] = conn
-	dl.mu.Unlock()
 
 	// Start receive loop.
 	go conn.recvLoop()
@@ -581,10 +596,23 @@ func (dl *BACnetSCDatalink) startDirectConnectListener() error {
 	return nil
 }
 
+// hubConnectionState returns the current hub connection state.
+func (dl *BACnetSCDatalink) hubConnectionState() HubConnectionState {
+	dl.mu.RLock()
+	defer dl.mu.RUnlock()
+	if dl.primaryHub != nil && dl.primaryHub.state == connConnected {
+		return HubConnectionConnected
+	}
+	if dl.failoverHub != nil && dl.failoverHub.state == connConnected {
+		return HubConnectionFailover
+	}
+	return HubConnectionNoHub
+}
+
 // advertise sends an Advertisement message on all current connections.
 func (dl *BACnetSCDatalink) advertise() {
 	p := &AdvertisementPayload{
-		HubConnectionState:      HubConnectionNoHub,
+		HubConnectionState:      dl.hubConnectionState(),
 		AcceptDirectConnections: dl.cfg.DirectConnectURL != "",
 		MaxBVLCLength:           dl.cfg.maxAPDU(),
 		MaxNPDULength:           dl.cfg.maxAPDU(),
@@ -597,7 +625,13 @@ func (dl *BACnetSCDatalink) advertise() {
 	}
 
 	dl.mu.RLock()
-	conns := make([]*scConnection, 0, len(dl.connections))
+	conns := make([]*scConnection, 0, len(dl.connections)+2)
+	if dl.primaryHub != nil {
+		conns = append(conns, dl.primaryHub)
+	}
+	if dl.failoverHub != nil {
+		conns = append(conns, dl.failoverHub)
+	}
 	for _, c := range dl.connections {
 		conns = append(conns, c)
 	}
@@ -618,7 +652,7 @@ func (dl *BACnetSCDatalink) advertise() {
 // sendAdvertisement sends an Advertisement on a single connection.
 func (dl *BACnetSCDatalink) sendAdvertisement(conn *scConnection) {
 	p := &AdvertisementPayload{
-		HubConnectionState:      HubConnectionNoHub,
+		HubConnectionState:      dl.hubConnectionState(),
 		AcceptDirectConnections: dl.cfg.DirectConnectURL != "",
 		MaxBVLCLength:           dl.cfg.maxAPDU(),
 		MaxNPDULength:           dl.cfg.maxAPDU(),
@@ -635,11 +669,17 @@ func (dl *BACnetSCDatalink) sendAdvertisement(conn *scConnection) {
 	}
 }
 
-// onConnectionClosed removes the closed connection from the map.
+// onConnectionClosed removes the closed connection from hub fields or the peer map.
 func (dl *BACnetSCDatalink) onConnectionClosed(vmac BVMAC) {
-	key := vmacKey(vmac)
 	dl.mu.Lock()
-	delete(dl.connections, key)
+	switch {
+	case dl.primaryHub != nil && dl.primaryHub.remoteVMAC == vmac:
+		dl.primaryHub = nil
+	case dl.failoverHub != nil && dl.failoverHub.remoteVMAC == vmac:
+		dl.failoverHub = nil
+	default:
+		delete(dl.connections, vmacKey(vmac))
+	}
 	dl.mu.Unlock()
 	logger.Trace("sc: connection closed for VMAC ", vmac.String())
 }
