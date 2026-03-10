@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"strings"
 
 	"github.com/REQUEA/bacnet"
 )
@@ -248,7 +249,7 @@ func (o *IdentityOption) Unmarshal(b []byte) ([]byte, error) {
 	if err != nil {
 		return remaining, err
 	}
-	if o.BVLCSCOptionBase.HeaderLength != 1 {
+	if o.BVLCSCOptionBase.HeaderLength != 3 {
 		return remaining, fmt.Errorf("wrong size for Identity Device Instance")
 	}
 	o.DeviceInstance = uint32(remaining[0])<<16 | uint32(remaining[1])<<8 | uint32(remaining[2])
@@ -534,17 +535,24 @@ func (m *BVLCSCMessage) Unmarshal(b []byte) error {
 
 // BVLCResultPayload is the payload for BVLC-Result (0x00).
 type BVLCResultPayload struct {
-	Function   BVLCSCFunction
-	ResultCode uint16
-	ErrorMsg   string
+	Function          BVLCSCFunction
+	ResultCode        uint8
+	ErrorHeaderMarker uint8
+	ErrorClass        uint16
+	ErrorCode         uint16
+	ErrorMsg          string
 }
 
 func (p *BVLCResultPayload) Marshal() []byte {
-	msgBytes := []byte(p.ErrorMsg)
-	out := make([]byte, 0, 3+len(msgBytes))
+	out := make([]byte, 0, 2)
 	out = append(out, byte(p.Function))
-	out = binary.BigEndian.AppendUint16(out, p.ResultCode)
-	out = append(out, msgBytes...)
+	out = append(out, p.ResultCode)
+	if p.ResultCode == 1 {
+		out = append(out, p.ErrorHeaderMarker)
+		out = binary.BigEndian.AppendUint16(out, p.ErrorClass)
+		out = binary.BigEndian.AppendUint16(out, p.ErrorCode)
+		out = append(out, []byte(p.ErrorMsg)...)
+	}
 	return out
 }
 
@@ -553,61 +561,53 @@ func (p *BVLCResultPayload) Unmarshal(b []byte) error {
 		return fmt.Errorf("bvlc-result payload too short")
 	}
 	p.Function = BVLCSCFunction(b[0])
-	p.ResultCode = binary.BigEndian.Uint16(b[1:3])
-	p.ErrorMsg = string(b[3:])
+	p.ResultCode = b[1]
+	if p.ResultCode == 1 {
+		if len(b) < 7 {
+			return fmt.Errorf("bvlc-result payload (NAK) too short")
+		}
+		p.ErrorHeaderMarker = b[2]
+		p.ErrorClass = binary.BigEndian.Uint16(b[3:5])
+		p.ErrorCode = binary.BigEndian.Uint16(b[5:7])
+		p.ErrorMsg = string(b[7:])
+	}
 	return nil
 }
 
 // AddressResolutionPayload is the payload for Address-Resolution (0x02).
-// It contains the target VMAC whose connection URI is being requested.
-type AddressResolutionPayload struct {
-	VMAC BVMAC
-}
+// TODO: see if we can remove this definition
+type AddressResolutionPayload struct{}
 
 func (p *AddressResolutionPayload) Marshal() []byte {
-	return p.VMAC[:]
+	return []byte{}
 }
 
 func (p *AddressResolutionPayload) Unmarshal(b []byte) error {
-	if len(b) < 6 {
-		return fmt.Errorf("address-resolution payload too short")
-	}
-	copy(p.VMAC[:], b[:6])
 	return nil
 }
 
 // AddressResolutionACKPayload is the payload for Address-Resolution-ACK (0x03).
 type AddressResolutionACKPayload struct {
-	VMAC BVMAC
 	URIs []string
 }
 
 func (p *AddressResolutionACKPayload) Marshal() []byte {
 	out := make([]byte, 0, 6)
-	out = append(out, p.VMAC[:]...)
-	for _, uri := range p.URIs {
-		uriBytes := []byte(uri)
-		out = binary.BigEndian.AppendUint16(out, uint16(len(uriBytes))) //nolint:gosec
+	for i := 0; i < len(p.URIs)-1; i++ {
+		uriBytes := []byte(p.URIs[i])
+		out = append(out, uriBytes...)
+		out = append(out, 0x20) // add a space character
+	}
+	if len(p.URIs) > 0 {
+		// add the last one
+		uriBytes := []byte(p.URIs[len(p.URIs)-1])
 		out = append(out, uriBytes...)
 	}
 	return out
 }
 
 func (p *AddressResolutionACKPayload) Unmarshal(b []byte) error {
-	if len(b) < 6 {
-		return fmt.Errorf("address-resolution-ack payload too short")
-	}
-	copy(p.VMAC[:], b[:6])
-	b = b[6:]
-	for len(b) >= 2 {
-		uriLen := int(binary.BigEndian.Uint16(b[:2]))
-		b = b[2:]
-		if len(b) < uriLen {
-			return fmt.Errorf("truncated URI in address-resolution-ack")
-		}
-		p.URIs = append(p.URIs, string(b[:uriLen]))
-		b = b[uriLen:]
-	}
+	p.URIs = strings.Split(string(b), " ")
 	return nil
 }
 
@@ -615,10 +615,9 @@ func (p *AddressResolutionACKPayload) Unmarshal(b []byte) error {
 type HubConnectionState uint8
 
 const (
-	HubConnectionDisconnected HubConnectionState = 0 // hub configured but not connected
-	HubConnectionNoHub        HubConnectionState = 1 // no hub connection configured
-	HubConnectionConnected    HubConnectionState = 2 // connected to primary hub
-	HubConnectionFailover     HubConnectionState = 3 // connected to failover hub
+	HubConnectionNoHub     HubConnectionState = 0 // no hub connection
+	HubConnectionConnected HubConnectionState = 1 // connected to primary hub
+	HubConnectionFailover  HubConnectionState = 2 // connected to failover hub
 )
 
 // AdvertisementPayload is the payload for Advertisement (0x04).
@@ -660,17 +659,17 @@ func (p *AdvertisementPayload) Unmarshal(b []byte) error {
 // Per Annex AB Table AB-12: VMAC(6) + MaxBVLC(2) + MaxNPDU(2) + DeviceUUID(16) = 26 bytes.
 type ConnectRequestPayload struct {
 	VMAC          BVMAC
+	DeviceUUID    [16]byte
 	MaxBVLCLength uint16
 	MaxNPDULength uint16
-	DeviceUUID    [16]byte
 }
 
 func (p *ConnectRequestPayload) Marshal() []byte {
 	out := make([]byte, 0, 26)
 	out = append(out, p.VMAC[:]...)
+	out = append(out, p.DeviceUUID[:]...)
 	out = binary.BigEndian.AppendUint16(out, p.MaxBVLCLength)
 	out = binary.BigEndian.AppendUint16(out, p.MaxNPDULength)
-	out = append(out, p.DeviceUUID[:]...)
 	return out
 }
 
@@ -679,9 +678,9 @@ func (p *ConnectRequestPayload) Unmarshal(b []byte) error {
 		return fmt.Errorf("connect-request payload too short")
 	}
 	copy(p.VMAC[:], b[:6])
-	p.MaxBVLCLength = binary.BigEndian.Uint16(b[6:8])
-	p.MaxNPDULength = binary.BigEndian.Uint16(b[8:10])
-	copy(p.DeviceUUID[:], b[10:26])
+	copy(p.DeviceUUID[:], b[6:22])
+	p.MaxBVLCLength = binary.BigEndian.Uint16(b[22:24])
+	p.MaxNPDULength = binary.BigEndian.Uint16(b[24:26])
 	return nil
 }
 
@@ -689,17 +688,17 @@ func (p *ConnectRequestPayload) Unmarshal(b []byte) error {
 // Per Annex AB Table AB-13: VMAC(6) + MaxBVLC(2) + MaxNPDU(2) + DeviceUUID(16) = 26 bytes.
 type ConnectAcceptPayload struct {
 	VMAC          BVMAC
+	DeviceUUID    [16]byte
 	MaxBVLCLength uint16
 	MaxNPDULength uint16
-	DeviceUUID    [16]byte
 }
 
 func (p *ConnectAcceptPayload) Marshal() []byte {
 	out := make([]byte, 0, 26)
 	out = append(out, p.VMAC[:]...)
+	out = append(out, p.DeviceUUID[:]...)
 	out = binary.BigEndian.AppendUint16(out, p.MaxBVLCLength)
 	out = binary.BigEndian.AppendUint16(out, p.MaxNPDULength)
-	out = append(out, p.DeviceUUID[:]...)
 	return out
 }
 
@@ -708,8 +707,32 @@ func (p *ConnectAcceptPayload) Unmarshal(b []byte) error {
 		return fmt.Errorf("connect-accept payload too short")
 	}
 	copy(p.VMAC[:], b[:6])
-	p.MaxBVLCLength = binary.BigEndian.Uint16(b[6:8])
-	p.MaxNPDULength = binary.BigEndian.Uint16(b[8:10])
-	copy(p.DeviceUUID[:], b[10:26])
+	copy(p.DeviceUUID[:], b[6:22])
+	p.MaxBVLCLength = binary.BigEndian.Uint16(b[22:24])
+	p.MaxNPDULength = binary.BigEndian.Uint16(b[24:26])
+	return nil
+}
+
+type ProprietaryMessagePayload struct {
+	VendorID            uint16
+	ProprietaryFunction uint8
+	ProprietaryData     []byte
+}
+
+func (p *ProprietaryMessagePayload) Marshal() []byte {
+	out := make([]byte, 0, 3+len(p.ProprietaryData))
+	out = binary.BigEndian.AppendUint16(out, p.VendorID)
+	out = append(out, p.ProprietaryFunction)
+	out = append(out, p.ProprietaryData...)
+	return out
+}
+
+func (p *ProprietaryMessagePayload) Unmarshal(b []byte) error {
+	if len(b) < 3 {
+		return fmt.Errorf("proprietary-message payload too short")
+	}
+	p.VendorID = binary.BigEndian.Uint16(b[0:2])
+	p.ProprietaryFunction = b[2]
+	copy(p.ProprietaryData[:], b[3:])
 	return nil
 }

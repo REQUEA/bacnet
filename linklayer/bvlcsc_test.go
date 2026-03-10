@@ -159,9 +159,7 @@ func TestBVLCSCAdvertisementPayload(t *testing.T) {
 }
 
 func TestBVLCSCAddressResolutionACKPayload(t *testing.T) {
-	vmac := BVMAC{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
 	p := &AddressResolutionACKPayload{
-		VMAC: vmac,
 		URIs: []string{"wss://hub.example.com:9999/sc"},
 	}
 	data := p.Marshal()
@@ -170,19 +168,20 @@ func TestBVLCSCAddressResolutionACKPayload(t *testing.T) {
 	if err := got.Unmarshal(data); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.VMAC != vmac {
-		t.Errorf("VMAC mismatch")
-	}
 	if len(got.URIs) != 1 || got.URIs[0] != p.URIs[0] {
 		t.Errorf("URIs mismatch: %v", got.URIs)
 	}
 }
 
 func TestBVLCSCBVLCResultPayload(t *testing.T) {
+	// ResultCode=1 (NAK) includes all error fields.
 	p := &BVLCResultPayload{
-		Function:   BVLCSCFuncConnectRequest,
-		ResultCode: 0x0010,
-		ErrorMsg:   "not authorized",
+		Function:          BVLCSCFuncConnectRequest,
+		ResultCode:        1,
+		ErrorHeaderMarker: 0x91,
+		ErrorClass:        0x0002,
+		ErrorCode:         0x0004,
+		ErrorMsg:          "not authorized",
 	}
 	data := p.Marshal()
 
@@ -195,6 +194,15 @@ func TestBVLCSCBVLCResultPayload(t *testing.T) {
 	}
 	if got.ResultCode != p.ResultCode {
 		t.Errorf("ResultCode mismatch")
+	}
+	if got.ErrorHeaderMarker != p.ErrorHeaderMarker {
+		t.Errorf("ErrorHeaderMarker mismatch")
+	}
+	if got.ErrorClass != p.ErrorClass {
+		t.Errorf("ErrorClass mismatch")
+	}
+	if got.ErrorCode != p.ErrorCode {
+		t.Errorf("ErrorCode mismatch")
 	}
 	if got.ErrorMsg != p.ErrorMsg {
 		t.Errorf("ErrorMsg mismatch")
