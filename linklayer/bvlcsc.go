@@ -170,10 +170,9 @@ func (o *BVLCSCOptionBase) Umarshal(b []byte) ([]byte, error) {
 	if o.HeaderMarker.DataFlag {
 		o.HeaderLength = uint16(b[1])<<8 | uint16(b[2])
 		return b[3:], nil
-	} else {
-		o.HeaderLength = 0
-		return b[1:], nil
 	}
+	o.HeaderLength = 0
+	return b[1:], nil
 }
 
 // SecurePathOption carries no data (Header-Length = 0).
@@ -183,7 +182,7 @@ type SecurePathOption struct {
 
 // Unmarshal implements BVLCSCOption.
 func (o *SecurePathOption) Unmarshal(b []byte) ([]byte, error) {
-	return o.BVLCSCOptionBase.Umarshal(b)
+	return o.Umarshal(b)
 }
 
 // RawOption holds raw bytes for an unrecognised option type.
@@ -198,7 +197,7 @@ func (o *RawOption) Marshal() []byte {
 }
 
 func (o *RawOption) Unmarshal(b []byte) ([]byte, error) {
-	remaining, err := o.BVLCSCOptionBase.Umarshal(b)
+	remaining, err := o.Umarshal(b)
 	if err != nil {
 		return remaining, err
 	}
@@ -218,11 +217,11 @@ func (o *HelloOption) Marshal() []byte {
 }
 
 func (o *HelloOption) Unmarshal(b []byte) ([]byte, error) {
-	remaining, err := o.BVLCSCOptionBase.Umarshal(b)
+	remaining, err := o.Umarshal(b)
 	if err != nil {
 		return remaining, err
 	}
-	if o.BVLCSCOptionBase.HeaderLength != 1 {
+	if o.HeaderLength != 1 {
 		return remaining, fmt.Errorf("wrong size for Hello Capabilities")
 	}
 	o.Capabilities = remaining[0]
@@ -245,11 +244,11 @@ func (o *IdentityOption) Marshal() []byte {
 	return append(commonData, devInstanceData...)
 }
 func (o *IdentityOption) Unmarshal(b []byte) ([]byte, error) {
-	remaining, err := o.BVLCSCOptionBase.Umarshal(b)
+	remaining, err := o.Umarshal(b)
 	if err != nil {
 		return remaining, err
 	}
-	if o.BVLCSCOptionBase.HeaderLength != 3 {
+	if o.HeaderLength != 3 {
 		return remaining, fmt.Errorf("wrong size for Identity Device Instance")
 	}
 	o.DeviceInstance = uint32(remaining[0])<<16 | uint32(remaining[1])<<8 | uint32(remaining[2])
@@ -268,7 +267,7 @@ func (o *HintOption) Marshal() []byte {
 }
 
 func (o *HintOption) Unmarshal(b []byte) ([]byte, error) {
-	remaining, err := o.BVLCSCOptionBase.Umarshal(b)
+	remaining, err := o.Umarshal(b)
 	if err != nil {
 		return remaining, err
 	}
@@ -288,7 +287,7 @@ func (o *TokenOption) Marshal() []byte {
 }
 
 func (o *TokenOption) Unmarshal(b []byte) ([]byte, error) {
-	remaining, err := o.BVLCSCOptionBase.Umarshal(b)
+	remaining, err := o.Umarshal(b)
 	if err != nil {
 		return remaining, err
 	}
@@ -313,7 +312,7 @@ func (o *ProprietaryOption) Marshal() []byte {
 }
 
 func (o *ProprietaryOption) Unmarshal(b []byte) ([]byte, error) {
-	remaining, err := o.BVLCSCOptionBase.Umarshal(b)
+	remaining, err := o.Umarshal(b)
 	if err != nil {
 		return remaining, err
 	}
@@ -582,7 +581,7 @@ func (p *AddressResolutionPayload) Marshal() []byte {
 	return []byte{}
 }
 
-func (p *AddressResolutionPayload) Unmarshal(b []byte) error {
+func (p *AddressResolutionPayload) Unmarshal(_ []byte) error {
 	return nil
 }
 

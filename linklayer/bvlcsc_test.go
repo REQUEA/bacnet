@@ -314,7 +314,7 @@ func newHintOption(scope []byte) *HintOption {
 	return &HintOption{
 		BVLCSCOptionBase: BVLCSCOptionBase{
 			HeaderMarker: BVLCSCHeaderMarker{OptionType: uint8(OptionTypeHint), DataFlag: true},
-			HeaderLength: uint16(len(scope)), //nolint:gosec
+			HeaderLength: uint16(len(scope)),
 		},
 		Scope: scope,
 	}
@@ -324,7 +324,7 @@ func newProprietaryOption(vendorID uint16, propType uint8, data []byte) *Proprie
 	return &ProprietaryOption{
 		BVLCSCOptionBase: BVLCSCOptionBase{
 			HeaderMarker: BVLCSCHeaderMarker{OptionType: uint8(OptionTypeProprietary), DataFlag: true},
-			HeaderLength: uint16(3 + len(data)), //nolint:gosec
+			HeaderLength: uint16(3 + len(data)),
 		},
 		VendorID:        vendorID,
 		ProprietaryType: propType,

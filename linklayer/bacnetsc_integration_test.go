@@ -553,9 +553,12 @@ func dialDirectRaw(t *testing.T, url string, vmac BVMAC) *websocket.Conn {
 		HandshakeTimeout: 5 * time.Second,
 		Subprotocols:     []string{scSubprotocolDirectConnect},
 	}
-	ws, _, err := dialer.Dial(url, nil)
+	ws, httpResp, err := dialer.Dial(url, nil)
 	if err != nil {
 		t.Fatalf("dial direct: %v", err)
+	}
+	if httpResp != nil && httpResp.Body != nil {
+		_ = httpResp.Body.Close()
 	}
 
 	crPayload := &ConnectRequestPayload{VMAC: vmac, MaxBVLCLength: 65535, MaxNPDULength: 65535}
@@ -825,6 +828,95 @@ func TestNodeSwitchBroadcastFromDirectDiscarded(t *testing.T) {
 		t.Fatal("handler was called but broadcast from direct connection should be discarded")
 	case <-time.After(200 * time.Millisecond):
 		// success: handler was not called
+	}
+}
+
+// TestBACnetSCReconnect verifies that the datalink automatically reconnects to the hub
+// after the connection is dropped.
+func TestBACnetSCReconnect(t *testing.T) {
+	connCh := make(chan struct{}, 10)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := wsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = ws.Close() }()
+
+		// Handshake.
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = ws.SetReadDeadline(time.Time{})
+
+		req := &BVLCSCMessage{}
+		if err := req.Unmarshal(data); err != nil || req.Function != BVLCSCFuncConnectRequest {
+			return
+		}
+		caPayload := &ConnectAcceptPayload{VMAC: hubVMAC, MaxBVLCLength: 65535, MaxNPDULength: 65535}
+		caMsg := &BVLCSCMessage{
+			Function:   BVLCSCFuncConnectAccept,
+			Control:    ControlOriginVMACPresent,
+			MessageID:  req.MessageID,
+			OriginVMAC: &hubVMAC,
+			Payload:    caPayload.Marshal(),
+		}
+		caData, _ := caMsg.Marshal()
+		if err := ws.WriteMessage(websocket.BinaryMessage, caData); err != nil {
+			return
+		}
+
+		// Signal that a new connection was accepted, then close to simulate a drop.
+		select {
+		case connCh <- struct{}{}:
+		default:
+		}
+		// Handler returns here, closing the WebSocket.
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{
+		PrimaryHubURL:     wsURL(srv),
+		ReconnectInterval: 50 * time.Millisecond,
+		HeartbeatInterval: 10 * time.Second, // large enough not to interfere
+	})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	if err := dl.Start(); err != nil {
+		t.Fatalf("start datalink: %v", err)
+	}
+
+	// Wait for first connection.
+	select {
+	case <-connCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for initial connection")
+	}
+
+	// Hub closed the WS; wait for reconnect.
+	select {
+	case <-connCh:
+		// success
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for reconnect after connection drop")
+	}
+
+	// Stop must return without hanging.
+	stopDone := make(chan error, 1)
+	go func() { stopDone <- dl.Stop() }()
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			t.Fatalf("stop: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() hung")
 	}
 }
 
