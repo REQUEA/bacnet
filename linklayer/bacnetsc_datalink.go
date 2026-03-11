@@ -145,28 +145,41 @@ func (dl *BACnetSCDatalink) AddPort(p *BACnetSCPort) {
 }
 
 // Start dials the hub (if configured) and starts the direct-connect listener (if configured).
+// Per spec AB.5.2: primary is tried first; failover is only used when primary is unavailable.
 func (dl *BACnetSCDatalink) Start() error {
 	if dl.cfg.PrimaryHubURL != "" {
 		conn, err := dl.connect(dl.cfg.PrimaryHubURL, true)
 		if err != nil {
 			logger.Error("sc: connect to primary hub: ", err)
-			dl.startHubReconnectLoop(dl.cfg.PrimaryHubURL, true)
+			// Primary unavailable — try failover immediately as backup.
+			if dl.cfg.FailoverHubURL != "" {
+				foConn, foErr := dl.connect(dl.cfg.FailoverHubURL, true)
+				if foErr != nil {
+					logger.Error("sc: connect to failover hub: ", foErr)
+				} else {
+					dl.mu.Lock()
+					dl.failoverHub = foConn
+					dl.mu.Unlock()
+					go foConn.recvLoop()
+				}
+			}
+			dl.startHubReconnectLoop(dl.cfg.PrimaryHubURL, true, false)
 		} else {
 			dl.mu.Lock()
 			dl.primaryHub = conn
 			dl.mu.Unlock()
+			go conn.recvLoop()
 		}
-	}
-
-	if dl.cfg.FailoverHubURL != "" {
+	} else if dl.cfg.FailoverHubURL != "" {
 		conn, err := dl.connect(dl.cfg.FailoverHubURL, true)
 		if err != nil {
 			logger.Error("sc: connect to failover hub: ", err)
-			dl.startHubReconnectLoop(dl.cfg.FailoverHubURL, false)
+			dl.startHubReconnectLoop(dl.cfg.FailoverHubURL, false, false)
 		} else {
 			dl.mu.Lock()
 			dl.failoverHub = conn
 			dl.mu.Unlock()
+			go conn.recvLoop()
 		}
 	}
 
@@ -399,6 +412,7 @@ func (dl *BACnetSCDatalink) handleAddressResolutionACK(msg *BVLCSCMessage) {
 		dl.mu.Lock()
 		dl.connections[vmacKey(conn.remoteVMAC)] = conn
 		dl.mu.Unlock()
+		go conn.recvLoop() // start AFTER storing under lock
 	}()
 }
 
@@ -432,7 +446,10 @@ func (dl *BACnetSCDatalink) handleHeartbeatRequest(msg *BVLCSCMessage, conn *scC
 }
 
 // connect dials a WebSocket URL, performs the Connect-Request/Accept handshake,
-// and sends Advertisement. The caller is responsible for storing the returned connection.
+// and sends Advertisement.
+// IMPORTANT: connect does NOT start conn.recvLoop. The caller must store the
+// returned connection under dl.mu before calling go conn.recvLoop(), so that
+// onConnectionClosed can always identify the connection by pointer.
 func (dl *BACnetSCDatalink) connect(url string, isHub bool) (*scConnection, error) {
 	// state: IDLE
 	logger.Trace("BACnetSCDatalink.connect: IDLE")
@@ -513,13 +530,11 @@ func (dl *BACnetSCDatalink) connect(url string, isHub bool) (*scConnection, erro
 
 	conn := newSCConnection(ws, remoteVMAC, remoteUUID, isHub, dl.onMessage, dl.onConnectionClosed)
 
-	// Start receive loop.
-	go conn.recvLoop()
-
-	// Send Advertisement.
+	// Send Advertisement and start heartbeat before returning.
+	// recvLoop is intentionally NOT started here; callers must start it after
+	// storing conn under dl.mu to avoid a race where onConnectionClosed fires
+	// before the pointer is registered.
 	dl.sendAdvertisement(conn)
-
-	// Start heartbeat.
 	conn.startHeartbeat(dl.cfg.heartbeatInterval())
 
 	logger.Trace("sc: connected to ", url, " remoteVMAC=", remoteVMAC.String())
@@ -720,35 +735,53 @@ func (dl *BACnetSCDatalink) sendAdvertisement(conn *scConnection) {
 }
 
 // onConnectionClosed removes the closed connection from hub fields or the peer map,
-// then triggers a reconnect goroutine for hub connections.
-func (dl *BACnetSCDatalink) onConnectionClosed(vmac BVMAC) {
+// then triggers reconnect goroutines as required by AB.5.2/AB.5.4.
+// The conn pointer is used for identity comparison to avoid false matches when two
+// different hubs happen to advertise the same VMAC.
+func (dl *BACnetSCDatalink) onConnectionClosed(conn *scConnection) {
 	var isPrimary, isFailover bool
 	dl.mu.Lock()
 	switch {
-	case dl.primaryHub != nil && dl.primaryHub.remoteVMAC == vmac:
+	case dl.primaryHub == conn:
 		dl.primaryHub = nil
 		isPrimary = true
-	case dl.failoverHub != nil && dl.failoverHub.remoteVMAC == vmac:
+	case dl.failoverHub == conn:
 		dl.failoverHub = nil
 		isFailover = true
 	default:
-		delete(dl.connections, vmacKey(vmac))
+		delete(dl.connections, vmacKey(conn.remoteVMAC))
 	}
 	dl.mu.Unlock()
-	logger.Trace("sc: connection closed for VMAC ", vmac.String())
+	logger.Trace("sc: connection closed for VMAC ", conn.remoteVMAC.String())
 
 	if isPrimary && dl.cfg.PrimaryHubURL != "" {
-		dl.startHubReconnectLoop(dl.cfg.PrimaryHubURL, true)
+		dl.startHubReconnectLoop(dl.cfg.PrimaryHubURL, true, false)
+		// If failover is configured and not currently connected, start it as backup.
+		if dl.cfg.FailoverHubURL != "" {
+			dl.mu.RLock()
+			failoverUp := dl.failoverHub != nil && dl.failoverHub.state == connConnected
+			dl.mu.RUnlock()
+			if !failoverUp {
+				dl.startHubReconnectLoop(dl.cfg.FailoverHubURL, false, true)
+			}
+		}
 	} else if isFailover && dl.cfg.FailoverHubURL != "" {
-		dl.startHubReconnectLoop(dl.cfg.FailoverHubURL, false)
+		// Only restart failover reconnect loop when primary is also down.
+		dl.mu.RLock()
+		primaryUp := dl.primaryHub != nil && dl.primaryHub.state == connConnected
+		dl.mu.RUnlock()
+		if !primaryUp {
+			dl.startHubReconnectLoop(dl.cfg.FailoverHubURL, false, false)
+		}
 	}
 }
 
 // startHubReconnectLoop launches a goroutine that repeatedly tries to reconnect to the hub
 // at url using exponential backoff, then exits once connected (or dl.stopCh is closed).
 // isPrimary selects which slot (primaryHub vs failoverHub) the connection is stored in.
+// When immediate is true the first attempt fires without delay.
 // A guard flag (reconnectingPrimary/Failover) prevents duplicate reconnect goroutines.
-func (dl *BACnetSCDatalink) startHubReconnectLoop(url string, isPrimary bool) {
+func (dl *BACnetSCDatalink) startHubReconnectLoop(url string, isPrimary bool, immediate bool) {
 	dl.mu.Lock()
 	// Check stopCh while holding dl.mu so the lock/unlock in Stop() provides
 	// a synchronization point that prevents wg.Add after wg.Wait returns.
@@ -788,11 +821,22 @@ func (dl *BACnetSCDatalink) startHubReconnectLoop(url string, isPrimary bool) {
 
 		delay := dl.cfg.reconnectInterval()
 		maxDelay := dl.cfg.maxReconnectInterval()
+		skipDelay := immediate
 		for {
-			select {
-			case <-dl.stopCh:
-				return
-			case <-time.After(delay):
+			if skipDelay {
+				skipDelay = false
+				// Still honour a concurrent Stop().
+				select {
+				case <-dl.stopCh:
+					return
+				default:
+				}
+			} else {
+				select {
+				case <-dl.stopCh:
+					return
+				case <-time.After(delay):
+				}
 			}
 
 			conn, err := dl.connect(url, true)
@@ -808,10 +852,20 @@ func (dl *BACnetSCDatalink) startHubReconnectLoop(url string, isPrimary bool) {
 			dl.mu.Lock()
 			if isPrimary {
 				dl.primaryHub = conn
+				// Primary is back — disconnect failover so the device uses
+				// primary exclusively (AB.5.2).
+				oldFailover := dl.failoverHub
+				dl.failoverHub = nil // nil first so onClosed won't re-trigger failover loop
+				dl.mu.Unlock()
+				go conn.recvLoop() // start AFTER storing under lock
+				if oldFailover != nil {
+					go oldFailover.disconnect()
+				}
 			} else {
 				dl.failoverHub = conn
+				dl.mu.Unlock()
+				go conn.recvLoop() // start AFTER storing under lock
 			}
-			dl.mu.Unlock()
 			logger.Trace("sc: reconnected to hub ", url)
 			return
 		}

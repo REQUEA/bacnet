@@ -1020,3 +1020,105 @@ func TestBACnetSCDisconnect(t *testing.T) {
 		t.Fatal("did not receive disconnect signal within timeout")
 	}
 }
+
+// TestHubConnectorFailoverOnPrimaryFail verifies that when the primary hub is
+// unreachable the connector establishes the connection via the failover hub.
+func TestHubConnectorFailoverOnPrimaryFail(t *testing.T) {
+	failoverHub := newHubServer()
+	failoverSrv := httptest.NewServer(failoverHub)
+	defer failoverSrv.Close()
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{
+		PrimaryHubURL:     "ws://127.0.0.1:1", // connection-refused — always fails
+		FailoverHubURL:    wsURL(failoverSrv),
+		ReconnectInterval: 10 * time.Second, // keep primary loop quiet
+		HeartbeatInterval: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	if err := dl.Start(); err != nil {
+		t.Fatalf("start datalink: %v", err)
+	}
+	defer func() { _ = dl.Stop() }()
+
+	// Start() tries failover synchronously when primary fails, so by the time
+	// it returns the failover connection is already established.
+	dl.mu.RLock()
+	failoverUp := dl.failoverHub != nil && dl.failoverHub.state == connConnected
+	primaryUp := dl.primaryHub != nil && dl.primaryHub.state == connConnected
+	dl.mu.RUnlock()
+
+	if !failoverUp {
+		t.Error("expected connection via failover hub after primary failure")
+	}
+	if primaryUp {
+		t.Error("primary hub should not be connected")
+	}
+}
+
+// TestHubConnectorSwitchToPrimaryOnRestore verifies that once primary becomes
+// available the connector switches to it and disconnects from failover.
+func TestHubConnectorSwitchToPrimaryOnRestore(t *testing.T) {
+	// Primary hub handler: initially returns 503 to simulate unavailability,
+	// then starts accepting WebSocket connections once enabled is closed.
+	primaryHub := newHubServer()
+	enabled := make(chan struct{})
+	primarySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-enabled:
+			primaryHub.ServeHTTP(w, r)
+		default:
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer primarySrv.Close()
+
+	failoverHub := newHubServer()
+	failoverSrv := httptest.NewServer(failoverHub)
+	defer failoverSrv.Close()
+
+	dl, err := NewBACnetSCDatalink(BACnetSCConfig{
+		PrimaryHubURL:     wsURL(primarySrv),
+		FailoverHubURL:    wsURL(failoverSrv),
+		ReconnectInterval: 100 * time.Millisecond,
+		HeartbeatInterval: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("create datalink: %v", err)
+	}
+	if err := dl.Start(); err != nil {
+		t.Fatalf("start datalink: %v", err)
+	}
+	defer func() { _ = dl.Stop() }()
+
+	// After Start() primary returns 503, so we should be on failover.
+	dl.mu.RLock()
+	failoverUp := dl.failoverHub != nil && dl.failoverHub.state == connConnected
+	dl.mu.RUnlock()
+	if !failoverUp {
+		t.Fatal("expected initial connection on failover hub")
+	}
+
+	// Enable primary hub and wait for the reconnect loop to switch over.
+	close(enabled)
+
+	deadline := time.After(3 * time.Second)
+	for {
+		dl.mu.RLock()
+		primaryUp := dl.primaryHub != nil && dl.primaryHub.state == connConnected
+		failoverNil := dl.failoverHub == nil
+		dl.mu.RUnlock()
+		if primaryUp && failoverNil {
+			break // success: primary connected, failover disconnected
+		}
+		select {
+		case <-deadline:
+			dl.mu.RLock()
+			p, fo := dl.primaryHub, dl.failoverHub
+			dl.mu.RUnlock()
+			t.Fatalf("timeout waiting for switch to primary: primary=%v failover=%v", p, fo)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}

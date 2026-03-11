@@ -32,7 +32,7 @@ type scConnection struct {
 	done       chan struct{}
 	mu         sync.Mutex
 	onMessage  func(msg *BVLCSCMessage, conn *scConnection)
-	onClosed   func(vmac BVMAC)
+	onClosed   func(conn *scConnection)
 	// heartbeat state; protected by hbMu
 	hbMu           sync.Mutex
 	lastReceived   time.Time // time of last received BVLC message
@@ -40,7 +40,7 @@ type scConnection struct {
 }
 
 func newSCConnection(ws *websocket.Conn, remoteVMAC BVMAC, remoteUUID [16]byte, isHub bool,
-	onMessage func(*BVLCSCMessage, *scConnection), onClosed func(BVMAC)) *scConnection {
+	onMessage func(*BVLCSCMessage, *scConnection), onClosed func(*scConnection)) *scConnection {
 	return &scConnection{
 		ws:           ws,
 		remoteVMAC:   remoteVMAC,
@@ -79,7 +79,7 @@ func (c *scConnection) recvLoop() {
 	defer func() {
 		close(c.done)
 		if c.onClosed != nil {
-			c.onClosed(c.remoteVMAC)
+			c.onClosed(c)
 		}
 	}()
 	for {
