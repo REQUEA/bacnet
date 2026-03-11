@@ -45,7 +45,7 @@ func (p *Port) SetNetworkEntity(e NetworkEntity) {
 func (p *Port) HandleNPDU(dadr bacnet.MAC, sadr bacnet.MAC, buf []byte) error {
 	// TODO: might have to place the incoming message in an input queue for
 	// the network entity
-	logger.Trace("Port.HandleNPDU(dadr: %v, sadr: %v, ...)", dadr, sadr)
+	logger.Tracef("Port.HandleNPDU(dadr: %v, sadr: %v, ...)", dadr, sadr)
 	return p.networkEntity.NUnitDataIndication(p, dadr, sadr, buf)
 }
 

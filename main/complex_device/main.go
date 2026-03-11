@@ -26,7 +26,10 @@ type logAdapter struct{ l *logrus.Logger }
 
 func (a *logAdapter) Info(args ...any)  { a.l.Info(args...) }
 func (a *logAdapter) Error(args ...any) { a.l.Error(args...) }
-func (a *logAdapter) Trace(args ...any) { a.l.Trace(args...) }
+func (a *logAdapter) Trace(args ...any)                     { a.l.Trace(args...) }
+func (a *logAdapter) Infof(format string, args ...any)  { a.l.Infof(format, args...) }
+func (a *logAdapter) Errorf(format string, args ...any) { a.l.Errorf(format, args...) }
+func (a *logAdapter) Tracef(format string, args ...any) { a.l.Tracef(format, args...) }
 
 // loremIpsum returns a string of approximately n characters built from a
 // repeated Lorem Ipsum paragraph. Used to produce a value long enough to

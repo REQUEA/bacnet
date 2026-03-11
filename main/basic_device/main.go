@@ -23,7 +23,10 @@ type logAdapter struct{ l *logrus.Logger }
 
 func (a *logAdapter) Info(args ...any)  { a.l.Info(args...) }
 func (a *logAdapter) Error(args ...any) { a.l.Error(args...) }
-func (a *logAdapter) Trace(args ...any) { a.l.Trace(args...) }
+func (a *logAdapter) Trace(args ...any)                     { a.l.Trace(args...) }
+func (a *logAdapter) Infof(format string, args ...any)  { a.l.Infof(format, args...) }
+func (a *logAdapter) Errorf(format string, args ...any) { a.l.Errorf(format, args...) }
+func (a *logAdapter) Tracef(format string, args ...any) { a.l.Tracef(format, args...) }
 
 func main() {
 	ipStr := flag.String("ip", "127.0.0.1", "local IP address for BACnet/IP")

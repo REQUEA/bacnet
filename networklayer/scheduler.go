@@ -44,7 +44,7 @@ func (w *WRRScheduler[T]) GetNext() (T, bool) {
 	w.Lock()
 	defer w.Unlock()
 
-	for range w.fifos {
+	for i := 0; i < 2*len(w.fifos); i++ {
 		if w.currentCount < w.fifos[w.currentQueueIdx].weight && !w.fifos[w.currentQueueIdx].Empty() {
 			w.currentCount++
 			result, ok := w.fifos[w.currentQueueIdx].Pop()

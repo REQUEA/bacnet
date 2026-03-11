@@ -107,6 +107,19 @@ func (p *BACnetIPPort) MaxPDULength() uint {
 }
 
 func getBroadcastAddress(ip net.IP, prefixLen int) net.IP {
+	if ip == nil || ip.IsUnspecified() {
+		return nil
+	}
+
+	if prefixLen < 0 || prefixLen > 32 {
+		return nil
+	}
+
+	ip = ip.To4()
+	if ip == nil {
+		return nil
+	}
+
 	mask := net.CIDRMask(prefixLen, 32)
 	result := make(net.IP, len(ip))
 	for i := range ip {
@@ -230,6 +243,12 @@ func (l *BACnetIPDatalink) Send(data []byte, destMAC []byte) error {
 	var function Function
 	if destMAC != nil {
 		function = BacFuncUnicast
+		for _, p := range l.Ports {
+			if bytes.Equal(destMAC, p.BroadcastMac().GetBytes()) {
+				function = BacFuncBroadcast
+				break
+			}
+		}
 	} else {
 		function = BacFuncBroadcast
 	}

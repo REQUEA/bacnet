@@ -65,6 +65,7 @@ func (e *RouterNetworkEntity) NUnitDataRequest(
 			SetDest(dadr).
 			SetIsExpectingReply(der).
 			SetPriority(priority)
+		npdu.data = payload
 		err := e.schedule(int(priority), npdu)
 		if err != nil {
 			return fmt.Errorf("scheduling global broadcast npdu failed: %w", err)
@@ -75,6 +76,7 @@ func (e *RouterNetworkEntity) NUnitDataRequest(
 		npdu.SetDest(dadr).
 			SetIsExpectingReply(der).
 			SetPriority(priority)
+		npdu.data = payload
 		// Schedule the NPDU for routing
 		err := e.schedule(int(priority), npdu)
 		if err != nil {
@@ -109,6 +111,21 @@ func (e *RouterNetworkEntity) NReleaseRequest(_ *bacnet.BACnetAddress) error {
 
 func (e *RouterNetworkEntity) Start() {
 	go e.route()
+	// Per BACnet §6.4.1 a router shall broadcast I-Am-Router-To-Network on each
+	// port at power-up, advertising all other directly-connected networks.
+	for _, p := range e.ports {
+		var others []bacnet.NetworkNumber
+		for _, other := range e.ports {
+			if other.Dnet != p.Dnet {
+				others = append(others, other.Dnet)
+			}
+		}
+		if len(others) > 0 {
+			if err := e.sendIAmRouterToNetwork(p, others...); err != nil {
+				logger.Error("startup I-Am-Router-To-Network on port ", p.ID, " failed: ", err)
+			}
+		}
+	}
 }
 
 func (e *RouterNetworkEntity) route() {
@@ -146,7 +163,7 @@ routeloop:
 				for _, p := range e.ports {
 					if !hasSource || p.Dnet != sourceNet {
 						logger.Trace("passing npdu to port ", p.Dnet)
-						err := p.ToDataLink(npdu, nil)
+						err := p.Broadcast(npdu)
 						if err != nil {
 							logger.Error("error sending to datalink: ", err)
 						}
@@ -182,7 +199,7 @@ routeloop:
 				logger.Trace("no route for DNET ", npdu.Destination.Network)
 				newNpdu := NewWhoIsRouterToNetworkNPDU(dnet)
 				for _, p := range e.ports {
-					err := p.ToDataLink(newNpdu, nil)
+					err := p.Broadcast(newNpdu)
 					if err != nil {
 						logger.Error("error sending to datalink: ", err)
 					}
@@ -368,7 +385,7 @@ func (e *RouterNetworkEntity) handleWhoIsRouterToNetwork(source *Port, sadr bacn
 		var err error
 		for _, p := range e.ports {
 			if p.Dnet != source.Dnet {
-				err = p.ToDataLink(npdu, nil)
+				err = p.Broadcast(npdu)
 				if err != nil {
 					// log error
 					logger.Error("transmitting Who-Is-Router-To-Network on port ", p.ID, " failed")
@@ -411,7 +428,7 @@ func (e *RouterNetworkEntity) handleIAmRouterToNetwork(source *Port, sadr bacnet
 	dnets := make([]bacnet.NetworkNumber, 0)
 	for {
 		var net bacnet.NetworkNumber
-		err := binary.Read(data, binary.BigEndian, net)
+		err := binary.Read(data, binary.BigEndian, &net)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -542,5 +559,5 @@ func (e *RouterNetworkEntity) sendIAmRouterToNetwork(dest *Port, dnets ...bacnet
 		_ = binary.Write(data, binary.BigEndian, dnet)
 	}
 	npdu.data = data.Bytes()
-	return dest.ToDataLink(npdu, nil)
+	return dest.Broadcast(npdu)
 }

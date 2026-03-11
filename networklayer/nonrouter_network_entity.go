@@ -76,7 +76,7 @@ func (ne *NonRouterNetworkEntity) handleIAmRouterToNetwork(sport *Port, sadr bac
 	data := bytes.NewBuffer(npdu.data)
 	for {
 		var net bacnet.NetworkNumber
-		err := binary.Read(data, binary.BigEndian, net)
+		err := binary.Read(data, binary.BigEndian, &net)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
