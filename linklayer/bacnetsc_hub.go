@@ -240,7 +240,16 @@ func (h *BACnetSCHub) serveConn(ws *websocket.Conn) {
 		}
 		switch msg.Function {
 		case BVLCSCFuncEncapsulatedNPDU:
-			h.forwardNPDU(msg, client, clientKey)
+			h.forwardMessage(BVLCSCFuncEncapsulatedNPDU, msg, client, clientKey)
+
+		case BVLCSCFuncAddressResolution, BVLCSCFuncAddressResolutionACK:
+			h.forwardMessage(msg.Function, msg, client, clientKey)
+
+		case BVLCSCFuncAdvertisement, BVLCSCFuncAdvertisementSolicitation:
+			h.forwardBroadcast(msg.Function, msg, client, clientKey)
+
+		case BVLCSCFuncProprietaryMessage:
+			h.forwardMessage(BVLCSCFuncProprietaryMessage, msg, client, clientKey)
 
 		case BVLCSCFuncHeartbeatRequest:
 			ack := &BVLCSCMessage{
@@ -261,13 +270,19 @@ func (h *BACnetSCHub) serveConn(ws *websocket.Conn) {
 			}
 			return // defer handles cleanup
 
+		case BVLCSCFuncResult,
+			BVLCSCFuncConnectAccept,
+			BVLCSCFuncDisconnectACK,
+			BVLCSCFuncHeartbeatACK:
+			// silently ignore: valid but not expected in the message loop
+
 		default:
 			logger.Trace("sc hub: unhandled function ", msg.Function)
 		}
 	}
 }
 
-// forwardNPDU routes an EncapsulatedNPDU according to AB.5.3.2 / AB.5.3.3.
+// forwardMessage routes fn according to AB.5.3.2/AB.5.3.3/AB.5.5/AB.5.6.
 //
 // Broadcast (DestVMAC nil or == BroadcastVMAC):
 //   - Adds OriginVMAC = sender VMAC, keeps DestVMAC = BroadcastVMAC.
@@ -276,13 +291,13 @@ func (h *BACnetSCHub) serveConn(ws *websocket.Conn) {
 // Unicast (DestVMAC set and != BroadcastVMAC):
 //   - Adds OriginVMAC = sender VMAC, removes DestVMAC.
 //   - Delivered only to the matching client; silently discarded if absent.
-func (h *BACnetSCHub) forwardNPDU(msg *BVLCSCMessage, from *hubConn, fromKey string) {
+func (h *BACnetSCHub) forwardMessage(fn BVLCSCFunction, msg *BVLCSCMessage, from *hubConn, fromKey string) {
 	isBroadcast := msg.DestVMAC == nil || *msg.DestVMAC == BroadcastVMAC
 
 	if isBroadcast {
 		broadcast := BroadcastVMAC
 		fwd := &BVLCSCMessage{
-			Function:   BVLCSCFuncEncapsulatedNPDU,
+			Function:   fn,
 			Control:    ControlOriginVMACPresent | ControlDestVMACPresent,
 			MessageID:  msg.MessageID,
 			OriginVMAC: &from.vmac,
@@ -314,7 +329,7 @@ func (h *BACnetSCHub) forwardNPDU(msg *BVLCSCMessage, from *hubConn, fromKey str
 			return // silently discard (AB.5.3.2)
 		}
 		fwd := &BVLCSCMessage{
-			Function:   BVLCSCFuncEncapsulatedNPDU,
+			Function:   fn,
 			Control:    ControlOriginVMACPresent,
 			MessageID:  msg.MessageID,
 			OriginVMAC: &from.vmac,
@@ -325,5 +340,34 @@ func (h *BACnetSCHub) forwardNPDU(msg *BVLCSCMessage, from *hubConn, fromKey str
 			return
 		}
 		dest.send(fwdData)
+	}
+}
+
+// forwardBroadcast always sends fn to all connected clients except the sender (AB.5.4.1/AB.5.4.2).
+// Used for Advertisement and AdvertisementSolicitation which must always broadcast.
+func (h *BACnetSCHub) forwardBroadcast(fn BVLCSCFunction, msg *BVLCSCMessage, from *hubConn, fromKey string) {
+	broadcast := BroadcastVMAC
+	fwd := &BVLCSCMessage{
+		Function:   fn,
+		Control:    ControlOriginVMACPresent | ControlDestVMACPresent,
+		MessageID:  msg.MessageID,
+		OriginVMAC: &from.vmac,
+		DestVMAC:   &broadcast,
+		Payload:    msg.Payload,
+	}
+	fwdData, err := fwd.Marshal()
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	targets := make([]*hubConn, 0, len(h.clients)-1)
+	for k, c := range h.clients {
+		if k != fromKey {
+			targets = append(targets, c)
+		}
+	}
+	h.mu.RUnlock()
+	for _, c := range targets {
+		c.send(fwdData)
 	}
 }

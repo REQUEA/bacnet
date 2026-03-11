@@ -65,6 +65,8 @@ func (v *BVMAC) Equal(other bacnet.MAC) bool {
 }
 
 // BVLCSCFunction identifies the BVLC-SC message type (Annex AB Table AB-1).
+//
+//go:generate stringer -type=BVLCSCFunction
 type BVLCSCFunction uint8
 
 const (
