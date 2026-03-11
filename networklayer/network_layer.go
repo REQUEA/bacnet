@@ -210,18 +210,18 @@ func (npdu *NPDU) String() string {
 		npdu.GetPriority(),
 	)
 	if npdu.IsDestPresent() {
-		result = fmt.Sprintf("%s | DNET: %d, DLEN: %d",
-			result,
-			npdu.Destination.Network,
-			len(npdu.Destination.Mac.GetBytes()),
-		)
+		dlen := 0
+		if npdu.Destination.Mac != nil {
+			dlen = len(npdu.Destination.Mac.GetBytes())
+		}
+		result = fmt.Sprintf("%s | DNET: %d, DLEN: %d", result, npdu.Destination.Network, dlen)
 	}
 	if npdu.IsSourcePresent() {
-		result = fmt.Sprintf("%s | SNET: %d, SLEN: %d",
-			result,
-			npdu.Source.Network,
-			len(npdu.Source.Mac.GetBytes()),
-		)
+		slen := 0
+		if npdu.Source.Mac != nil {
+			slen = len(npdu.Source.Mac.GetBytes())
+		}
+		result = fmt.Sprintf("%s | SNET: %d, SLEN: %d", result, npdu.Source.Network, slen)
 	}
 	if npdu.IsDestPresent() {
 		result = fmt.Sprintf("%s | HopCount: %d",
@@ -318,7 +318,7 @@ func (npdu *NPDU) IsDestPresent() bool {
 
 func (npdu *NPDU) SetDest(addr *bacnet.BACnetAddress) *NPDU {
 	npdu.Destination = addr
-	npdu.SetIsDestPresent(true)
+	npdu.SetIsDestPresent(addr != nil)
 	return npdu
 }
 
@@ -337,7 +337,7 @@ func (npdu *NPDU) IsSourcePresent() bool {
 
 func (npdu *NPDU) SetSource(addr *bacnet.BACnetAddress) *NPDU {
 	npdu.Source = addr
-	npdu.SetIsSourcePresent(true)
+	npdu.SetIsSourcePresent(addr != nil)
 	return npdu
 }
 

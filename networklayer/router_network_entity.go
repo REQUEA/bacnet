@@ -133,10 +133,18 @@ routeloop:
 			// TODO: need to add SNET to the npdu header before scheduling
 			npdu.HopCount--
 			if npdu.HopCount > 0 {
-				// broadcast on all ports except source
-				logger.Trace("broadcasting on all ports except port ", npdu.Source.Network)
+				// broadcast on all ports except the one the NPDU arrived on.
+				// Source is nil for locally-originated packets; broadcast to all ports in that case.
+				var sourceNet bacnet.NetworkNumber
+				hasSource := npdu.Source != nil
+				if hasSource {
+					sourceNet = npdu.Source.Network
+					logger.Trace("broadcasting on all ports except port ", sourceNet)
+				} else {
+					logger.Trace("broadcasting on all ports (local origin)")
+				}
 				for _, p := range e.ports {
-					if p.Dnet != npdu.Source.Network {
+					if !hasSource || p.Dnet != sourceNet {
 						logger.Trace("passing npdu to port ", p.Dnet)
 						err := p.ToDataLink(npdu, nil)
 						if err != nil {
