@@ -97,6 +97,7 @@ func (sh *ServiceHandler) HandleConfServIndication(
 	indication *applicationlayer.APDUIndication,
 	serviceChoice bacnet.BACnetConfirmedServiceChoice,
 ) {
+	logger.Tracef("recv confirmed-service-request service=%v invokeID=%d from %s", serviceChoice, indication.InvokeID, indication.Source)
 	srv, ok := sh.confirmedServices[serviceChoice]
 	if ok {
 		srv.HandleConfServIndication(indication)
@@ -132,6 +133,7 @@ func (sh *ServiceHandler) HandleUnconfServIndication(
 	indication *applicationlayer.APDUIndication,
 	serviceChoice bacnet.BACnetUnconfirmedServiceChoice,
 ) {
+	logger.Tracef("recv unconfirmed-service-request service=%v from %s", serviceChoice, indication.Source)
 	srv, ok := sh.unconfirmedServices[serviceChoice]
 	if ok {
 		srv.HandleUnconfServIndication(indication)

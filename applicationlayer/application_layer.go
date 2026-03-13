@@ -416,6 +416,7 @@ func (ae *ApplicationEntity) SendConfServRequest(
 	data []byte,
 ) *ConfServFuture {
 	id := NewTransactionID(dest, ae.nextClientInvokeID())
+	logger.Tracef("send confirmed-service-request service=%v invokeID=%d to %s", serviceChoice, id.InvokeID, dest)
 	transaction := NewClientTransaction(&id)
 	transaction.applicationEntity = ae
 	transaction.serviceLayer = ae.serviceLayer
@@ -666,6 +667,7 @@ func (ae *ApplicationEntity) SendConfServResponse(
 	if tr == nil {
 		return fmt.Errorf("SendConfServResponse: no server transaction for invokeID=%d source=%s", invokeID, source)
 	}
+	logger.Tracef("send confirmed-service-response service=%v invokeID=%d to %s len=%d", serviceChoice, invokeID, source, len(data))
 	tr.RequestTimer.Stop()
 
 	maxApduLength := defaultMaxApduLength
@@ -735,6 +737,7 @@ func (ae *ApplicationEntity) SendErrorResponse(
 		tr.RequestTimer.Stop()
 		ae.removeServerTransaction(&transactionID)
 	}
+	logger.Tracef("send error-response service=%v invokeID=%d to %s class=%v code=%v", serviceChoice, invokeID, source, errClass, errCode)
 	// Error PDU: type|flags, invoke-id, service-choice, error-class (enum), error-code (enum)
 	pdu := []byte{
 		uint8(Error << 4),
