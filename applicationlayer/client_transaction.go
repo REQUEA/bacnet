@@ -97,6 +97,7 @@ func (t *ClientTransaction) HandleConfServRequest(
 }
 
 func (t *ClientTransaction) resolveFuture(resp *ConfServResponse) {
+	logger.Tracef("recv confirmed-service-response service=%v invokeID=%d type=%v", t.serviceChoice, t.ID.InvokeID, resp.Type)
 	if t.future != nil {
 		t.future.c <- resp
 		close(t.future.c)

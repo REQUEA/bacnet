@@ -82,6 +82,7 @@ const (
 	Proprietarymax        ObjectType = 0x3ff
 )
 
+//go:generate stringer -type=BACnetDeviceStatus
 type BACnetDeviceStatus uint16
 
 const (
@@ -93,6 +94,7 @@ const (
 	DeviceStatusBackupInProgress    BACnetDeviceStatus = 5
 )
 
+//go:generate stringer -type=BACnetServicesSupported
 type BACnetServicesSupported uint
 
 const (
@@ -149,6 +151,7 @@ const (
 	ServicesSupportedRequestKey              BACnetServicesSupported = 25
 )
 
+//go:generate stringer -type=BACnetObjectTypesSupported
 type BACnetObjectTypesSupported uint
 
 const (
@@ -218,6 +221,7 @@ const (
 	ObjectTypesSupportedColorTemperature      BACnetObjectTypesSupported = 64
 )
 
+//go:generate stringer -type=BACnetConfirmedServiceChoice
 type BACnetConfirmedServiceChoice uint
 
 const (
@@ -255,6 +259,7 @@ const (
 	ConfirmedServiceChoiceVtData                           BACnetConfirmedServiceChoice = 23
 )
 
+//go:generate stringer -type=BACnetUnconfirmedServiceChoice
 type BACnetUnconfirmedServiceChoice uint
 
 const (
