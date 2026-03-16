@@ -67,11 +67,6 @@ func main() {
 	)
 	device := objectmodel.NewDevice(devObj)
 
-	// Add an analog input.
-	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.DegreesCelsius)
-	roomTemp.SetPresentValue(21.5)
-	device.AddObject(roomTemp)
-
 	// Configure TLS.
 	var tlsCfg *tls.Config
 	if *insecure {
@@ -106,7 +101,19 @@ func main() {
 	ae.SetNetworkEntity(ne)
 
 	// Attach the service handler.
-	sh := servicelayer.NewServiceHandler(ae, device)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	if err := db.AddDevice(device); err != nil {
+		log.Fatalf("AddDevice: %v", err)
+	}
+
+	// Add an analog input.
+	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.DegreesCelsius)
+	roomTemp.SetPresentValue(21.5)
+	if err := db.AddObject(device, roomTemp); err != nil {
+		log.Fatalf("AddObject: %v", err)
+	}
+
+	sh := servicelayer.NewServiceHandler(ae, db)
 
 	// Start the datalink.
 	if err := dl.Start(); err != nil {

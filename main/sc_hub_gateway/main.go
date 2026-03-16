@@ -97,7 +97,6 @@ func main() {
 
 	temp := objectmodel.NewAnalogValueObject(1, "Indoor Temperature", bacnet.DegreesCelsius)
 	temp.SetPresentValue(20.0)
-	device1.AddObject(temp)
 
 	// --- Build device 2: HumiditySensor (instance 2002) ---
 	devObj2 := objectmodel.NewDeviceObject(
@@ -118,9 +117,8 @@ func main() {
 	)
 	device2 := objectmodel.NewDevice(devObj2)
 
-	humidity := objectmodel.NewAnalogValueObject(1, "Outdoor Humidity", bacnet.PercentRelativeHumidity)
+	humidity := objectmodel.NewAnalogValueObject(2, "Outdoor Humidity", bacnet.PercentRelativeHumidity)
 	humidity.SetPresentValue(55.0)
-	device2.AddObject(humidity)
 
 	// --- Start embedded BACnet/SC Hub ---
 	hub, err := linklayer.NewBACnetSCHub(linklayer.BACnetSCHubConfig{
@@ -207,9 +205,19 @@ func main() {
 	router.Start()
 
 	// --- Service layer ---
-	sh := servicelayer.NewServiceHandler(ae, device0)
-	sh.AddDevice(device1)
-	sh.AddDevice(device2)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	for _, dev := range []*objectmodel.Device{device0, device1, device2} {
+		if err := db.AddDevice(dev); err != nil {
+			log.Fatalf("AddDevice: %v", err)
+		}
+	}
+	if err := db.AddObject(device1, temp); err != nil {
+		log.Fatalf("AddObject temp: %v", err)
+	}
+	if err := db.AddObject(device2, humidity); err != nil {
+		log.Fatalf("AddObject humidity: %v", err)
+	}
+	sh := servicelayer.NewServiceHandler(ae, db)
 	sh.RegisterCOVServices()
 
 	// Announce presence.

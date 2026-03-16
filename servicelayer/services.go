@@ -18,9 +18,8 @@ import (
 var _ applicationlayer.ServiceHandler = (*ServiceHandler)(nil)
 
 type ServiceHandler struct {
-	devices             []*objectmodel.Device
+	db                  *objectmodel.ObjectDatabase
 	applicationEntity   *applicationlayer.ApplicationEntity
-	remoteDeviceCache   *objectmodel.RemoteDeviceCache
 	confirmedServices   map[bacnet.BACnetConfirmedServiceChoice]ConfirmedService
 	unconfirmedServices map[bacnet.BACnetUnconfirmedServiceChoice]UnconfirmedService
 	covSubscriptions    []*covSubscription
@@ -28,12 +27,11 @@ type ServiceHandler struct {
 	covNotifyCallback   func(COVNotificationRequest)
 }
 
-// NewServiceHandler creates a ServiceHandler for the given device and wires it into the ApplicationEntity.
-func NewServiceHandler(ae *applicationlayer.ApplicationEntity, device *objectmodel.Device) *ServiceHandler {
+// NewServiceHandler creates a ServiceHandler for the given ObjectDatabase and wires it into the ApplicationEntity.
+func NewServiceHandler(ae *applicationlayer.ApplicationEntity, db *objectmodel.ObjectDatabase) *ServiceHandler {
 	sh := &ServiceHandler{
-		devices:             []*objectmodel.Device{device},
+		db:                  db,
 		applicationEntity:   ae,
-		remoteDeviceCache:   ae.RemoteDeviceCache(),
 		confirmedServices:   make(map[bacnet.BACnetConfirmedServiceChoice]ConfirmedService),
 		unconfirmedServices: make(map[bacnet.BACnetUnconfirmedServiceChoice]UnconfirmedService),
 	}
@@ -55,8 +53,9 @@ func (sh *ServiceHandler) GetDevice(
 	service, ok := sh.confirmedServices[serviceChoice]
 	if !ok {
 		// Fall back to first registered device for built-in confirmed services.
-		if len(sh.devices) > 0 {
-			return sh.devices[0]
+		devices := sh.db.GetDevices()
+		if len(devices) > 0 {
+			return devices[0]
 		}
 		return nil
 	}
@@ -76,7 +75,7 @@ func (sh *ServiceHandler) RegisterCOVServices() {
 // GetRemoteDevice returns the cached remote device with the given instance number,
 // or nil if it has not been discovered yet.
 func (sh *ServiceHandler) GetRemoteDevice(instance uint32) *objectmodel.RemoteDevice {
-	return sh.remoteDeviceCache.GetByInstance(instance)
+	return sh.db.GetRemoteDeviceByInstance(instance)
 }
 
 func (sh *ServiceHandler) RegisterConfirmedService(
@@ -172,35 +171,8 @@ func (sh *ServiceHandler) findDeviceForRequest(request []byte) *objectmodel.Devi
 	if _, err := oid.Unmarshal(request); err != nil {
 		return nil
 	}
-	if d := sh.findDeviceByObjectID(oid.ObjType(), oid.Instance()); d != nil {
-		return d
-	}
-	for _, dev := range sh.devices {
-		if obj := dev.GetObject(bacnet.ObjectType(oid.ObjType()), oid.Instance()); obj != nil {
-			return obj.GetOwner()
-		}
-	}
-	return nil
-}
-
-// findDeviceByObjectID returns the local device whose DeviceObject has the given type+instance.
-func (sh *ServiceHandler) findDeviceByObjectID(objType uint16, instance uint32) *objectmodel.Device {
-	for _, device := range sh.devices {
-		devObj := device.DeviceObject()
-		if devObj == nil {
-			continue
-		}
-		idProp := devObj.GetProperty(bacnet.ObjectIdentifier)
-		if idProp == nil {
-			continue
-		}
-		oid, ok := idProp.GetValue().(*encoding.BACnetObjectIdentifier)
-		if !ok {
-			continue
-		}
-		if oid.Instance() == instance && oid.ObjType() == objType {
-			return device
-		}
+	if obj := sh.db.GetObject(bacnet.ObjectType(oid.ObjType()), oid.Instance()); obj != nil {
+		return obj.GetOwner()
 	}
 	return nil
 }
@@ -211,18 +183,10 @@ type propertySource interface {
 	AllPropertyIdentifiers() []bacnet.PropertyIdentifier
 }
 
-// resolveObject finds the property source for the given object identifier across all
-// registered devices, checking device objects first then non-device objects.
+// resolveObject finds the property source for the given object identifier across all registered devices.
 func (sh *ServiceHandler) resolveObject(objType uint16, instance uint32) (propertySource, *objectmodel.Device) {
-	device := sh.findDeviceByObjectID(objType, instance)
-	if device != nil {
-		return device.DeviceObject(), device
-	}
-	for _, dev := range sh.devices {
-		obj := dev.GetObject(bacnet.ObjectType(objType), instance)
-		if obj != nil {
-			return obj, obj.GetOwner()
-		}
+	if obj := sh.db.GetObject(bacnet.ObjectType(objType), instance); obj != nil {
+		return obj, obj.GetOwner()
 	}
 	return nil, nil
 }
@@ -285,14 +249,14 @@ func (sh *ServiceHandler) SetCOVNotificationCallback(cb func(COVNotificationRequ
 // FindDevice returns the remote device with the given instance, using the
 // cache when possible or broadcasting WhoIs and waiting up to timeout.
 func (sh *ServiceHandler) FindDevice(instance uint32, timeout time.Duration) (*objectmodel.RemoteDevice, error) {
-	if dev := sh.remoteDeviceCache.GetByInstance(instance); dev != nil {
+	if dev := sh.db.GetRemoteDeviceByInstance(instance); dev != nil {
 		return dev, nil
 	}
 	if err := sh.WhoIs(&instance, &instance); err != nil {
 		return nil, err
 	}
 	time.Sleep(timeout)
-	if dev := sh.remoteDeviceCache.GetByInstance(instance); dev != nil {
+	if dev := sh.db.GetRemoteDeviceByInstance(instance); dev != nil {
 		return dev, nil
 	}
 	return nil, fmt.Errorf("device instance %d not found", instance)
@@ -300,15 +264,23 @@ func (sh *ServiceHandler) FindDevice(instance uint32, timeout time.Duration) (*o
 
 // Device returns the first local device registered with this handler.
 func (sh *ServiceHandler) Device() *objectmodel.Device {
-	if len(sh.devices) > 0 {
-		return sh.devices[0]
+	devices := sh.db.GetDevices()
+	if len(devices) > 0 {
+		return devices[0]
 	}
 	return nil
 }
 
 // AddDevice appends an additional local device to this service handler.
 func (sh *ServiceHandler) AddDevice(device *objectmodel.Device) {
-	sh.devices = append(sh.devices, device)
+	if err := sh.db.AddDevice(device); err != nil {
+		logger.Error("AddDevice: ", err)
+	}
+}
+
+// AddObject registers obj with device in the object database.
+func (sh *ServiceHandler) AddObject(device *objectmodel.Device, obj objectmodel.Object) error {
+	return sh.db.AddObject(device, obj)
 }
 
 // WhoIs sends a WhoIs broadcast. Pass nil for both limits to query all devices.
@@ -324,7 +296,7 @@ func (sh *ServiceHandler) WhoIs(lowLimit, highLimit *uint32) error {
 
 // IAmBroadcast sends an IAm broadcast for all local devices.
 func (sh *ServiceHandler) IAmBroadcast() error {
-	for _, device := range sh.devices {
+	for _, device := range sh.db.GetDevices() {
 		if err := sh.sendIAmForDevice(device); err != nil {
 			logger.Error("IAm broadcast failed: ", err)
 		}

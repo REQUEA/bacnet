@@ -36,7 +36,7 @@ func (s *IAmService) HandleUnconfServIndication(indication *applicationlayer.APD
 		req.vendorID.Value(),
 		time.Now(),
 	)
-	s.serviceHandler.remoteDeviceCache.Add(device)
+	s.serviceHandler.db.AddRemoteDevice(device)
 }
 
 // --- IAmRequest ---

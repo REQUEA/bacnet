@@ -556,13 +556,8 @@ func findDeviceForCOVRequest(sh *ServiceHandler, request []byte) *objectmodel.De
 	}
 	objType := req.monitoredObjectIdentifier.ObjType()
 	instance := req.monitoredObjectIdentifier.Instance()
-	if d := sh.findDeviceByObjectID(objType, instance); d != nil {
-		return d
-	}
-	for _, dev := range sh.devices {
-		if obj := dev.GetObject(bacnet.ObjectType(objType), instance); obj != nil {
-			return obj.GetOwner()
-		}
+	if obj := sh.db.GetObject(bacnet.ObjectType(objType), instance); obj != nil {
+		return obj.GetOwner()
 	}
 	return nil
 }
@@ -920,10 +915,11 @@ func (sh *ServiceHandler) sendCOVNotificationToSubscriber(sub *covSubscription, 
 }
 
 func (sh *ServiceHandler) buildCOVNotification(sub *covSubscription, src covCapable) ([]byte, error) {
-	if len(sh.devices) == 0 {
+	devices := sh.db.GetDevices()
+	if len(devices) == 0 {
 		return nil, fmt.Errorf("no local device for COV notification")
 	}
-	devOidProp := sh.devices[0].DeviceObject().GetProperty(bacnet.ObjectIdentifier)
+	devOidProp := devices[0].DeviceObject().GetProperty(bacnet.ObjectIdentifier)
 	if devOidProp == nil {
 		return nil, fmt.Errorf("device has no ObjectIdentifier")
 	}

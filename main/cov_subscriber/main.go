@@ -105,7 +105,11 @@ func main() {
 	ne.SetAPDUHandler(ae)
 	ae.SetNetworkEntity(ne)
 
-	sh := servicelayer.NewServiceHandler(ae, device)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	if err := db.AddDevice(device); err != nil {
+		log.Fatalf("AddDevice: %v", err)
+	}
+	sh := servicelayer.NewServiceHandler(ae, db)
 	sh.RegisterCOVServices()
 
 	// Register callback — called for every incoming COV notification.
