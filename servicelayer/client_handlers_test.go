@@ -9,6 +9,7 @@ import (
 	"github.com/REQUEA/bacnet/applicationlayer"
 	"github.com/REQUEA/bacnet/internal/encoding"
 	"github.com/REQUEA/bacnet/networklayer"
+	"github.com/REQUEA/bacnet/objectmodel"
 )
 
 // loopbackNetwork routes NUnitDataRequest calls asynchronously to a peer ApplicationEntity.
@@ -52,8 +53,16 @@ func makeLoopbackPair(t *testing.T) (client *ServiceHandler, server *ServiceHand
 	clientAE.SetNetworkEntity(&loopbackNetwork{selfAddr: clientAddr, peer: serverAE})
 	serverAE.SetNetworkEntity(&loopbackNetwork{selfAddr: serverAddr, peer: clientAE})
 
-	client = NewServiceHandler(clientAE, makeTestDevice())
-	server = NewServiceHandler(serverAE, makeTestDevice())
+	clientDB := objectmodel.NewObjectDatabase(clientAE.RemoteDeviceCache())
+	if err := clientDB.AddDevice(makeTestDevice()); err != nil {
+		t.Fatal(err)
+	}
+	serverDB := objectmodel.NewObjectDatabase(serverAE.RemoteDeviceCache())
+	if err := serverDB.AddDevice(makeTestDevice()); err != nil {
+		t.Fatal(err)
+	}
+	client = NewServiceHandler(clientAE, clientDB)
+	server = NewServiceHandler(serverAE, serverDB)
 	return
 }
 
@@ -147,7 +156,7 @@ func TestClientWriteProperty_ObjectName(t *testing.T) {
 		t.Fatalf("WriteProperty failed: %v", writeErr)
 	}
 	// Verify name was updated on the server
-	devObj := server.devices[0].DeviceObject()
+	devObj := server.Device().DeviceObject()
 	nameProp := devObj.GetProperty(bacnet.ObjectName)
 	nameCS, ok := nameProp.GetValue().(*encoding.CharacterString)
 	if !ok || nameCS.Value() != newName {

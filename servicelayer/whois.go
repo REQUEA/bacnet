@@ -21,7 +21,7 @@ func (s *WhoIsService) HandleUnconfServIndication(indication *applicationlayer.A
 		logger.Error("could not unmarshal WhoIs request: ", err)
 		return
 	}
-	for _, device := range s.serviceHandler.devices {
+	for _, device := range s.serviceHandler.db.GetDevices() {
 		devObj := device.DeviceObject()
 		if devObj == nil {
 			continue

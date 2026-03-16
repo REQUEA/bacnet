@@ -84,14 +84,6 @@ func main() {
 	)
 	device := objectmodel.NewDevice(devObj)
 
-	// IntegerValue counter — updated every 5 s to trigger COV notifications.
-	counter := objectmodel.NewIntegerValueObject(1, "Counter", 0, bacnet.NoUnits)
-	device.AddObject(counter)
-
-	// CharacterStringValue with a 2000-character value to exercise segmentation.
-	longDesc := objectmodel.NewCharacterStringValueObject(1, "Long Description", loremIpsum(2000))
-	device.AddObject(longDesc)
-
 	// Open UDP socket.
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: *port})
 	if err != nil {
@@ -119,7 +111,24 @@ func main() {
 	ae.SetNetworkEntity(ne)
 
 	// Attach the service handler and opt into COV publish/subscribe.
-	sh := servicelayer.NewServiceHandler(ae, device)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	if err := db.AddDevice(device); err != nil {
+		log.Fatalf("AddDevice: %v", err)
+	}
+
+	// IntegerValue counter — updated every 5 s to trigger COV notifications.
+	counter := objectmodel.NewIntegerValueObject(1, "Counter", 0, bacnet.NoUnits)
+	if err := db.AddObject(device, counter); err != nil {
+		log.Fatalf("AddObject counter: %v", err)
+	}
+
+	// CharacterStringValue with a 2000-character value to exercise segmentation.
+	longDesc := objectmodel.NewCharacterStringValueObject(1, "Long Description", loremIpsum(2000))
+	if err := db.AddObject(device, longDesc); err != nil {
+		log.Fatalf("AddObject longDesc: %v", err)
+	}
+
+	sh := servicelayer.NewServiceHandler(ae, db)
 	sh.RegisterCOVServices()
 
 	// Log incoming COV notifications (e.g. from other devices on the network).

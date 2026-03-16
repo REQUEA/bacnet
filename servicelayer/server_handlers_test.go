@@ -92,8 +92,11 @@ func makeTestSetup() (*ServiceHandler, *mockNetworkEntity) {
 	ae := applicationlayer.NewApplicationEntity()
 	mock := &mockNetworkEntity{}
 	ae.SetNetworkEntity(mock)
-	device := makeTestDevice()
-	sh := NewServiceHandler(ae, device)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	if err := db.AddDevice(makeTestDevice()); err != nil {
+		panic(err)
+	}
+	sh := NewServiceHandler(ae, db)
 	return sh, mock
 }
 
@@ -292,7 +295,7 @@ func TestHandleWriteProperty_Success(t *testing.T) {
 	}
 
 	// Verify the property was updated.
-	device := sh.findDeviceByObjectID(uint16(bacnet.BacnetDevice), 1000)
+	device := sh.db.FindDeviceByObjectID(bacnet.BacnetDevice, 1000)
 	if device == nil {
 		t.Fatal("device not found after write")
 	}

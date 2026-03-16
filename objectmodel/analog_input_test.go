@@ -168,9 +168,15 @@ func TestDevice_AddObject_GetObject(t *testing.T) {
 		3000, 3, 1, 1,
 	)
 	dev := NewDevice(devObj)
+	db := NewObjectDatabase(&RemoteDeviceCache{})
+	if err := db.AddDevice(dev); err != nil {
+		t.Fatalf("AddDevice: %v", err)
+	}
 
 	ai := NewAnalogInputObject(1, "Room Temp", bacnet.DegreesCelsius)
-	dev.AddObject(ai)
+	if err := db.AddObject(dev, ai); err != nil {
+		t.Fatalf("AddObject: %v", err)
+	}
 
 	got := dev.GetObject(bacnet.AnalogInput, 1)
 	if got == nil {

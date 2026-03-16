@@ -21,9 +21,10 @@ func (d *Device) DeviceObject() *DeviceObject {
 	return d.deviceObject
 }
 
-// AddObject registers a non-device object with this device and appends its
+// addObject registers a non-device object with this device and appends its
 // identifier to the device object's ObjectList property.
-func (d *Device) AddObject(obj Object) {
+// Duplicate checking is the caller's responsibility (done in ObjectDatabase.AddObject).
+func (d *Device) addObject(obj Object) {
 	obj.setOwner(d)
 	d.objects = append(d.objects, obj)
 	if p := obj.GetProperty(bacnet.ObjectIdentifier); p != nil {
@@ -52,8 +53,12 @@ func (d *Device) GetObject(objType bacnet.ObjectType, instance uint32) Object {
 }
 
 type DeviceObject struct {
+	owner      *Device
 	properties map[bacnet.PropertyIdentifier]Property
 }
+
+func (o *DeviceObject) GetOwner() *Device  { return o.owner }
+func (o *DeviceObject) setOwner(d *Device) { o.owner = d }
 
 func NewDeviceObject(
 	id bacnet.BACnetObjectIdentifier,

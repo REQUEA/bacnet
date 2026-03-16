@@ -1,17 +1,21 @@
 .PHONY: test build lint golangci
 
+all: test lint golangci build
+
 test:
 	go test -race -timeout 30s ./...
 
-build:
-	mkdir -p bin
-	go build -o bin/basic_device ./main/basic_device
-	go build -o bin/basic_router ./main/basic_router
-	go build -o bin/basic_sc_device ./main/basic_sc_device
-	go build -o bin/basic_sc_hub ./main/basic_sc_hub
-	go build -o bin/complex_device ./main/complex_device
-	go build -o bin/cov_subscriber ./main/cov_subscriber
-	go build -o bin/sc_hub_gateway ./main/sc_hub_gateway
+BINARIES := basic_device basic_router basic_sc_device basic_sc_hub complex_device cov_subscriber sc_hub_gateway
+
+build: $(addprefix bin/,$(BINARIES))
+
+bin/:
+	mkdir bin
+
+bin/%: bin/ FORCE
+	go build -o $@ ./main/$*
+
+FORCE:
 
 lint:
 	go vet ./...

@@ -59,11 +59,6 @@ func main() {
 	)
 	device := objectmodel.NewDevice(devObj)
 
-	// Add an analog input representing a room temperature sensor.
-	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.DegreesCelsius)
-	roomTemp.SetPresentValue(21.5)
-	device.AddObject(roomTemp)
-
 	// Open UDP socket.
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: *port})
 	if err != nil {
@@ -91,7 +86,19 @@ func main() {
 	ae.SetNetworkEntity(ne)
 
 	// Attach the service handler (registers confirmed / unconfirmed service handlers).
-	sh := servicelayer.NewServiceHandler(ae, device)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	if err := db.AddDevice(device); err != nil {
+		log.Fatalf("AddDevice: %v", err)
+	}
+
+	// Add an analog input representing a room temperature sensor.
+	roomTemp := objectmodel.NewAnalogInputObject(1, "Room Temperature", bacnet.DegreesCelsius)
+	roomTemp.SetPresentValue(21.5)
+	if err := db.AddObject(device, roomTemp); err != nil {
+		log.Fatalf("AddObject: %v", err)
+	}
+
+	sh := servicelayer.NewServiceHandler(ae, db)
 
 	// Start receiving.
 	if err := datalink.Start(); err != nil {

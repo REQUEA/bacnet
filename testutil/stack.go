@@ -167,7 +167,11 @@ func NewTestStack(t *testing.T, bus *Bus, instanceID uint32, deviceName string, 
 	net := &busNetwork{selfAddr: addr, bus: bus, maxAPDU: maxAPDU}
 	ae.SetNetworkEntity(net)
 	device := newTestDevice(instanceID, deviceName, maxAPDU, segSupport)
-	sh := servicelayer.NewServiceHandler(ae, device)
+	db := objectmodel.NewObjectDatabase(ae.RemoteDeviceCache())
+	if err := db.AddDevice(device); err != nil {
+		t.Fatalf("AddDevice: %v", err)
+	}
+	sh := servicelayer.NewServiceHandler(ae, db)
 	s := &TestStack{addr: addr, ae: ae, sh: sh}
 	bus.register(addr, ae)
 	return s

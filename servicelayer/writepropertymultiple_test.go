@@ -82,7 +82,7 @@ func TestWPMServer_Success(t *testing.T) {
 	}
 
 	// Verify both properties were written on the server.
-	devObj := server.devices[0].DeviceObject()
+	devObj := server.Device().DeviceObject()
 
 	nameProp := devObj.GetProperty(bacnet.ObjectName)
 	nameVal, ok := nameProp.GetValue().(*encoding.CharacterString)
@@ -125,7 +125,7 @@ func TestWPMServer_ReadOnlyProperty(t *testing.T) {
 	defer cancel()
 
 	// Save original name to verify it wasn't changed.
-	devObj := server.devices[0].DeviceObject()
+	devObj := server.Device().DeviceObject()
 	origName := devObj.GetProperty(bacnet.ObjectName).GetValue().(*encoding.CharacterString).Value()
 
 	nameCS := encoding.NewCharacterString("ShouldNotUpdate")

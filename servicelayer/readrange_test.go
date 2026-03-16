@@ -93,7 +93,9 @@ func TestReadRange_NotRangeProperty(t *testing.T) {
 
 	// Add an AnalogInputObject: PresentValue does not implement RangeProperty.
 	ai := objectmodel.NewAnalogInputObject(42, "AI42", bacnet.NoUnits)
-	server.devices[0].AddObject(ai)
+	if err := server.AddObject(server.Device(), ai); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
 		ObjType:  uint16(bacnet.AnalogInput),
@@ -115,7 +117,9 @@ func TestReadRange_ByPosition(t *testing.T) {
 	obj.AppendItem(buildUnsignedBytes(10))
 	obj.AppendItem(buildUnsignedBytes(20))
 	obj.AppendItem(buildUnsignedBytes(30))
-	server.devices[0].AddObject(obj)
+	if err := server.AddObject(server.Device(), obj); err != nil {
+		t.Fatal(err)
+	}
 
 	ack, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
 		ObjType:    uint16(bacnet.Trendlog),
@@ -154,7 +158,9 @@ func TestReadRange_ByPosition_Partial(t *testing.T) {
 	obj.AppendItem(buildUnsignedBytes(3))
 	obj.AppendItem(buildUnsignedBytes(4))
 	obj.AppendItem(buildUnsignedBytes(5))
-	server.devices[0].AddObject(obj)
+	if err := server.AddObject(server.Device(), obj); err != nil {
+		t.Fatal(err)
+	}
 
 	// Read only 2 items starting at position 2.
 	ack, err := client.ReadRange(ctx, serverAddr, ReadRangeSpec{
